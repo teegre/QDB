@@ -31,23 +31,12 @@ from zlib import crc32
 HEADER_SIZE = 4 + 8 + 1 + 4 + 4
 HINT_HEADER_SIZE = HEADER_SIZE - 1
 
-class MicroDBError(Exception):
-  pass
-
 @dataclass
 class KeyStoreEntry:
   filename: str
   value_size: int
   position: int
   timestamp: int
-
-class ReferenceEntry:
-  def __init__(self, key: str, count:int=0):
-    self.key: str = key
-    self.count: int = count
-
-  def __repr__(self):
-    return f'Ref(key={self.key}, count={self.count})'
 
 class Store:
   def __init__(self, name: str) :
@@ -223,6 +212,9 @@ class Store:
       data = struct.pack('<L', crc) + rec
       self.write(data, key, vsz, ts)
       self.keystore.pop(key, None)
+      if self.is_ref(key):
+        ref = self.get_ref_key(key) # confusing: ref is actually the key
+        self.delete_ref(ref, key) # and key is the ref...
       return 0
     return 1
 
@@ -447,6 +439,13 @@ class Store:
       return [r for r in refs if ref in r]
     return []
 
+  def get_ref_key(self, ref: str) -> str:
+    ''' get the key that ref references to... '''
+    for key, values in self.refs.items():
+      if ref in values:
+        return key
+    return None
+
   def delete_ref(self, key: str, ref: str) -> int:
     refs = self.refs.get(key)
     if refs is None:
@@ -471,8 +470,13 @@ class Store:
         return True
     return False
 
-  def is_ref(self, key: str, ref: str) -> bool:
-    refs = self.refs.get(key)
+  def is_ref(self, ref: str, key: str=None) -> bool:
+    if key:
+      refs = self.refs.get(key)
+    else:
+      for refs in self.refs.values():
+        if ref in refs:
+          return True
     return False if refs is None else ref in refs
 
   @property
@@ -650,7 +654,7 @@ class MicroDB:
               row += data[0]
           else:
             rows = data
-        elif len(data) > len(rows) and rows:
+        elif len(data) >= len(rows) and rows:
           for i, row in enumerate(data):
             data[i] = rows[0] + row
           rows = data
@@ -698,7 +702,7 @@ class MicroDB:
     for field in fields:
       try:
         v = kv.pop(key)
-        if self.store.is_ref(v):
+        if self.store.is_ref(v, key):
           self.store.delete_ref(key, v)
       except KeyError:
         stderr.write(f'HDEL: {key}: unknown field: {field}\n')
