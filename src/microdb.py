@@ -31,6 +31,9 @@ from zlib import crc32
 HEADER_SIZE = 4 + 8 + 1 + 4 + 4
 HINT_HEADER_SIZE = HEADER_SIZE - 1
 
+class MicroDBError(Exception):
+  pass
+
 @dataclass
 class KeyStoreEntry:
   filename: str
@@ -38,13 +41,23 @@ class KeyStoreEntry:
   position: int
   timestamp: int
 
+class ReferenceEntry:
+  def __init__(self, key: str, count:int=0):
+    self.key: str = key
+    self.count: int = count
+
+  def __repr__(self):
+    return f'Ref(key={self.key}, count={self.count})'
+
 class Store:
   def __init__(self, name: str) :
-    self.database = name
+    self.database: str = name
     self.keystore: Dict[str, KeyStoreEntry] = {}
+    self.indexes = set()
+    self.refs: Dict[str, set[str]] = {}
     self.file = None
-    self._file_id = self._max_id
-    self._file_pos = 0
+    self._file_id: int = self._max_id
+    self._file_pos: int = 0
     self.reconstruct()
   
   def open(self) -> int:
@@ -74,8 +87,8 @@ class Store:
       self.file.flush()
       return self.close()
     except (IOError, OSError) as e:
-      stderr.write(f'error: flushing did not work: {e}\n')
-    return 1
+      stderr.write(f'Error: flushing did not work: {e}.\n')
+      return 1
 
   def serialize(self, key: str, val: str, string: bool = True) -> (int, int, int):
     ts = int(time())
@@ -99,22 +112,29 @@ class Store:
     xcrc = crc32(struct.pack(f'<Q1sII{ksz}s{vsz}s', ts, vt, ksz, vsz, key, val))
     return crc == xcrc
 
-  def write(self, data: bytes, key: str, vsz: int, ts: int) -> int:
-    ''' write data to file '''
+  def write(self, data: bytes, key: str, vsz: int, ts: int, refs: list[str]=[]) -> int:
+    ''' write data to file, update keystore '''
     if not self.file:
       self.open()
     try:
       self._file_pos = self.file.tell()
       bytes_written = self.file.write(data)
-      self.keystore[key] = KeyStoreEntry(
-          self.active_file,
-          vsz,
-          self._file_pos,
-          ts
-      )
-      return bytes_written
+      if bytes_written > 0:
+        self.keystore[key] = KeyStoreEntry(
+            self.active_file,
+            vsz,
+            self._file_pos,
+            ts
+        )
+        if ':' in key:
+          self.create_index(key)
+        for ref in refs :
+          self.create_ref(ref, key)
+
+      return 0 if bytes_written > 0 else 1
     except:
-      return 0
+      stderr.write(f'Error writing key: `{key}`.\n')
+      return 1
 
   def read(self, key: str) -> str:
     ''' read data for the given key '''
@@ -186,13 +206,15 @@ class Store:
 
     return None
 
-
   def delete(self, key: str) -> int:
     '''
     delete a key from the keystore
     and mark it for deletion
     '''
     if key in self.keystore:
+      if self.has_refs(key):
+        stderr.write(f'DEL: Error: key `{key}` has references.\n')
+        return 1
       ts = int(time())
       ksz = len(key)
       vsz = 0
@@ -232,7 +254,7 @@ class Store:
           if not header:
             break
           if len(header) != HEADER_SIZE:
-            stderr.write(f'warning: incomplete header at {file}:{pos}\n')
+            stderr.write(f'Warning: incomplete header at {file}:{pos}\n')
             return 1
           crc, ts, vt, ksz, vsz = self.deserialize_header(header)
 
@@ -241,13 +263,13 @@ class Store:
 
           # check CRC validity
           if not self.check_crc(crc, ts, vt, ksz, vsz, key, val):
-            stderr.write(f'warning: bad CRC at {file}:{pos}\n')
+            stderr.write(f'Warning: bad CRC at {file}:{pos}\n')
             return 1
 
           key = key.decode()
 
           if len(key) != ksz:
-            stderr.write(f'warning: incomplete key at {file}:{pos}\n')
+            stderr.write(f'Warning: incomplete key at {file}:{pos}\n')
             return 1
           if vsz == 0:
             self.keystore.pop(key, None)
@@ -255,9 +277,18 @@ class Store:
             entry = self.keystore.get(key)
             if entry is None or ts > entry.timestamp:
               self.keystore[key] = KeyStoreEntry(file, vsz, pos, ts)
+
+          if ':' in key:
+            self.create_index(key)
+
+          if vt.decode() == '+': # hash
+            kv = json.loads(val.decode())
+            values = [v for v in kv.values() if ':' in v]
+            for value in values:
+              self.create_ref(value, key)
           pos = f.tell()
         except Exception as e:
-          stderr.write(f'error processing record at {file}:{pos}: {e}\n')
+          stderr.write(f'Error processing record at {file}:{pos}: {e}\n')
           return 1
     return 0
 
@@ -270,12 +301,12 @@ class Store:
         if not header:
           break
         if len(header) != HINT_HEADER_SIZE:
-          stderr.write(f'warning: incomplete header at {hint_file}:{pos}\n')
+          stderr.write(f'Warning: incomplete header at {hint_file}:{pos}\n')
           break
         ts, ksz, vsz, pos = struct.unpack('<QIII', header)
         key = h.read(ksz)
         if len(key) != ksz:
-          stderr.write(f'reconstruct: warning: incomplete header at {hint_file}:{fpos}\n')
+          stderr.write(f'Warning: incomplete header at {hint_file}:{fpos}\n')
           return 1
         if vsz == 0:
           self.keystore.pop(key.decode(), None)
@@ -291,12 +322,12 @@ class Store:
     if self.file is not None:
       if self.flush() != 0:
         return
-      stderr.write('compact: flushed and closed active file\n')
+      stderr.write('Flushed and closed active file\n')
 
     files = [f for f in sorted(glob(os.path.join(self.database, '*.log')))
              if f != self.active_file]
     if not files or len(files) == 1:
-      stderr.write('compact: nothing to do.\n')
+      stderr.write('Nothing to do.\n')
       return 0
 
     name = strftime('%Y%m%d_%H%M%S')
@@ -318,7 +349,7 @@ class Store:
             if not header:
               break
             if len(header) != HEADER_SIZE:
-              stderr.write(f'compact: incomplete header at {file}:{pos}\n')
+              stderr.write(f'Error: incomplete header at {file}:{pos}\n')
               break
             crc, ts, vt, ksz, vsz = self.deserialize_header(header)
 
@@ -327,7 +358,7 @@ class Store:
             
             # check CRC validity
             if not self.check_crc(crc, ts, vt, ksz, vsz, key, val):
-              stderr.write('compact: bad CRC at {file}:{pos}\n')
+              stderr.write('Error: bad CRC at {file}:{pos}\n')
               warnings += 1
               break
 
@@ -337,7 +368,7 @@ class Store:
 
             pos = f.tell()
           except Exception as e:
-            stderr.write(f'compact: error processing record at {file}:{pos}: {e}\n')
+            stderr.write(f'Error processing record at {file}:{pos}: {e}\n')
             warnings += 1
             break
 
@@ -375,10 +406,74 @@ class Store:
         if os.path.exists(hint_file):
           os.remove(hint_file)
       except Exception as e:
-        stderr.write(f'compact: error removing file {file}: {e}\n')
+        stderr.write(f'Error removing file {file}: {e}\n')
+        return 1
 
-    stderr.write('compact: operation complete.\n')
+    stderr.write('Success!.\n')
     return warnings
+
+  def create_index(self, key: str) -> int:
+    index = key.split(':')[0]
+    if not index or index.isdigit():
+      stderr.write(f'Error: bad key name: `{index}`\n')
+      return 1
+    self.indexes.add(index)
+    return 0
+
+  def delete_index(self, key: str) -> int:
+    if self.has_index(key):
+      if self.has_index_refs(key):
+        stderr.write(f'Error: `{key}` has references.\n')
+        return 1
+      try:
+        index = key.split(':')[0]
+        del self.indexes[index]
+      except KeyError:
+        stderr.write(f'Error: {key.split()}index not found.\n')
+
+  def create_ref(self, key: str, ref: str) -> int:
+    refs = self.refs.get(key)
+    if refs is None and self.has_index(key):
+      self.refs[key] = set([ref])
+      return 0
+    if self.has_index(key):
+      self.refs[key].add(ref)
+      return 0
+    return 1
+
+  def get_refs(self, key: str, ref: str) -> list:
+    refs = self.refs.get(key)
+    if refs:
+      return [r for r in refs if ref in r]
+    return []
+
+  def delete_ref(self, key: str, ref: str) -> int:
+    refs = self.refs.get(key)
+    if refs is None:
+      return 1
+    self.refs[key].discard(ref)
+    if len(self.refs[key]) == 0:
+      del self.refs[src]
+
+  def has_index(self, key: str) -> bool:
+    index = key.split(':')[0]
+    return index in self.indexes
+
+  def is_index(self, key: str) -> bool:
+    return key in self.indexes
+
+  def has_refs(self, key: str) -> bool:
+    return key in self.refs
+
+  def has_index_refs(self, key: str) -> bool:
+    for ref in self.refs.keys():
+      if ref in key:
+        return True
+    return False
+
+  def is_ref(self, key: str, ref: str) -> bool:
+    refs = self.refs.get(key)
+    return False if refs is None else ref in refs
 
   @property
   def _max_id(self) -> int:
@@ -392,40 +487,31 @@ class Store:
     name = f'data{str(self._file_id).zfill(4)}.log'
     return os.path.join(self.database, name)
 
-        
 class MicroDB:
   def __init__(self, name: str):
     self.store = Store(name)
 
     self.__commands = {
-        'SET' : self.set,
-        'GET' : self.get,
         'DEL' : self.delete,
-        'MSET': self.mset,
-        'MGET': self.mget,
-        'MDEL': self.mdel,
-        'HSET': self.hset,
-        'HGET': self.hget,
-        'HDEL': self.hdel,
         'FLUSH': self.flush,
-    }
-
-    self.__types = {
-        int: 'integer',
-        float: 'float',
-        str: 'string',
+        'GET' : self.get,
+        'HDEL': self.hdel,
+        'HGET': self.hget,
+        'HKEYS': self.hkeys,
+        'HSET': self.hset,
+        'KEYS': self.keys,
+        'MDEL': self.mdel,
+        'MGET': self.mget,
+        'MSET': self.mset,
+        'SET' : self.set,
     }
 
   def set(self, key: str, val: str) -> int:
     ''' set a single value '''
-    if type(val) in self.__types:
-      data, vsz, ts = self.store.serialize(key, val)
-      return self.store.write(data, key, vsz, ts)
-    else:
-      stderr.write(f'unknow type {type(value)}\n')
-      return 0
+    data, vsz, ts = self.store.serialize(key, val)
+    return self.store.write(data, key, vsz, ts)
 
-  def get(self, key: str) -> str:
+  def get(self, key: str) -> int:
     ''' get a value '''
     val = self.store.read(key)
     if val is not None:
@@ -433,14 +519,22 @@ class MicroDB:
       return 0
     return 1
 
+  def keys(self) -> int:
+    for k in self.store.keystore.keys():
+      print(k)
+    return 0
+
   def delete(self, key: str) -> int:
     ''' delete a single key '''
     return self.store.delete(key)
     
   def mset(self, *items: str) -> int:
-    ''' set multiple values '''
+    '''
+    set multiple values
+    items are key/value pairs
+    '''
     if len(items) % 2 != 0:
-      stderr.write('mset: invalid number of arguments.\n')
+      stderr.write('MSET: invalid number of arguments.\n')
       return 1
     err = 0
     for key, val in zip(items[::2], items[1::2]):
@@ -460,7 +554,7 @@ class MicroDB:
     for key in keys:
       err += self.delete(key)
       if err:
-        stderr.write(f'delete: key not found [{key}]\n')
+        stderr.write(f'MDEL: key `{key}` not found.\n')
     return err
 
   def hset(self, key: str, *members: str) -> int:
@@ -469,21 +563,72 @@ class MicroDB:
     (a member is a key/value pair)
     '''
     if len(members) % 2 != 0:
-      stderr.write(f'sset: members mismatch.\n')
+      stderr.write(f'HSET: members mismatch. (missing key?)\n')
       return 1
 
     kv = self.store.read_hash(key)
+    refs: list(str) = []
     if kv is None:
       kv = {}
     for k, v in zip(members[::2], members[1::2]):
+      if ':' in v: #ref
+        refs.append(v)
       kv[k] = v
+
     data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
-    return self.store.write(data, key, vsz, ts)
+    return self.store.write(data, key, vsz, ts, refs)
+
+  def hquery(self, key: str, kv: dict[str,str], expr: str) -> list:
+    q = expr.split(':')
+    if not q or len(q) < 1:
+      stderr.write(f'HGET: invalid expression `{expr}`')
+      return
+    if len(q) == 1 or (q[1] != '*' and not q[1:]):
+      stderr.write(f'HGET: expression `{expr}` requires at least one column or `*`.')
+      return
+    refs = self.store.get_refs(key, q[0])
+    rows = []
+
+    for r in sorted(refs):
+      subkv = self.store.read_hash(r)
+      if q[1] == '*':
+        row = [v for v in subkv.values()]
+        rows.append(row)
+      else:
+        row = []
+        for col in q[1:]:
+          v = subkv.get(col)
+          if v is None:
+            stderr.write(f'HGET: invalid key `{col}` in expression: `{expr}`\n')
+            return
+          row.append(v)
+        rows.append(row)
+    if not rows:
+      v = kv.get(q[0])
+      row = []
+      if v is None:
+        stderr.write(f'HGET: invalid key `{q[0]}` in expression: `{expr}` (missing ref?)\n')
+        return
+      subkv = self.store.read_hash(v)
+      if q[1] == '*':
+        row = [v for v in subkv.values()]
+        rows.append(row)
+      else:
+        for col in q[1:]:
+          v = subkv.get(col)
+          if v is None:
+            stderr.write(f'HGET: invalid key `{col}` in expression: `{expr}`\n')
+            return
+          row.append(v)
+        rows.append(row)
+    return rows
 
   def hget(self, key: str, *fields: str) -> int:
-    ''' get members of a set '''
+    ''' get fields from a hash '''
     kv = self.store.read_hash(key)
+
     if kv is None:
+      stderr.write(f'HGET: key `{key}` not found.\n')
       return 1
     if not fields:
       for k, v in kv.items():
@@ -491,14 +636,53 @@ class MicroDB:
       return 0
 
     err = 0
-    for field in fields:
-      v = kv.get(field)
-      if v is None:
-        err += 1
-        continue
-      print(v)
+    rows = []
 
-    return err
+    for field in fields:
+      if ':' in field:
+        data = self.hquery(key, kv, field)
+        if not data:
+          stderr.write(f'HGET: error querying `{field}` for `{key}`.\n')
+          return 1
+        if len(data) == 1:
+          if rows:
+            for row in rows:
+              row += data[0]
+          else:
+            rows = data
+        elif len(data) > len(rows) and rows:
+          for i, row in enumerate(data):
+            data[i] = rows[0] + row
+          rows = data
+        else:
+          rows += data
+      else:
+        v = kv.get(field)
+        if v is None:
+          stderr.write(f'HGET: field `{field}` not found.\n')
+          return 1
+        if rows:
+          for row in rows:
+            row += [v]
+        else:
+          rows = [[v]]
+
+    if rows:
+      for row in rows:
+        print('|'.join(row))
+    else:
+      return 1
+
+    return 0
+
+  def hkeys(self, key: str) -> int:
+    ''' get all fields for the given key '''
+    kv = self.store.read_hash(key)
+    if kv is None:
+      return 1
+    for k in kv.keys():
+      print(k)
+    return 0
 
   def hdel(self, key: str, *fields: str) -> int:
     ''' delete a hash or fields in a hash '''
@@ -513,15 +697,16 @@ class MicroDB:
     err = 0
     for field in fields:
       try:
-        del kv[field]
+        v = kv.pop(key)
+        if self.store.is_ref(v):
+          self.store.delete_ref(key, v)
       except KeyError:
-        stderr.write(f'hdel: {key}: unknown field: {field}\n')
+        stderr.write(f'HDEL: {key}: unknown field: {field}\n')
         err += 1
 
     data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
     err += 0 if self.store.write(data, key, vsz, ts) > 0 else 1
     return err
-
 
   def flush(self):
     return self.store.flush()
