@@ -434,10 +434,25 @@ class Store:
     return 1
 
   def get_refs(self, key: str, ref: str) -> list:
-    refs = self.refs.get(key)
-    if refs:
-      return [r for r in refs if ref in r]
-    return []
+    references = self.refs.get(key)
+    if references:
+      refs = [r for r in references if ref in r]
+    else:
+      refs = []
+    if self.is_index(ref):
+      if references and not refs:
+        try:
+          refs = [ r for k in references for r in self.refs[k] if r.startswith(ref + ':') and self.has_refs(k) ]
+        except KeyError:
+          return refs
+      else:
+        try:
+          keys = [ r for k, v in self.refs.items() for r in v if k.startswith(ref + ':') and key in self.refs[r]]
+          for k in keys:
+            refs.append(self.read_hash(k)[ref])
+        except KeyError:
+          return refs
+    return refs
 
   def get_ref_key(self, ref: str) -> str:
     ''' get the key that ref references to... '''
@@ -590,6 +605,7 @@ class MicroDB:
     if len(q) == 1 or (q[1] != '*' and not q[1:]):
       stderr.write(f'HGET: expression `{expr}` requires at least one column or `*`.')
       return
+
     refs = self.store.get_refs(key, q[0])
     rows = []
 
@@ -629,6 +645,16 @@ class MicroDB:
 
   def hget(self, key: str, *fields: str) -> int:
     ''' get fields from a hash '''
+
+    # if key is an index, get all the keys for
+    # this index
+    if self.store.is_index(key):
+      keys = [ k for k in self.store.keystore.keys() if k.startswith(key + ':') ]
+      for k in keys:
+        if self.hget(k, *fields) != 0:
+          return 1
+      return 0
+
     kv = self.store.read_hash(key)
 
     if kv is None:
