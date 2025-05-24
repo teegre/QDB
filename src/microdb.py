@@ -2,6 +2,7 @@ import os
 import json
 import struct
 
+from collections import deque
 from dataclasses import dataclass
 from glob import glob
 from shutil import move
@@ -10,8 +11,8 @@ from time import time, strftime
 from zlib import crc32
 
 # Record format on disk:
-# CRC TS VTYPE KSZ VSZ K V
-#     <------- CRC ------>
+# CRC TS VT KSZ VSZ K V
+#     <----- CRC ----->
 #
 # Keystore:
 # K → ID VSZ VPOS TS
@@ -22,12 +23,12 @@ from zlib import crc32
 # Legend:
 # K = KEY, V = VALUE
 # TS = TIMESTAMP,
-# VTYPE = VALUE TYPE (1 byte: either - or +)
+# VT = VALUE TYPE (1 byte: either - or +)
 # KSZ = KEY SIZE
 # VSZ = VALUE SIZE
 # VPOS = VALUE POSITION
 
-#             CRC TS  VTYPE KSZ VSZ
+#             CRC TS  VT  KSZ VSZ
 HEADER_SIZE = 4 + 8 + 1 + 4 + 4
 HINT_HEADER_SIZE = HEADER_SIZE - 1
 
@@ -76,7 +77,7 @@ class Store:
       self.file.flush()
       return self.close()
     except (IOError, OSError) as e:
-      stderr.write(f'Error: flushing did not work: {e}.\n')
+      print(f'Error: flush did not work: {e}.', file=stderr)
       return 1
 
   def serialize(self, key: str, val: str, string: bool = True) -> (int, int, int):
@@ -102,7 +103,7 @@ class Store:
     return crc == xcrc
 
   def write(self, data: bytes, key: str, vsz: int, ts: int, refs: list[str]=[]) -> int:
-    ''' write data to file, update keystore '''
+    ''' Write data to file, update keystore, indexes and refs '''
     if not self.file:
       self.open()
     try:
@@ -116,17 +117,18 @@ class Store:
             ts
         )
         if ':' in key:
-          self.create_index(key)
+          if self.create_index(key) != 0:
+            return 1
         for ref in refs :
           self.create_ref(ref, key)
 
       return 0 if bytes_written > 0 else 1
     except:
-      stderr.write(f'Error writing key: `{key}`.\n')
+      print(f'Error writing key: `{key}`.', file=stderr)
       return 1
 
   def read(self, key: str) -> str:
-    ''' read data for the given key '''
+    ''' Read data for the given key '''
     entry = self.keystore.get(key)
     if entry is None:
       return None
@@ -154,12 +156,13 @@ class Store:
       f.close()
 
     if vt.decode() != '-':
+      print(f'Error: {key} is a hash.')
       return None
 
     return val.decode()
 
   def read_hash(self, key: str) -> dict:
-    ''' return hash for the given key as a dict '''
+    ''' Return hash for the given key as a dict '''
     if key in self.keystore:
       entry: KeyStoreEntry = self.keystore.get(key)
 
@@ -182,7 +185,8 @@ class Store:
       if vt.decode() != '+':
         if fn != self.active_file:
           f.close()
-        return None
+        print(f'Error: {key} is not a hash.', file=stderr)
+        return {}
 
       f.seek(pos + HEADER_SIZE + ksz)
       val = f.read(vsz)
@@ -193,33 +197,57 @@ class Store:
       data = json.loads(val.decode())
       return data
 
+    return {}
+
+  def read_hash_field(self, key: str, field: str) -> str:
+    data = self.read_hash(key)
+    if data:
+      return data.get(field)
     return None
+
 
   def delete(self, key: str) -> int:
     '''
-    delete a key from the keystore
+    Delete a key from the keystore
     and mark it for deletion
     '''
     if key in self.keystore:
       if self.has_refs(key):
-        stderr.write(f'DEL: Error: key `{key}` has references.\n')
+        print(f'DEL: Error: key `{key}` has references.', file=stderr)
         return 1
       ts = int(time())
       ksz = len(key)
       vsz = 0
-      rec = struct.pack(f'<Q1sII{ksz}s', ts, '-'.encode(), ksz, vsz, key.encode())
+      rec = struct.pack(
+          f'<Q1sII{ksz}s',
+          ts,
+          '+'.encode() if self.has_index(key) else '-'.encode(),
+          ksz,
+          vsz,
+          key.encode()
+      )
       crc = crc32(rec)
       data = struct.pack('<L', crc) + rec
       self.write(data, key, vsz, ts)
       self.keystore.pop(key, None)
       if self.is_ref(key):
-        ref = self.get_ref_key(key) # confusing: ref is actually the key
-        self.delete_ref(ref, key) # and key is the ref...
+        ref = key
+        refkey = self.get_ref_key(ref)
+        self.delete_ref(refkey, ref)
       return 0
     return 1
 
+  def dump(self) -> str:
+    ''' Dump current database in json format '''
+    for key in self.keystore.keys():
+      if self.has_index(key): # hash
+        data = {key: self.read_hash(key)}
+      else:
+        data = {key: self.read(key) }
+      print(json.dumps(data))
+
   def reconstruct(self) -> int:
-    ''' reconstruct keystore from data files '''
+    ''' Reconstruct keystore from data files '''
     files = sorted(glob(os.path.join(self.database, "*.log")))
     err = 0
     for file in files:
@@ -237,7 +265,7 @@ class Store:
     return err
 
   def reconstruct_keystore(self, file: str) -> int:
-    ''' populate keystore  '''
+    ''' Populate keystore  '''
     with open(file, 'rb') as f:
       pos = 0
       while True:
@@ -246,7 +274,7 @@ class Store:
           if not header:
             break
           if len(header) != HEADER_SIZE:
-            stderr.write(f'Warning: incomplete header at {file}:{pos}\n')
+            print(f'Warning: incomplete header at {file}:{pos}', file=stderr)
             return 1
           crc, ts, vt, ksz, vsz = self.deserialize_header(header)
 
@@ -255,13 +283,13 @@ class Store:
 
           # check CRC validity
           if not self.check_crc(crc, ts, vt, ksz, vsz, key, val):
-            stderr.write(f'Warning: bad CRC at {file}:{pos}\n')
+            print(f'Warning: bad CRC at {file}:{pos}', file=stderr)
             return 1
 
           key = key.decode()
 
           if len(key) != ksz:
-            stderr.write(f'Warning: incomplete key at {file}:{pos}\n')
+            print(f'Warning: incomplete key at {file}:{pos}', file=stderr)
             return 1
           if vsz == 0:
             self.keystore.pop(key, None)
@@ -280,12 +308,12 @@ class Store:
               self.create_ref(value, key)
           pos = f.tell()
         except Exception as e:
-          stderr.write(f'Error processing record at {file}:{pos}: {e}\n')
+          print(f'Error processing record at {file}:{pos}: {e}', file=stderr)
           return 1
     return 0
 
   def reconstruct_from_hint(self, hint_file: str) -> int:
-    ''' reconstruct keystore from a hint file '''
+    ''' Reconstruct keystore from a hint file '''
     with open(hint_file, 'rb') as h:
       fpos = 0
       while True:
@@ -293,12 +321,12 @@ class Store:
         if not header:
           break
         if len(header) != HINT_HEADER_SIZE:
-          stderr.write(f'Warning: incomplete header at {hint_file}:{pos}\n')
+          print(f'Warning: incomplete header at {hint_file}:{pos}', file=stderr)
           break
         ts, ksz, vsz, pos = struct.unpack('<QIII', header)
         key = h.read(ksz)
         if len(key) != ksz:
-          stderr.write(f'Warning: incomplete header at {hint_file}:{fpos}\n')
+          print(f'Warning: incomplete header at {hint_file}:{fpos}', file=stderr)
           return 1
         if vsz == 0:
           self.keystore.pop(key.decode(), None)
@@ -310,16 +338,16 @@ class Store:
     return 0
         
   def compact(self) -> int:
-    ''' compact files and clean database directory '''
+    ''' Compact files and clean database directory '''
     if self.file is not None:
       if self.flush() != 0:
         return
-      stderr.write('Flushed and closed active file\n')
+      print('Flushed and closed active file', file=stderr)
 
     files = [f for f in sorted(glob(os.path.join(self.database, '*.log')))
              if f != self.active_file]
     if not files or len(files) == 1:
-      stderr.write('Nothing to do.\n')
+      print('Nothing to do.', file=stderr)
       return 0
 
     name = strftime('%Y%m%d_%H%M%S')
@@ -341,7 +369,7 @@ class Store:
             if not header:
               break
             if len(header) != HEADER_SIZE:
-              stderr.write(f'Error: incomplete header at {file}:{pos}\n')
+              print(f'Error: incomplete header at {file}:{pos}', file=stderr)
               break
             crc, ts, vt, ksz, vsz = self.deserialize_header(header)
 
@@ -350,7 +378,7 @@ class Store:
             
             # check CRC validity
             if not self.check_crc(crc, ts, vt, ksz, vsz, key, val):
-              stderr.write('Error: bad CRC at {file}:{pos}\n')
+              print('Error: bad CRC at {file}:{pos}', file=stderr)
               warnings += 1
               break
 
@@ -360,7 +388,7 @@ class Store:
 
             pos = f.tell()
           except Exception as e:
-            stderr.write(f'Error processing record at {file}:{pos}: {e}\n')
+            print(f'Error processing record at {file}:{pos}: {e}', file=stderr)
             warnings += 1
             break
 
@@ -398,16 +426,20 @@ class Store:
         if os.path.exists(hint_file):
           os.remove(hint_file)
       except Exception as e:
-        stderr.write(f'Error removing file {file}: {e}\n')
+        print(f'Error removing file {file}: {e}', file=stderr)
         return 1
 
-    stderr.write('Success!.\n')
+    print('Success!.', file=stderr)
     return warnings
 
   def create_index(self, key: str) -> int:
-    index = key.split(':')[0]
+    ''' Create an index. '''
+    try:
+      index, _ = key.split(':')
+    except ValueError:
+      index = None
     if not index or index.isdigit():
-      stderr.write(f'Error: bad key name: `{index}`\n')
+      print(f'Error: invalid key name: `{index}`', file=stderr)
       return 1
     self.indexes.add(index)
     return 0
@@ -415,15 +447,22 @@ class Store:
   def delete_index(self, key: str) -> int:
     if self.has_index(key):
       if self.has_index_refs(key):
-        stderr.write(f'Error: `{key}` has references.\n')
+        print(f'Error: `{key}` has references.', file=stderr)
         return 1
       try:
         index = key.split(':')[0]
         del self.indexes[index]
       except KeyError:
-        stderr.write(f'Error: {key.split()}index not found.\n')
+        print(f'Error: {key.split()}index not found.', file=stderr)
+
+  def get_index_keys(self, index: str) -> list:
+    ''' Get all keys for a given index '''
+    if self.is_index(index):
+      return [k for k in self.keystore.keys() if k.startswith(index + ':')]
+    return []
 
   def create_ref(self, key: str, ref: str) -> int:
+    ''' Add a reference for a given key '''
     refs = self.refs.get(key)
     if refs is None and self.has_index(key):
       self.refs[key] = set([ref])
@@ -433,33 +472,102 @@ class Store:
       return 0
     return 1
 
-  def get_refs(self, key: str, ref: str) -> list:
-    references = self.refs.get(key)
-    if references:
-      refs = [r for r in references if ref in r]
-    else:
-      refs = []
-    if self.is_index(ref):
-      if references and not refs:
-        try:
-          refs = [ r for k in references for r in self.refs[k] if r.startswith(ref + ':') and self.has_refs(k) ]
-        except KeyError:
-          return refs
-      else:
-        try:
-          keys = [ r for k, v in self.refs.items() for r in v if k.startswith(ref + ':') and key in self.refs[r]]
-          for k in keys:
-            refs.append(self.read_hash(k)[ref])
-        except KeyError:
-          return refs
-    return refs
+
+  def get_refs(self, key: str, index: str) -> list[str]:
+    '''
+    Return a list of keys of type `index` that are reachable
+    from `key` through any number of references
+    '''
+    # Validate inputs
+    if not self.has_index(key) or not self.is_index(index):
+      return []
+
+    # Initialize BFS
+    queue = deque([key])  # Keys to explore
+    visited = {key}  # Track visited keys to avoid cycles
+    refs = []  # Collect keys of type `index`
+
+    while queue:
+      current_key = queue.popleft()
+
+      # Get neighbors (keys referenced by current_key)
+      neighbors = self.refs.get(current_key, set())
+
+      for neighbor in neighbors:
+        # Collect neighbor if it matches the desired type
+        if neighbor.startswith(index + ':'):
+          refs.append(neighbor)
+
+            # Explore unvisited neighbors
+        if neighbor not in visited:
+          visited.add(neighbor)
+          queue.append(neighbor)
+
+    # Remove duplicates while preserving order
+    forward_refs = list(dict.fromkeys(refs))
+    reverse_refs = [
+        k for k, refs in self.refs.items()
+        if key in refs and k.startswith(index + ':')
+    ]
+    return sorted(set(forward_refs + reverse_refs))
 
   def get_ref_key(self, ref: str) -> str:
-    ''' get the key that ref references to... '''
+    ''' Get the key that ref references to... '''
     for key, values in self.refs.items():
       if ref in values:
         return key
     return None
+
+  def are_related(self, k1: str, k2: str) -> bool:
+    ''' Return True if k1 and k2 are direcly related '''
+    return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
+
+
+  def find_path(self, k1: str, k2: str) -> list[str]:
+    '''
+    Returns the keys that form a path from k1 to k2 (or k2 to k1), if any.
+    Considers forward references from self.refs and reverse references.
+    '''
+    # If at least one key does not exist, no path exists
+    if not self.has_index(k1) or not self.has_index(k2):
+      return []
+
+    # If keys are the same, no intermediate path exists
+    if k1 == k2:
+      return []
+
+    # Build reverse references (keys that reference the current key)
+    reverse_refs = {}
+    for key, refs in self.refs.items():
+      for ref in refs:
+        if ref not in reverse_refs:
+          reverse_refs[ref] = set()
+        reverse_refs[ref].add(key)
+
+    # Initialize BFS
+    queue = deque([(k1, [k1])])  # (current_key, path_so_far)
+    visited = {k1}  # Track visited keys to avoid cycles
+
+    while queue:
+      current_key, path = queue.popleft()
+
+        # Get neighbors: forward refs from self.refs, reverse refs from reverse_refs
+      forward_neighbors = self.refs.get(current_key, set())
+      reverse_neighbors = reverse_refs.get(current_key, set())
+      neighbors = forward_neighbors | reverse_neighbors
+
+      for neighbor in neighbors:
+        if neighbor not in visited:
+          visited.add(neighbor)
+          new_path = path + [neighbor]
+          queue.append((neighbor, new_path))
+
+          if neighbor == k2:
+            # Return the path, excluding start and end keys
+            return new_path[1:-1]
+
+    # No path found
+    return []
 
   def delete_ref(self, key: str, ref: str) -> int:
     refs = self.refs.get(key)
@@ -467,7 +575,7 @@ class Store:
       return 1
     self.refs[key].discard(ref)
     if len(self.refs[key]) == 0:
-      del self.refs[src]
+      del self.refs[key]
 
   def has_index(self, key: str) -> bool:
     index = key.split(':')[0]
@@ -488,11 +596,12 @@ class Store:
   def is_ref(self, ref: str, key: str=None) -> bool:
     if key:
       refs = self.refs.get(key)
+      return ref in refs if refs else False
     else:
       for refs in self.refs.values():
         if ref in refs:
           return True
-    return False if refs is None else ref in refs
+    return False
 
   @property
   def _max_id(self) -> int:
@@ -516,22 +625,43 @@ class MicroDB:
         'GET' : self.get,
         'HDEL': self.hdel,
         'HGET': self.hget,
-        'HKEYS': self.hkeys,
+        'HKEY': self.hkey,
         'HSET': self.hset,
-        'KEYS': self.keys,
+        'KEY': self.keys,
         'MDEL': self.mdel,
         'MGET': self.mget,
         'MSET': self.mset,
         'SET' : self.set,
     }
 
+    self.__op = {
+        '=': 'equal',
+        '!=': 'not_equal',
+        '>': 'greater_than',
+        '>=': 'greater_than_or_equal',
+        '<': 'less_than',
+        '<=': 'less_than_or_equal',
+        '^': 'starts_with',
+        '!^': 'not_starts_with',
+        '$': 'ends_with',
+        '!$': 'not_ends_with',
+        '**': 'contains',
+        '~': 'like',
+    }
+
+    self.__prefix = {
+        '++': 'asc_order',
+        '--': 'desc_order',
+        '@@': 'random_order',
+    }
+
   def set(self, key: str, val: str) -> int:
-    ''' set a single value '''
+    ''' Set a single value '''
     data, vsz, ts = self.store.serialize(key, val)
     return self.store.write(data, key, vsz, ts)
 
   def get(self, key: str) -> int:
-    ''' get a value '''
+    ''' Get a value '''
     val = self.store.read(key)
     if val is not None:
       stdout.write(f'{val}\n')
@@ -539,8 +669,15 @@ class MicroDB:
     return 1
 
   def keys(self) -> int:
+    ''' Print existing keys '''
+    found = 0
     for k in self.store.keystore.keys():
-      print(k)
+      if not self.store.has_index(k):
+        found += 1
+        print(k)
+    if found == 0:
+      print(f'KEYS: No key found.', file=stderr)
+      return 1
     return 0
 
   def delete(self, key: str) -> int:
@@ -553,7 +690,7 @@ class MicroDB:
     items are key/value pairs
     '''
     if len(items) % 2 != 0:
-      stderr.write('MSET: invalid number of arguments.\n')
+      print('MSET: invalid number of arguments.', file=stderr)
       return 1
     err = 0
     for key, val in zip(items[::2], items[1::2]):
@@ -573,170 +710,263 @@ class MicroDB:
     for key in keys:
       err += self.delete(key)
       if err:
-        stderr.write(f'MDEL: key `{key}` not found.\n')
+        print(f'MDEL: key `{key}` not found.', file=stderr)
     return err
 
-  def hset(self, key: str, *members: str) -> int:
+  def hset(self, key_or_index: str, *members: str) -> int:
     ''' 
     set multiple members to a hash
     (a member is a key/value pair)
     '''
     if len(members) % 2 != 0:
-      stderr.write(f'HSET: members mismatch. (missing key?)\n')
+      print(f'HSET: members mismatch. (missing key or value?)', file=stderr)
       return 1
 
-    kv = self.store.read_hash(key)
-    refs: list(str) = []
-    if kv is None:
-      kv = {}
-    for k, v in zip(members[::2], members[1::2]):
-      if ':' in v: #ref
-        refs.append(v)
-      kv[k] = v
+    if self.store.is_index(key_or_index):
+      keys = self.store.get_index_keys(key_or_index)
+    else:
+      keys = [key_or_index]
 
-    data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
-    return self.store.write(data, key, vsz, ts, refs)
+    if not keys:
+      print(f'HSET: `{key_or_index}` no such key or index.', file=stderr)
+      return 1
 
-  def hquery(self, key: str, kv: dict[str,str], expr: str) -> list:
-    q = expr.split(':')
-    if not q or len(q) < 1:
-      stderr.write(f'HGET: invalid expression `{expr}`')
-      return
-    if len(q) == 1 or (q[1] != '*' and not q[1:]):
-      stderr.write(f'HGET: expression `{expr}` requires at least one column or `*`.')
-      return
+    for key in keys:
+      kv = self.store.read_hash(key)
+      refs: list(str) = []
+      # process fields and values
+      for k, v in zip(members[::2], members[1::2]):
+        if ':' in v: #ref
+          refs.append(v)
+        kv[k] = v
 
-    refs = self.store.get_refs(key, q[0])
+      data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
+      if self.store.write(data, key, vsz, ts, refs) != 0:
+        return 1
+
+  def parse_expr(self, expr: str) -> list[dict[str, list[list[str]]]]:
+    parts = expr.split(':')
+    if parts[-1] == '*' and len(parts) != 2:
+      print(f'Error: invalid `*` syntax in `{expr}`.')
+      return None
+    if parts[-1] == '*' and len(parts) == 2:
+      return [{'index': parts[0], 'fields': ['*']}]
+    if len(parts) == 1:
+      return [{'index': None, 'fields': [parts[0]]}]
+    result = []
+    current_index = None
+    current_fields = []
+    for part in parts:
+      if self.store.is_index(part):
+        if current_fields:
+          result.append({'index': current_index, 'fields': current_fields})
+          current_fields = []
+        current_index = part
+      else:
+        current_fields.append(part)
+    if current_fields:
+      result.append({'index': current_index, 'fields': current_fields})
+    return result
+
+  def hget(self, index_or_key: str, *fields: str) -> int:
+    if not (self.store.is_index(index_or_key) or self.store.has_index(index_or_key)):
+      print(f'HGET: Error: invalid index or key `{index_or_key}`.')
+      return 1
+
+    # no fields case
+    if not fields:
+      if self.store.is_index(index_or_key):
+        start_keys = sorted(self.store.get_index_keys(index_or_key))
+        if not start_keys:
+          print(f'HGET: No keys found for index `{index_or_key}`.', file=stderr)
+          return 1
+      elif index_or_key in self.store.keystore:
+        start_keys = [index_or_key]
+      else:
+        print(f'HGET: Error: `{index_or_key}`, no such key or index.', file=stderr)
+        return 1
+
+      all_fields = set()
+      for key in start_keys:
+        data = self.store.read_hash(key)
+        all_fields.update(data.keys())
+      all_fields = sorted(all_fields)
+
+      rows = []
+      for key in start_keys:
+        data = self.store.read_hash(key)
+        row = [key] + [str(f) + '=' + str(data.get(f, '???')) for f in all_fields]
+        if any(row[1:]):
+          rows.append(row)
+      if rows:
+        for row in rows:
+          print(' | '.join(row))
+        return 0
+      print(f'HGET: No data for `{index_or_key}`.', file=stderr)
+      return 1
+
+    parsed_fields = []
+    for field in fields:
+      parsed = self.parse_expr(field)
+      if None is parsed:
+        return 1
+      parsed_fields.extend(parsed)
+
+    # what indexes are involved in the query?
+    used_indexes = {index_or_key} | {pf['index'] for pf in parsed_fields if pf['index']}
+
+    if self.store.is_index(index_or_key):
+      start_keys = self.store.get_index_keys(index_or_key)
+    else:
+      start_keys = [index_or_key]
+
+    if not start_keys:
+      print(f'HGET: No keys found for index `{index_or_key}`.', file=stderr)
+      return 1
+
     rows = []
+    for start_key in sorted(start_keys):
+      # collect related keys for each index
+      key_map = {
+          idx: sorted(self.store.get_refs(start_key, idx)) for idx in used_indexes
+          if self.store.is_index(idx)
+      }
 
-    for r in sorted(refs):
-      subkv = self.store.read_hash(r)
-      if q[1] == '*':
-        row = [v for v in subkv.values()]
-        rows.append(row)
+      # check relational integrity
+      for pf in parsed_fields:
+        if pf['index'] and not key_map.get(pf['index']):
+          # ignore when index is used in field expressions...
+          # i.e. `HGET artist artist:name`
+          if not start_key.startswith(pf['index'] + ':'):
+            print(f'HGET: Warning: no `{pf["index"]}` key found for `{start_key}`.',
+                  file=stderr
+            )
+
+      # find the deepest index for row iteration
+      max_depth = max(
+          (len(f['fields']) if f['index'] else 0 for f in parsed_fields), default=0
+      )
+
+      deepest_index = None
+      for pf in reversed(parsed_fields):
+        if pf['index'] and len(pf['fields']) == max_depth:
+          deepest_index = pf['index']
+          break
+
+      if deepest_index:
+        deep_keys = key_map.get(deepest_index, [])
+        for deep_key in deep_keys:
+          row = []
+          # reconstruct the path to deep_key using parent_map
+          path = [start_key] + self.store.find_path(start_key, deep_key) + [deep_key]
+
+          # buld row using the path
+          for pf in parsed_fields:
+            index, fields = (pf['index'], pf['fields'])
+            if index is None:
+              # simple field from start_key
+              data = self.store.read_hash(start_key)
+              for field in fields:
+                row.append(str(data.get(field, '???')))
+            else:
+              # find the related key for this index in the path
+              related_key = None
+              for k in path:
+                if k.startswith(index + ':'):
+                  related_key = k
+                  break
+              if not related_key:
+                # not found in the current path, try from deep_key:
+                for target_key in key_map.get(index, []) or self.store.get_index_keys(index) or []:
+                  if self.store.are_related(deep_key, target_key):
+                    related_key = target_key
+                    break
+              # still not found...
+              if not related_key:
+                row.append('???')
+                continue
+              
+              data = self.store.read_hash(related_key)
+              if fields == ['*']:
+                values = [str(data.get(k, '???')) for k in sorted(data.keys())]
+                row.extend(values)
+              else:
+                for field in fields:
+                  row.append(str(data.get(field, '???')))
+
+          if row and any(v for v in row):
+            rows.append(row)
       else:
         row = []
-        for col in q[1:]:
-          v = subkv.get(col)
-          if v is None:
-            stderr.write(f'HGET: invalid key `{col}` in expression: `{expr}`\n')
-            return
-          row.append(v)
-        rows.append(row)
+        for pf in parsed_fields:
+          data = self.store.read_hash(start_key)
+          for field in pf['fields']:
+            row.append(str(data.get(field, '???')))
+        if row and any(v for v in row):
+          rows.append(row)
+
     if not rows:
-      v = kv.get(q[0])
-      row = []
-      if v is None:
-        stderr.write(f'HGET: invalid key `{q[0]}` in expression: `{expr}` (missing ref?)\n')
-        return
-      subkv = self.store.read_hash(v)
-      if q[1] == '*':
-        row = [v for v in subkv.values()]
-        rows.append(row)
-      else:
-        for col in q[1:]:
-          v = subkv.get(col)
-          if v is None:
-            stderr.write(f'HGET: invalid key `{col}` in expression: `{expr}`\n')
-            return
-          row.append(v)
-        rows.append(row)
-    return rows
-
-  def hget(self, key: str, *fields: str) -> int:
-    ''' get fields from a hash '''
-
-    # if key is an index, get all the keys for
-    # this index
-    if self.store.is_index(key):
-      keys = [ k for k in self.store.keystore.keys() if k.startswith(key + ':') ]
-      for k in keys:
-        if self.hget(k, *fields) != 0:
-          return 1
-      return 0
-
-    kv = self.store.read_hash(key)
-
-    if kv is None:
-      stderr.write(f'HGET: key `{key}` not found.\n')
-      return 1
-    if not fields:
-      for k, v in kv.items():
-        print(f'{k}: {v}')
-      return 0
-
-    err = 0
-    rows = []
-
-    for field in fields:
-      if ':' in field:
-        data = self.hquery(key, kv, field)
-        if not data:
-          stderr.write(f'HGET: error querying `{field}` for `{key}`.\n')
-          return 1
-        if len(data) == 1:
-          if rows:
-            for row in rows:
-              row += data[0]
-          else:
-            rows = data
-        elif len(data) >= len(rows) and rows:
-          for i, row in enumerate(data):
-            data[i] = rows[0] + row
-          rows = data
-        else:
-          rows += data
-      else:
-        v = kv.get(field)
-        if v is None:
-          stderr.write(f'HGET: field `{field}` not found.\n')
-          return 1
-        if rows:
-          for row in rows:
-            row += [v]
-        else:
-          rows = [[v]]
-
-    if rows:
-      for row in rows:
-        print('|'.join(row))
-    else:
+      print(f'HGET: No data for `{index_or_key}.`', file=stderr)
       return 1
 
-    return 0
+    for row in rows:
+      print(' | '.join(str(v) for v in row if row))
 
-  def hkeys(self, key: str) -> int:
-    ''' get all fields for the given key '''
-    kv = self.store.read_hash(key)
-    if kv is None:
-      return 1
-    for k in kv.keys():
-      print(k)
     return 0
 
   def hdel(self, key: str, *fields: str) -> int:
-    ''' delete a hash or fields in a hash '''
+    ''' Delete a hash or fields in a hash '''
     if not fields:
       # delete hash
       return self.delete(key)
 
     kv = self.store.read_hash(key)
-    if kv is None:
+    if not kv:
+      print(f'HDEL: `{key}`, no such key.', file=stderr)
       return 1
 
     err = 0
     for field in fields:
       try:
-        v = kv.pop(key)
+        v = kv.pop(field)
         if self.store.is_ref(v, key):
           self.store.delete_ref(key, v)
       except KeyError:
-        stderr.write(f'HDEL: {key}: unknown field: {field}\n')
+        print(f'HDEL: `{key}`: unknown field: {field}', file=stderr)
         err += 1
 
     data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
     err += 0 if self.store.write(data, key, vsz, ts) > 0 else 1
     return err
+
+  def hkey(self, key: str=None) -> int:
+    ''' Get all fields for the given key/index or all indexes if none is provided '''
+    if key:
+      if self.store.is_index(key):
+        keys = sorted([k for k in self.store.keystore if k.startswith(key + ':')])
+      else:
+        keys = [key]
+      if not keys:
+        if key in self.store.keystore:
+          print(f'HKEYS: Error: `{key}` is not a hash.', file=stderr)
+        else:
+          print(f'HKEYS: Error: `{key}` key not found.', file=stderr)
+        return 1
+      for k in keys:
+        kv = self.store.read_hash(k)
+        if not kv:
+          print(f'HKEY: `{k}` no such key or index.', file=stderr)
+          return 1
+        print(f'{k}: {" | ".join(sorted(kv.keys()))}')
+      return 0
+    err = 0
+    for k in sorted(self.store.keystore.keys()):
+      if not self.store.has_index(k):
+        continue
+        err += self.hkey(k)
+      kv = self.store.read_hash(k)
+      print(f'{k}: {" | ".join(sorted(kv.keys()))}')
+    return 0 if err == 0 else 1
 
   def flush(self):
     return self.store.flush()
