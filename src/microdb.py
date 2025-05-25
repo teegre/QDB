@@ -116,6 +116,7 @@ class Store:
             self._file_pos,
             ts
         )
+        # TODO: Check hkey syntax → KEYNAME:ID
         if ':' in key:
           if self.create_index(key) != 0:
             return 1
@@ -204,7 +205,6 @@ class Store:
     if data:
       return data.get(field)
     return None
-
 
   def delete(self, key: str) -> int:
     '''
@@ -298,14 +298,14 @@ class Store:
             if entry is None or ts > entry.timestamp:
               self.keystore[key] = KeyStoreEntry(file, vsz, pos, ts)
 
-          if ':' in key:
-            self.create_index(key)
+            if ':' in key:
+              self.create_index(key)
 
-          if vt.decode() == '+': # hash
-            kv = json.loads(val.decode())
-            values = [v for v in kv.values() if ':' in v]
-            for value in values:
-              self.create_ref(value, key)
+            if vt.decode() == '+': # hash
+              kv = json.loads(val.decode())
+              values = [v for v in kv.values() if ':' in v]
+              for value in values:
+                self.create_ref(value, key)
           pos = f.tell()
         except Exception as e:
           print(f'Error processing record at {file}:{pos}: {e}', file=stderr)
@@ -652,7 +652,7 @@ class MicroDB:
     self.__prefix = {
         '++': 'asc_order',
         '--': 'desc_order',
-        '@@': 'random_order',
+        '??': 'random_order',
     }
 
   def set(self, key: str, val: str) -> int:
@@ -736,13 +736,14 @@ class MicroDB:
       refs: list(str) = []
       # process fields and values
       for k, v in zip(members[::2], members[1::2]):
-        if ':' in v: #ref
+        if v in self.store.keystore: # ref
           refs.append(v)
         kv[k] = v
 
       data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
       if self.store.write(data, key, vsz, ts, refs) != 0:
         return 1
+    return 0
 
   def parse_expr(self, expr: str) -> list[dict[str, list[list[str]]]]:
     parts = expr.split(':')
