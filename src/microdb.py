@@ -32,6 +32,16 @@ from zlib import crc32
 HEADER_SIZE = 4 + 8 + 1 + 4 + 4
 HINT_HEADER_SIZE = HEADER_SIZE - 1
 
+# key: a key in simple key/value pair
+# hash: a multiple field/value pair
+# hkey : a key in a key/hash pair
+# field : a key in a hash
+# index: kind of like a table
+# reference: a key used as a value in a field
+
+class MuDBError(Exception):
+  pass
+
 @dataclass
 class KeyStoreEntry:
   filename: str
@@ -107,24 +117,30 @@ class Store:
     if not self.file:
       self.open()
     try:
-      self._file_pos = self.file.tell()
+      self.file.seek(self._file_pos)
       bytes_written = self.file.write(data)
-      if bytes_written > 0:
-        self.keystore[key] = KeyStoreEntry(
-            self.active_file,
-            vsz,
-            self._file_pos,
-            ts
-        )
-        # TODO: Check hkey syntax → KEYNAME:ID
-        if ':' in key:
-          if self.create_index(key) != 0:
-            return 1
-        for ref in refs :
-          self.create_ref(ref, key)
+      if bytes_written != len(data):
+        print(f'Error writing `{key}`: imcomplete write: {bytes_written}/{len(data)} bytes.', file=stderr)
+        return 1
 
-      return 0 if bytes_written > 0 else 1
-    except:
+      self.file.flush()
+
+      self.keystore[key] = KeyStoreEntry(
+          self.active_file,
+          vsz,
+          self._file_pos,
+          ts
+      )
+      self._file_pos = self.file.tell()
+      # TODO: Check hkey syntax → KEYNAME:ID
+      if ':' in key:
+        if self.create_index(key) != 0:
+          return 1
+      for ref in refs :
+        self.create_ref(ref, key)
+
+      return 0
+    except Exception as e:
       print(f'Error writing key: `{key}`.', file=stderr)
       return 1
 
@@ -177,7 +193,11 @@ class Store:
       if fn == self.active_file and self.file is not None:
         f = self.file
       else:
-        f = open(fn, 'rb')
+        try:
+          f = open(fn, 'rb')
+        except FileNotFoundError:
+          print(f'Error: data file not found for `{key}` key.', file=stderr)
+          return {}
 
       f.seek(pos)
       header = f.read(HEADER_SIZE)
@@ -203,8 +223,8 @@ class Store:
   def read_hash_field(self, key: str, field: str) -> str:
     data = self.read_hash(key)
     if data:
-      return data.get(field)
-    return None
+      return data.get(field, '?NOFIELD?')
+    return '?NOKEY?'
 
   def delete(self, key: str) -> int:
     '''
@@ -231,13 +251,14 @@ class Store:
       self.write(data, key, vsz, ts)
       self.keystore.pop(key, None)
       if self.is_ref(key):
-        ref = key
         refkey = self.get_ref_key(ref)
-        self.delete_ref(refkey, ref)
+        self.delete_ref(ref=key, key=refkey)
+      if self.has_index(key):
+        self.delete_index(key)
       return 0
     return 1
 
-  def dump(self) -> str:
+  def dump(self) -> None:
     ''' Dump current database in json format '''
     for key in self.keystore.keys():
       if self.has_index(key): # hash
@@ -245,6 +266,12 @@ class Store:
       else:
         data = {key: self.read(key) }
       print(json.dumps(data))
+
+  def keystore_dump(self) -> None:
+    ''' Dump keystore content '''
+    for k, v in self.keystore.items():
+      print(f'{k}: {v}')
+
 
   def reconstruct(self) -> int:
     ''' Reconstruct keystore from data files '''
@@ -446,32 +473,47 @@ class Store:
 
   def delete_index(self, key: str) -> int:
     if self.has_index(key):
-      if self.has_index_refs(key):
+      if self.has_refs(key):
         print(f'Error: `{key}` has references.', file=stderr)
         return 1
       try:
         index = key.split(':')[0]
-        del self.indexes[index]
+        self.indexes.discard(index)
       except KeyError:
-        print(f'Error: {key.split()}index not found.', file=stderr)
+        print(f'Error: {index} index not found.', file=stderr)
+        return 1
+      return 0
+    return 1
+
+  def get_index(self, key: str) -> str | None:
+    ''' Return the index of a given key. '''
+    if not key in self.keystore:
+      return None
+    index = key.split(':')[0]
+    if self.is_index(index):
+      return index
+    return None
+
 
   def get_index_keys(self, index: str) -> list:
-    ''' Get all keys for a given index '''
+    ''' Get all the keys for a given index. '''
     if self.is_index(index):
       return [k for k in self.keystore.keys() if k.startswith(index + ':')]
     return []
 
-  def create_ref(self, key: str, ref: str) -> int:
+  def create_ref(self, ref: str, key: str) -> int:
     ''' Add a reference for a given key '''
-    refs = self.refs.get(key)
-    if refs is None and self.has_index(key):
-      self.refs[key] = set([ref])
+    if key == ref:
+      print(f'Warning: `{key}` references itself! (skipped).', file=stderr)
+      return 1
+    refs = self.refs.get(ref)
+    if refs is None and self.has_index(ref):
+      self.refs[ref] = set([key])
       return 0
-    if self.has_index(key):
-      self.refs[key].add(ref)
+    if self.has_index(ref):
+      self.refs[ref].add(key)
       return 0
     return 1
-
 
   def get_refs(self, key: str, index: str) -> list[str]:
     '''
@@ -519,9 +561,8 @@ class Store:
     return None
 
   def are_related(self, k1: str, k2: str) -> bool:
-    ''' Return True if k1 and k2 are direcly related '''
+    ''' Return True if k1 and k2 are directly related '''
     return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
-
 
   def find_path(self, k1: str, k2: str) -> list[str]:
     '''
@@ -569,27 +610,56 @@ class Store:
     # No path found
     return []
 
-  def delete_ref(self, key: str, ref: str) -> int:
-    refs = self.refs.get(key)
+  def delete_ref(self, ref: str, key: str) -> int:
+    refs = self.refs.get(ref)
     if refs is None:
       return 1
-    self.refs[key].discard(ref)
-    if len(self.refs[key]) == 0:
-      del self.refs[key]
+    self.refs[ref].discard(key)
+    if len(self.refs[ref]) == 0:
+      del self.refs[ref]
+
+  def get_most_recent_hkey_from_index(self, index: str) -> str:
+    '''
+    Get the most recent hkey containing the most data
+    from a given index
+    '''
+    hkeys = self.get_index_keys(index)
+    if not hkeys:
+      return None
+    ts = 0
+    vsz = 0
+    hkey = None
+    for hk in hkeys:
+       ks_entry: KeyStoreEntry = self.keystore.get(hk)
+       if ks_entry.timestamp > ts and ks_entry.value_size > vsz:
+         ts = ks_entry.timestamp
+         vsz = ks_entry.value_size
+         hkey = hk
+    return hkey
+
+  def get_fields_from_index(self, index: str) -> list[str]:
+    ''' Get fields of a given index. '''
+    hkey = self.get_most_recent_hkey_from_index(index)
+    if not hkey:
+      return []
+    return list(self.read_hash(hkey).keys())
 
   def has_index(self, key: str) -> bool:
+    ''' Return True if a given key has an index, False otherwise. '''
     index = key.split(':')[0]
     return index in self.indexes
 
-  def is_index(self, key: str) -> bool:
-    return key in self.indexes
+  def is_index(self, index: str) -> bool:
+    return index in self.indexes
 
   def has_refs(self, key: str) -> bool:
+    ''' Return True if a given key has references. '''
     return key in self.refs
 
-  def has_index_refs(self, key: str) -> bool:
-    for ref in self.refs.keys():
-      if ref in key:
+  def is_key_refs(self, key: str) -> bool:
+    ''' Return True if a given key is referenced at least once. '''
+    for refs in self.refs.values():
+      if key in refs:
         return True
     return False
 
@@ -646,7 +716,6 @@ class MicroDB:
         '$': 'ends_with',
         '!$': 'not_ends_with',
         '**': 'contains',
-        '~': 'like',
     }
 
     self.__prefix = {
@@ -713,37 +782,60 @@ class MicroDB:
         print(f'MDEL: key `{key}` not found.', file=stderr)
     return err
 
-  def hset(self, key_or_index: str, *members: str) -> int:
+  def hset(self, hkey_or_index: str, *members: str) -> int:
     ''' 
-    set multiple members to a hash
-    (a member is a key/value pair)
+    Create/update multiple members to a hash
+    (a member is a field/value pair)
     '''
     if len(members) % 2 != 0:
-      print(f'HSET: members mismatch. (missing key or value?)', file=stderr)
+      print(f'HSET: members mismatch. (missing field or value?)', file=stderr)
       return 1
 
-    if self.store.is_index(key_or_index):
-      keys = self.store.get_index_keys(key_or_index)
+    if self.store.is_index(hkey_or_index):
+      keys = sorted(self.store.get_index_keys(hkey_or_index))
     else:
-      keys = [key_or_index]
+      keys = [hkey_or_index]
 
     if not keys:
-      print(f'HSET: `{key_or_index}` no such key or index.', file=stderr)
+      print(f'HSET: `{hkey_or_index}` no such key or index.', file=stderr)
       return 1
 
-    for key in keys:
-      kv = self.store.read_hash(key)
-      refs: list(str) = []
-      # process fields and values
-      for k, v in zip(members[::2], members[1::2]):
-        if v in self.store.keystore: # ref
-          refs.append(v)
-        kv[k] = v
+    err = 0
 
+    for key in keys:
+      # Original hash
+      kv = self.store.read_hash(key)
+      subkv = {k: v for k, v in zip(members[::2], members[1::2])}
+      refs: list(str) = []
+
+      # Get fields for index or new fields
+      if self.store.has_index(key):
+        fields = self.store.get_fields_from_index(key.split(':')[0])
+      else:
+        fields = list(subkv.keys())
+
+      # Update fields
+      for field in fields:
+        v = subkv.get(field)
+        if field in subkv:
+          if self.store.has_index(v): # ref
+            self.store.delete_ref(kv.get(field), key)
+            refs.append(v)
+          kv[field] = v
+          subkv.pop(field, None)
+
+      for k, v in subkv.items():
+        kv[k] = v
+        if v in self.store.keystore:
+          refs.append(v)
+
+      # Serialize and write on disk
       data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
       if self.store.write(data, key, vsz, ts, refs) != 0:
-        return 1
-    return 0
+        print(f'HSET: Error: failed to update `{key}` hkey.', file=stderr)
+        err += 1
+
+    return err
 
   def parse_expr(self, expr: str) -> list[dict[str, list[list[str]]]]:
     parts = expr.split(':')
@@ -771,7 +863,7 @@ class MicroDB:
 
   def hget(self, index_or_key: str, *fields: str) -> int:
     if not (self.store.is_index(index_or_key) or self.store.has_index(index_or_key)):
-      print(f'HGET: Error: invalid index or key `{index_or_key}`.')
+      print(f'HGET: Error: `{index_or_key}`, no such index or key.')
       return 1
 
     # no fields case
@@ -787,16 +879,17 @@ class MicroDB:
         print(f'HGET: Error: `{index_or_key}`, no such key or index.', file=stderr)
         return 1
 
-      all_fields = set()
-      for key in start_keys:
-        data = self.store.read_hash(key)
-        all_fields.update(data.keys())
-      all_fields = sorted(all_fields)
-
       rows = []
       for key in start_keys:
+        row = []
         data = self.store.read_hash(key)
-        row = [key] + [str(f) + '=' + str(data.get(f, '???')) for f in all_fields]
+        if self.store.is_index(index_or_key):
+          index_fields = self.store.get_fields_from_index(index_or_key)
+        else:
+          index = self.store.get_index(index_or_key)
+          index_fields = self.store.get_fields_from_index(index)
+        for field in index_fields:
+          row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
         if any(row[1:]):
           rows.append(row)
       if rows:
@@ -835,13 +928,14 @@ class MicroDB:
 
       # check relational integrity
       for pf in parsed_fields:
-        if pf['index'] and not key_map.get(pf['index']):
-          # ignore when index is used in field expressions...
+        if pf['index'] and not key_map.get(pf['index']) and len(parsed_fields) == 1:
+          # ignore when 'index_or_key' is used in field expressions...
           # i.e. `HGET artist artist:name`
           if not start_key.startswith(pf['index'] + ':'):
-            print(f'HGET: Warning: no `{pf["index"]}` key found for `{start_key}`.',
+            print(f'HGET: Error: no `{pf["index"]}` key found for `{start_key}`.',
                   file=stderr
             )
+            return 1
 
       # find the deepest index for row iteration
       max_depth = max(
@@ -858,17 +952,20 @@ class MicroDB:
         deep_keys = key_map.get(deepest_index, [])
         for deep_key in deep_keys:
           row = []
-          # reconstruct the path to deep_key using parent_map
+          # Reconstruct the path to deep_key
           path = [start_key] + self.store.find_path(start_key, deep_key) + [deep_key]
 
-          # buld row using the path
+          # Build row using the path
           for pf in parsed_fields:
             index, fields = (pf['index'], pf['fields'])
             if index is None:
-              # simple field from start_key
+              # Simple field from start_key
               data = self.store.read_hash(start_key)
               for field in fields:
-                row.append(str(data.get(field, '???')))
+                if field not in data:
+                  print(f'HGET: ERROR: `{field}`,  no such field in `{start_key}`.', file=stderr)
+                  return 1
+                row.append(str(data.get(field)))
             else:
               # find the related key for this index in the path
               related_key = None
@@ -884,16 +981,20 @@ class MicroDB:
                     break
               # still not found...
               if not related_key:
-                row.append('???')
+                row.append(f'{index}=?UNRELATED?')
                 continue
               
               data = self.store.read_hash(related_key)
               if fields == ['*']:
-                values = [str(data.get(k, '???')) for k in sorted(data.keys())]
-                row.extend(values)
+                index_fields = self.store.get_fields_from_index(pf['index'])
+                for field in index_fields:
+                  row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
               else:
                 for field in fields:
-                  row.append(str(data.get(field, '???')))
+                  if field not in data:
+                    print(f'HGET: Error: `{field}` no such field in `{pf['index']}`.', file=stderr)
+                    # return 1
+                  row.append(str(data.get(field, f'{field}=?NOFIELD?')))
 
           if row and any(v for v in row):
             rows.append(row)
@@ -902,7 +1003,10 @@ class MicroDB:
         for pf in parsed_fields:
           data = self.store.read_hash(start_key)
           for field in pf['fields']:
-            row.append(str(data.get(field, '???')))
+            if not field in data:
+              print(f'HGET: Error: `{field}` no such field in `{index_or_key}`', file=stderr)
+              return 1
+            row.append(str(data.get(field, f'{field}=?MISS?')))
         if row and any(v for v in row):
           rows.append(row)
 
@@ -915,29 +1019,44 @@ class MicroDB:
 
     return 0
 
-  def hdel(self, key: str, *fields: str) -> int:
-    ''' Delete a hash or fields in a hash '''
-    if not fields:
-      # delete hash
-      return self.delete(key)
+  def hdel(self, hkey_or_index: str, *fields: str) -> int:
+    ''' Delete a hash or an index or fields in a hash or an index '''
 
-    kv = self.store.read_hash(key)
-    if not kv:
-      print(f'HDEL: `{key}`, no such key.', file=stderr)
-      return 1
+    if self.store.is_index(hkey_or_index):
+      keys = self.store.get_index_keys(hkey_or_index)
+      is_index = True
+    else:
+      keys = [hkey_or_index]
+      is_index = False
 
     err = 0
-    for field in fields:
-      try:
-        v = kv.pop(field)
-        if self.store.is_ref(v, key):
-          self.store.delete_ref(key, v)
-      except KeyError:
-        print(f'HDEL: `{key}`: unknown field: {field}', file=stderr)
-        err += 1
 
-    data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
-    err += 0 if self.store.write(data, key, vsz, ts) > 0 else 1
+    for key  in keys:
+      if key in self.store.refs and not fields:
+        print(f'HDEL: Error: `{key}` has references (skipped)', file=stderr)
+        err += 1
+        continue
+      if not fields and is_index: # delete the whole key:
+        err += self.store.delete(key)
+        continue
+      kv = self.store.read_hash(key)
+      if not kv:
+        print(f'HDEL: `{key}`, no such key.', file=stderr)
+        err += 1
+        continue
+
+      for field in fields:
+        try:
+          v = kv.pop(field)
+          if self.store.is_ref(ref=key, key=v):
+            self.store.delete_ref(key=v, ref=key)
+        except KeyError:
+          print(f'HDEL: `{key}`: unknown field: {field}', file=stderr)
+          err += 1
+
+      if fields:
+        data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
+        err += self.store.write(data, key, vsz, ts)
     return err
 
   def hkey(self, key: str=None) -> int:
@@ -958,7 +1077,7 @@ class MicroDB:
         if not kv:
           print(f'HKEY: `{k}` no such key or index.', file=stderr)
           return 1
-        print(f'{k}: {" | ".join(sorted(kv.keys()))}')
+        print(f'{k}: {" | ".join(kv.keys())}')
       return 0
     err = 0
     for k in sorted(self.store.keystore.keys()):
@@ -966,7 +1085,7 @@ class MicroDB:
         continue
         err += self.hkey(k)
       kv = self.store.read_hash(k)
-      print(f'{k}: {" | ".join(sorted(kv.keys()))}')
+      print(f'{k}: {" | ".join(kv.keys())}')
     return 0 if err == 0 else 1
 
   def flush(self):
