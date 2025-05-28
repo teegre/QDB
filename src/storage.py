@@ -61,19 +61,6 @@ class Store:
     self._file_pos: int = 0
     self.reconstruct()
 
-  @contextmanager
-  def lock_file(self):
-    ''' Lock the active file to prevent concurrent access. '''
-    try:
-      if self.open() != 0:
-        print(f'Error: could not open `{self.active_file}`')
-        return 1
-      fcntl.flock(self.file.fileno(),fcntl.LOCK_EX)
-      yield
-    finally:
-      fcntl.flock(self.file.fileno(), fcntl.LOCK_UN)
-      self.close()
-
   def open(self) -> int:
     if not os.path.exists(self.database):
       os.mkdir(self.database)
