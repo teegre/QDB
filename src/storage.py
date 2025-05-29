@@ -318,11 +318,14 @@ class Store:
             return 1
 
           key = key.decode()
+          vt = vt.decode()
 
           if len(key) != ksz:
             print(f'Warning: incomplete key at {file}:{pos}', file=stderr)
             return 1
           if vsz == 0:
+            if vt == '+':
+              self.delete_refd_key(key)
             self.keystore.pop(key, None)
           else:
             entry = self.keystore.get(key)
@@ -332,11 +335,12 @@ class Store:
             if ':' in key:
               self.create_index(key)
 
-            if vt.decode() == '+': # hash
+            if vt == '+': # hash
               kv = json.loads(val.decode())
               values = [v for v in kv.values() if ':' in v]
               for value in values:
-                self.create_ref(value, key)
+                if value in self.keystore:
+                  self.create_ref(value, key)
           pos = f.tell()
         except Exception as e:
           print(f'Error processing record at {file}:{pos}: {e}', file=stderr)
@@ -356,9 +360,11 @@ class Store:
           break
         ts, ksz, vsz, pos = struct.unpack('<QIII', header)
         key = h.read(ksz)
+
         if len(key) != ksz:
           print(f'Warning: incomplete header at {hint_file}:{fpos}', file=stderr)
           return 1
+
         if vsz == 0:
           self.keystore.pop(key.decode(), None)
         else:
@@ -507,7 +513,9 @@ class Store:
   def create_ref(self, ref: str, key: str) -> int:
     ''' Add a reference for a given key '''
     if key == ref:
-      print(f'Warning: `{key}` references itself! (skipped).', file=stderr)
+      print(f'Error: `{key}` references itself! (ignored).', file=stderr)
+      return 1
+    if ref not in self.keystore:
       return 1
     refs = self.refs.get(ref)
     if refs is None and self.has_index(ref):
@@ -517,6 +525,15 @@ class Store:
       self.refs[ref].add(key)
       return 0
     return 1
+
+  def get_all_ref_hkeys(self, index: str) -> list[str]:
+    ''' Return all hkeys referenced'''
+    refs = []
+    for ref, hkeys in self.refs.items():
+      if ref.startswith(index + ':'):
+        refs.extend(list(hkeys))
+    return sorted([str(r) for r in refs])
+
 
   def get_refs(self, key: str, index: str) -> list[str]:
     '''
@@ -538,12 +555,15 @@ class Store:
       # Get neighbors (keys referenced by current_key)
       neighbors = self.refs.get(current_key, set())
 
+      if not neighbors:
+        neighbors = self.get_all_ref_hkeys(index)
+
       for neighbor in neighbors:
         # Collect neighbor if it matches the desired type
         if neighbor.startswith(index + ':'):
           refs.append(neighbor)
 
-            # Explore unvisited neighbors
+        # Explore unvisited neighbors
         if neighbor not in visited:
           visited.add(neighbor)
           queue.append(neighbor)
@@ -643,7 +663,7 @@ class Store:
     empty_refs = []
     for ref, keys in self.refs.items():
       if key in keys:
-        self.refs[key].discard(key)
+        self.refs[ref].discard(key)
         if len(keys) == 0:
           empty_refs.append(ref)
     for ref in empty_refs:
@@ -678,7 +698,7 @@ class Store:
   def has_index(self, key: str) -> bool:
     ''' Return True if a given key has an index, False otherwise. '''
     index = key.split(':')[0]
-    return index in self.indexes
+    return index in self.indexes and key in self.keystore
 
   def is_index(self, index: str) -> bool:
     return index in self.indexes

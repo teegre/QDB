@@ -254,6 +254,19 @@ class MicroDB:
           if self.store.is_index(idx)
       }
 
+      # are there missing references?
+      missing_indexes = [idx for idx, key in key_map.items() if not key ]
+      # I do not like this!
+      for missing_index in missing_indexes:
+        for idx, keys in key_map.copy().items():
+          if idx == missing_index:
+            continue
+          for k in keys:
+            hkeys = db.store.get_refs(k, missing_index)
+            if hkeys:
+              key_map[missing_index].extend(hkeys)
+      # ... But it seems to do the trick...
+
       # check relational integrity
       for pf in parsed_fields:
         if pf['index'] and not key_map.get(pf['index']) and len(parsed_fields) == 1:
@@ -267,7 +280,8 @@ class MicroDB:
 
       # find the deepest index for row iteration
       max_depth = max(
-          (len(f['fields']) if f['index'] else 0 for f in parsed_fields), default=0
+          (len(f['fields']) if f['index'] else 0 for f in parsed_fields),
+          default=0
       )
 
       deepest_index = None
@@ -286,7 +300,7 @@ class MicroDB:
           # Reconstruct the path to deep_key
           path = [start_key] + self.store.find_path(start_key, deep_key) + [deep_key]
 
-          if not self.store.is_refd_by(deep_key, start_key) and not deep_key  in path:
+          if not self.store.is_refd_by(deep_key, start_key) and not deep_key in path:
             print(f'HGET: Warning: {deep_key} is not referenced by {start_key}.')
             # Skip bad references.
             continue
