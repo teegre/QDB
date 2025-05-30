@@ -534,6 +534,13 @@ class Store:
         refs.extend(list(hkeys))
     return sorted([str(r) for r in refs])
 
+  def get_ref(self, key: str) -> str:
+    ''' Return the ref referenced by key if any. '''
+    for ref, keys in self.refs.items():
+      if key in keys:
+        return ref
+    return None
+
 
   def get_refs(self, key: str, index: str) -> list[str]:
     '''
@@ -579,7 +586,7 @@ class Store:
   def get_ref_key(self, key: str) -> str:
     ''' Get the key that key references to... '''
     for ref, keys in self.refs.items():
-      if ref in values:
+      if ref in keys:
         return ref
     return None
 
@@ -597,7 +604,7 @@ class Store:
 
   def find_path(self, k1: str, k2: str) -> list[str]:
     '''
-    Returns the keys that form a path from k1 to k2 (or k2 to k1), if any.
+    Returns the keyeys that form a path from k1 to k2 (or k2 to k1), if any.
     Considers forward references from self.refs and reverse references.
     '''
     # If at least one key does not exist, no path exists

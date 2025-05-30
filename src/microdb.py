@@ -9,7 +9,6 @@ class MicroDB:
 
     self.commands = {
         'DEL' : self.delete,
-        'FLUSH': self.flush,
         'GET' : self.get,
         'HDEL': self.hdel,
         'HGET': self.hget,
@@ -60,7 +59,7 @@ class MicroDB:
     ''' Get a value '''
     val = self.store.read(key)
     if val is not None:
-      stdout.write(f'{val}\n')
+      print(f'{val}')
       return 0
     return 1
 
@@ -239,11 +238,13 @@ class MicroDB:
 
     if self.store.is_index(index_or_key):
       start_keys = self.store.get_index_keys(index_or_key)
-    else:
+    elif index_or_key and index_or_key in self.store.keystore:
       start_keys = [index_or_key]
+    else:
+      start_keys = []
 
     if not start_keys:
-      print(f'HGET: No keys found for index `{index_or_key}`.', file=stderr)
+      print(f'HGET: `{index_or_key}`, no such index or hkey.', file=stderr)
       return 1
 
     rows = []
@@ -261,22 +262,28 @@ class MicroDB:
         for idx, keys in key_map.copy().items():
           if idx == missing_index:
             continue
+          if not keys:
+            hkeys = self.store.get_refs_of(start_key)
+            for hkey in hkeys:
+              href = self.store.get_ref(hkey)
+              if href:
+                key_map[idx].append(href)
           for k in keys:
             hkeys = db.store.get_refs(k, missing_index)
             if hkeys:
               key_map[missing_index].extend(hkeys)
-      # ... But it seems to do the trick...
+      # ... But it seems to do the trick... or not...
 
       # check relational integrity
       for pf in parsed_fields:
         if pf['index'] and not key_map.get(pf['index']) and len(parsed_fields) == 1:
           # ignore when 'index_or_key' is used in field expressions...
           # i.e. `HGET artist artist:name`
-          if not start_key.startswith(pf['index'] + ':'):
-            print(f'HGET: Error: no `{pf["index"]}` key found for `{start_key}`.',
-                  file=stderr
-            )
-            return 1
+          # if not start_key.startswith(pf['index'] + ':'):
+          print(f'HGET: Error: no `{pf["index"]}` key found for `{start_key}`.',
+                file=stderr
+          )
+          return 1
 
       # find the deepest index for row iteration
       max_depth = max(
