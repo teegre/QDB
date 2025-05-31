@@ -146,14 +146,14 @@ class MicroDB:
         if field in subkv:
           if self.store.has_index(v): # ref
             # delete former key in reference.
-            self.store.delete_key_of_ref(kv.get(field), key)
+            self.store.delete_key_of_ref(key, kv.get(field))
             refs.append(v)
           kv[field] = v
           subkv.pop(field, None)
 
       for k, v in subkv.items():
         kv[k] = v
-        if v in self.store.keystore:
+        if self.store.exists(v):
           refs.append(v)
 
       # Serialize and write on disk
@@ -201,7 +201,7 @@ class MicroDB:
           print(f'HGET: No keys found for index `{index_or_key}`.', file=stderr)
           return 1
         index_fields = self.store.get_fields_from_index(index_or_key)
-      elif index_or_key in self.store.keystore:
+      elif self.store.exists(index_or_key):
         start_keys = [index_or_key]
         index = self.store.get_index(index_or_key)
         index_fields = self.store.get_fields_from_index(index)
@@ -236,7 +236,7 @@ class MicroDB:
 
     if self.store.is_index(index_or_key):
       start_keys = self.store.get_index_keys(index_or_key)
-    elif index_or_key and index_or_key in self.store.keystore:
+    elif self.store.exists(index_or_key):
       start_keys = [index_or_key]
     else:
       start_keys = []
@@ -252,25 +252,6 @@ class MicroDB:
           idx: sorted(set(self.store.get_refs(start_key, idx))) for idx in used_indexes
           if self.store.is_index(idx)
       }
-
-      # are there missing references?
-      missing_indexes = [idx for idx, keys in key_map.items() if not keys ]
-      # I do not like this!
-      for missing_index in missing_indexes:
-        for idx, keys in key_map.copy().items():
-          if idx == missing_index:
-            continue
-          if not keys:
-            hkeys = self.store.get_refs_of(start_key)
-            for hkey in hkeys:
-              href = self.store.get_ref(hkey)
-              if href:
-                key_map[idx].append(href)
-          for k in keys:
-            hkeys = db.store.get_refs(k, missing_index)
-            if hkeys:
-              key_map[missing_index].extend(hkeys)
-      # ... But it seems to do the trick... or not...
 
       # check relational integrity
       for pf in parsed_fields:
@@ -298,7 +279,7 @@ class MicroDB:
       if deepest_index:
         deep_keys = key_map.get(deepest_index, [])
         for deep_key in deep_keys:
-          if not deep_key in self.store.keystore:
+          if not self.store.exists(deep_key):
             print(f'HGET: Error: {deep_key}, no such key (referenced by {start_key}).')
             continue
           row = []
@@ -336,6 +317,7 @@ class MicroDB:
                     break
               # still not found...
               if not related_key:
+
                 print(f'HGET: Skipped {deep_key}')
                 row.append(f'{index}:{deep_key}=?UNRELATED?')
                 continue
@@ -388,7 +370,7 @@ class MicroDB:
     err = 0
 
     for key  in keys:
-      if key in self.store.refs and not fields:
+      if self.store.is_refd(key) and not fields:
         print(f'HDEL: Error: `{key}` is referenced (skipped).', file=stderr)
         err += 1
         continue
@@ -399,7 +381,7 @@ class MicroDB:
           if self.store.has_ref(k):
             refs = self.store.get_refs_of(k)
             for ref in refs:
-              self.store.delete_refd_key(ref=ref, key=k)
+              self.store.delete_ref_of_key(k, ref)
         err += self.store.delete(key)
         continue
       kv = self.store.read_hash(key)
