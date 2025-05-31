@@ -200,8 +200,11 @@ class MicroDB:
         if not start_keys:
           print(f'HGET: No keys found for index `{index_or_key}`.', file=stderr)
           return 1
+        index_fields = self.store.get_fields_from_index(index_or_key)
       elif index_or_key in self.store.keystore:
         start_keys = [index_or_key]
+        index = self.store.get_index(index_or_key)
+        index_fields = self.store.get_fields_from_index(index)
       else:
         print(f'HGET: Error: `{index_or_key}`, no such key or index.', file=stderr)
         return 1
@@ -210,11 +213,6 @@ class MicroDB:
       for key in start_keys:
         row = [key]
         data = self.store.read_hash(key)
-        if self.store.is_index(index_or_key):
-          index_fields = self.store.get_fields_from_index(index_or_key)
-        else:
-          index = self.store.get_index(index_or_key)
-          index_fields = self.store.get_fields_from_index(index)
         for field in index_fields:
           row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
         if any(row[1:]):
@@ -251,12 +249,12 @@ class MicroDB:
     for start_key in sorted(start_keys):
       # collect related keys for each index
       key_map = {
-          idx: sorted(self.store.get_refs(start_key, idx)) for idx in used_indexes
+          idx: sorted(set(self.store.get_refs(start_key, idx))) for idx in used_indexes
           if self.store.is_index(idx)
       }
 
       # are there missing references?
-      missing_indexes = [idx for idx, key in key_map.items() if not key ]
+      missing_indexes = [idx for idx, keys in key_map.items() if not keys ]
       # I do not like this!
       for missing_index in missing_indexes:
         for idx, keys in key_map.copy().items():
