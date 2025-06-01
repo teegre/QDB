@@ -18,16 +18,17 @@ class Client:
     func = self.db.commands.get(cmd.upper(), self.db.error)
     try:
       return func(args[0], *args[1:])
-    except IndexError:
+    except (IndexError, TypeError):
       try:
         return func()
       except TypeError:
         print(f'{cmd.upper()}: arguments missing.', file=sys.stderr)
         return 1
-    except TypeError:
-      print(f'{cmd.upper()}: arguments missing.', file=sys.stderr)
 
-  def process_commands(self):
+  def process_commands(self, command: str=None):
+    if command is not None:
+      return self.execute(command)
+
     ret = 0
     try:
       for line in sys.stdin:
@@ -42,10 +43,11 @@ class Client:
 def main() -> int:
   parser = argparse.ArgumentParser(description='µDB CLI')
   parser.add_argument('db_path', help='Path to the µDB database directory')
+  parser.add_argument('command', help='Command', default=None)
   args = parser.parse_args()
 
   client = Client(args.db_path)
-  return client.process_commands()
+  return client.process_commands(args.command)
 
 if __name__ == "__main__":
     sys.exit(main())
