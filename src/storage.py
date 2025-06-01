@@ -213,7 +213,7 @@ class Store:
     return val.decode()
 
   def read_hash(self, key: str) -> dict:
-    ''' Return hash for the given key as a dict '''
+    ''' Return the hash associated to the given key '''
     if key in self.keystore:
       entry: KeyStoreEntry = self.keystore.get(key)
 
@@ -324,6 +324,10 @@ class Store:
         err += self.reconstruct_from_hint(hint_file)
         continue
       err += self.reconstruct_keystore(file)
+    # delete empty indexes if any:
+    for index in self.indexes.copy():
+      if self.is_index_empty(index):
+        self.delete_index(index)
     return err
 
   def reconstruct_keystore(self, file: str) -> int:
@@ -499,19 +503,22 @@ class Store:
     print('Success!.', file=stderr)
     return warnings
 
-  def create_index(self, key: str) -> int:
-    ''' Create an index. '''
+  def create_index(self, hkey: str) -> int:
+    ''' Create an index from the given key. '''
     try:
-      index, _ = key.split(':')
+      index, _ = hkey.split(':')
     except ValueError:
       index = None
     if not index or index.isdigit():
-      print(f'Error: invalid key name: `{index}`', file=stderr)
+      print(f'Error: invalid hkey name: `{index}`', file=stderr)
       return 1
     self.indexes.add(index)
     return 0
 
   def delete_index(self, key: str) -> int:
+    if self.is_index(key) and self.is_index_empty(key):
+      self.indexes.discard(key)
+      return 0
     if self.has_index(key):
       if self.is_refd(key):
         print(f'Error: `{key}` is referenced.', file=stderr)
@@ -559,9 +566,9 @@ class Store:
   def get_all_ref_hkeys(self, index: str) -> list[str]:
     ''' Return all referenced hkeys'''
     refs = []
-    for ref, hkeys in self.refs.items():
-      if ref.startswith(index + ':'):
-        refs.extend(list(hkeys))
+    for hkey, hrefs in self.refs.items():
+      if hkey.startswith(index + ':'):
+        refs.extend(list(hrefs))
     return sorted([str(r) for r in refs])
 
   def get_ref(self, key: str) -> str:
@@ -571,47 +578,47 @@ class Store:
         return ref
     return None
 
-
   def get_refs(self, key: str, index: str) -> list[str]:
     '''
     Return a list of keys of type `index` that are reachable
-    from `key` through any number of references
+    from `key` through any number of references!
     '''
-    # Validate inputs
     if not self.has_index(key) or not self.is_index(index):
       return []
 
-    # Initialize BFS
-    queue = deque([key])  # Keys to explore
-    visited = {key}  # Track visited keys to avoid cycles
-    refs = []  # Collect keys of type `index`
+    reverse_refs = {}
+    for k, refs in self.refs.items():
+      for ref in refs:
+        reverse_refs.setdefault(ref, set()).add(k)
+
+    forward_refs = set()
+    queue = deque([key])
+    visited = {key}
 
     while queue:
       current_key = queue.popleft()
-
-      # Get neighbors (keys referenced by current_key)
-      neighbors = self.refs.get(current_key, set())
-
-      if not neighbors:
-        neighbors = self.get_all_ref_hkeys(index)
-
-      for neighbor in neighbors:
-        # Collect neighbor if it matches the desired type
+      for neighbor in self.refs.get(current_key, set()):
         if neighbor.startswith(index + ':'):
-          refs.append(neighbor)
-
-        # Explore unvisited neighbors
+          forward_refs.add(neighbor)
         if neighbor not in visited:
           visited.add(neighbor)
           queue.append(neighbor)
 
-    # Remove duplicates while preserving order
-    forward_refs = list(dict.fromkeys(refs))
-    reverse_refs = [
-        k for k, refs in self.refs.items()
-        if key in refs and k.startswith(index + ':')
-    ]
-    return sorted(set(forward_refs + reverse_refs))
+    # Reverse lookup
+    reverse_refs_set = set()
+    queue = deque([key])
+    visited = {key}
+
+    while queue:
+      current_key = queue.popleft()
+      for neighbor in reverse_refs.get(current_key, set()):
+        if neighbor.startswith(index + ':'):
+          reverse_refs_set.add(neighbor)
+        if neighbor not in visited:
+          visited.add(neighbor)
+          queue.append(neighbor)
+
+    return sorted(forward_refs | reverse_refs_set)
 
   def get_ref_key(self, key: str) -> str:
     ''' Get the key that key references to... '''
@@ -631,13 +638,6 @@ class Store:
   def are_related(self, k1: str, k2: str) -> bool:
     ''' Return True if k1 and k2 are directly related '''
     return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
-
-  def get_path(self, key: str) -> list[str]:
-    '''
-    Return the keys that form a path from key to the 
-    deepest level that can be found.
-    '''
-    pass
 
   def find_path(self, k1: str, k2: str) -> list[str]:
     '''
@@ -685,24 +685,24 @@ class Store:
     # No path found
     return []
 
-  def delete_key_of_ref(self, key: str, ref: str) -> int:
+  def delete_key_of_ref(self, hkey: str, ref: str) -> int:
     '''
-    Delete the `key` that references `ref` and
-    delete `ref` if it's no longer referenced.
+    Delete the `ref` referenced by `hkey` and
+    delete `hkey` if it's no longer referenced.
     Return 0 on success, 1 on fail.
     '''
-    refs = self.refs.get(key)
+    refs = self.refs.get(hkey)
     if refs is None:
       return 1
     self.refs[key].discard(ref)
-    if len(self.refs[key]) == 0:
-      del self.refs[key]
+    if len(self.refs[hkey]) == 0:
+      del self.refs[hkey]
     return 0
 
   def delete_ref(self, ref: str) -> None:
     '''
-    Delete key in all references.
-    Delete reference if not used by any key.
+    Delete ref in all keys.
+    Delete key if not used by any ref.
     '''
     empty_refs = []
     for key, refs in self.refs.items():
@@ -747,28 +747,31 @@ class Store:
   def is_index(self, index: str) -> bool:
     return index in self.indexes
 
-  def is_index_empty(self, index_or_key):
+  def is_index_of(self, hkey: str, index: str) -> bool:
+    ''' Return true if hkey belongs to index. '''
+    try:
+      key, _ = hkey.split(':')
+    except ValueError:
+      return False
+    return self.is_index(index) and key == index
+
+  def is_index_empty(self, index_or_key: str) -> bool:
+    ''' Return True if index or key of index is empty. '''
     index = index_or_key.split(':')[0]
     if self.is_index(index):
       return len(self.get_index_keys(index)) == 0
     return False
 
-  def is_ref(self, key: str) -> bool:
-    ''' Return True if a given key is a reference. '''
-    return key in self.refs
-
   def is_refd(self, hkey: str) -> bool:
-    for key, refs in self.refs.items():
+    ''' Return True is hkey is referenced '''
+    for refs in self.refs.values():
       if hkey in refs:
         return True
     return False
 
-  def is_refd_by(self, ref: str, key: str) -> bool:
+  def is_refd_by(self, key: str, ref: str) -> bool:
     ''' Return True if `key` references `ref`. '''
-    if not ref in self.refs:
-      return False
-    h = self.read_hash(key)
-    return ref in h.values()
+    return ref in self.refs.get(key, {})
 
   def has_ref(self, key: str) -> bool:
     return key in self.refs
