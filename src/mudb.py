@@ -43,7 +43,7 @@ class Client:
 def main() -> int:
   parser = argparse.ArgumentParser(description='µDB CLI')
   parser.add_argument('db_path', help='Path to the µDB database directory')
-  parser.add_argument('command', help='Command', default=None)
+  parser.add_argument('command', help='µDB command', nargs='?', default=None)
   args = parser.parse_args()
 
   client = Client(args.db_path)

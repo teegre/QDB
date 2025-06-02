@@ -1,3 +1,4 @@
+import operator
 import json
 
 from random import shuffle
@@ -17,6 +18,7 @@ class MicroDB:
         'HGET': self.hget,
         'HGETV': self.hget_field,
         'HKEY': self.hkey,
+        'HLEN': self.hlen,
         'HSET': self.hset,
         'IDX' : self.idx,
         'KEY': self.keys,
@@ -26,19 +28,28 @@ class MicroDB:
         'SET' : self.set,
     }
 
-    self.__op = {
-        '=': 'equal',
-        '!=': 'not_equal',
-        '>': 'greater_than',
-        '>=': 'greater_than_or_equal',
-        '<': 'less_than',
-        '<=': 'less_than_or_equal',
-        '^': 'starts_with',
-        '!^': 'not_starts_with',
-        '$': 'ends_with',
-        '!$': 'not_ends_with',
-        '**': 'contains',
+    self.__ops = {
+        '=': 'eq',  # equal
+        '!=': 'ne', # not equal
+        '>': 'gt',  # greater than
+        '>=': 'ge', # greater or equal
+        '<': 'lt',  # less than
+        '<=': 'le', # less than or equal
+        '^': 'sw',  # starts with
+        '!^': 'ns', # not starts with
+        '$': 'dw',  # ends with
+        '!$': 'nd', # not ends with
+        '**': 'ct', # contains
     }
+
+    self.__opfunc = {
+        'eq': operator.eq,
+        'ne': operator.ne,
+        'gt': operator.gt,
+        'ge': operator.ge,
+        'lt': operator.lt,
+        'le': operator.le,
+  }
 
     self.__sort_prefix = {
         '++': 'asc',
@@ -184,10 +195,25 @@ class MicroDB:
     for i, part in enumerate(parts):
       temp_field = part
       temp_sort = self.__sort_prefix.get(part[:2])
+      condition = None
+
+      # Condition
+      for op in sorted(self.__ops.keys(), key=len, reverse=True):
+        if op in temp_field:
+          field_part, value = temp_field.split(op, 1)
+          if field_part and value:
+            temp_field = field_part
+            # Handle quoted values:
+            if value.startswith('"') and value.endswith('"'):
+              value = value [1:-1]
+            condition = {'op': self.__ops[op], 'field': temp_field, 'value': value}
+          break
+
+      # Sorting
       if temp_sort:
-        temp_field = part[2:]
+        temp_field = temp_field[2:]
       if i == 0 and self.store.is_index(part):
-        current_index = part
+        current_index = temp_field
       elif i == 0 and temp_sort:
         if sort:
           print(f'Error: multiple sort modifiers in `{expr}`.', file=stderr)
@@ -206,7 +232,7 @@ class MicroDB:
           sort_field = temp_field
         current_fields.append(temp_field)
     if current_fields:
-      res = {'index': current_index, 'fields': current_fields}
+      res = {'index': current_index, 'fields': current_fields, 'condition': condition}
       if sort:
         res['sort'] = sort
         res['sort_field'] = sort_field
@@ -231,6 +257,30 @@ class MicroDB:
     if self.is_numeric(value):
       return (0, float(value))
     return (1, str(value))
+
+  def evaluate_condition(self, op: str, field_value: str, condition_value: str) -> bool:
+    if '?NOFIELD?' in field_value:
+      return False
+    if op in ('gt', 'ge', 'lt', 'le'):
+      if not self.is_numeric(field_value) or not self.is_numeric(condition_value):
+        return False
+      field_num = float(field_value)
+      cond_num = float(condition_value)
+      return self.__opfunc[op](field_num, cond_num)
+    if op not in ('sw', 'ns', 'dw', 'nd', 'ct'):
+      return self.__opfunc[op](field_value, condition_value)
+    match op:
+      case 'sw':
+        return field_value.startswith(condition_value)
+      case 'ns':
+        return not field_value.startswith(condition_value)
+      case 'dw':
+        return field_value.endswith(condition_value)
+      case 'nd':
+        return not field_value.endswith(condition_value)
+      case 'ct':
+        return condition_value in field_value
+    return False
 
   def hget(self, index_or_key: str, *fields: str) -> int:
     '''
@@ -315,6 +365,9 @@ class MicroDB:
     for start_key in start_keys if random_rows else sorted(start_keys):
       if limit_reached:
         break
+
+      valid_row = True
+
       key_map: dict[str: list[str]] = {
           idx: sorted(set(self.store.get_refs(start_key, idx))) for idx in used_indexes
           if self.store.is_index(idx)
@@ -346,24 +399,37 @@ class MicroDB:
 
         for deep_key in deep_keys:
           row = {'row': [], 'sort_value': None}
+          valid_row = True
+
           for pf in parsed_fields:
-            index, fields = (pf['index'], pf['fields'])
+            index, fields, condition = (pf['index'], pf['fields'], pf['condition'])
             if index is None or index == index_or_key:
               data = self.store.read_hash(start_key)
-              for field in fields:
-                value = data.get(field)
-                if value is None: # non existing unique field
-                  print(f'HGET: Error: `{field}`, no such field in `{start_key}`', file=stderr)
-                  return 1
-                if sort_info and sort_info['index'] is None and sort_info['field'] == field:
-                  row['sort_value'] = value
-                row['row'].append(value)
+              if fields == ['*']:
+                for field, value in data.items():
+                  if sort_info and sort_info['index'] == index and sort_info['field'] == field:
+                    row['sort_value'] = value
+                  row['row'].append(f'{field}={value}')
+              else:
+                for field in fields:
+                  value = data.get(field)
+                  if value is None: # non existing unique field
+                    print(f'HGET: Error: `{field}`, no such field in `{start_key}`', file=stderr)
+                    return 1
+                  if condition:
+                    if condition['field'] == field:
+                      if not self.evaluate_condition(condition['op'], value, condition['value']):
+                        valid_row = False
+                        break
+                  if sort_info and sort_info['index'] is None and sort_info['field'] == field:
+                    row['sort_value'] = value
+                  row['row'].append(value)
             else:
               if self.store.is_index_of(deep_key, index):
                 data = self.store.read_hash(deep_key)
               else:
                 try:
-                  assert len(key_map.get(index)) == 1
+                  assert len(key_map.get(index, [])) == 1
                   key = key_map.get(index)[0]
                   data = self.store.read_hash(key)
                 except AssertionError:
@@ -379,11 +445,16 @@ class MicroDB:
                   if field not in data:
                     print(f'HGET: Error: `{field}` no such field in `{index}`.', file=stderr)
                     return 1
-                  value = data.get(field, f'{field}=?NOFIELD?')
+                  value = data.get(field, f'?NOFIELD?')
+                  if condition:
+                    if condition['field'] == field:
+                      if not self.evaluate_condition(condition['op'], value, condition['value']):
+                        valid_row = False
+                        break
                   if sort_info and sort_info['index'] == index and sort_info['field'] == field:
                     row['sort_value'] = value
                   row['row'].append(value)
-          if row:
+          if valid_row and row['row']:
             rows.append(row)
           if limit and limit == len(rows):
             limit_reached = True
@@ -395,21 +466,33 @@ class MicroDB:
         row = {'row': [], 'sort_value': None}
         data = self.store.read_hash(start_key)
         for pf in parsed_fields:
-          for field in pf['fields']:
+          fields, condition = (pf['fields'], pf['condition'])
+          for field in fields:
             if field not in index_fields:
               print(f'HGET: Error: `{field}`, no such field in `{index_or_key}`.', file=stderr)
               return 1
             value = data.get(field, f'{field}=?NOFIELD?')
+            if condition:
+              if condition['field'] == field:
+                if not self.evaluate_condition(condition['op'], value, condition['value']):
+                  valid_row = False
+                  break
             if sort_info and sort_info['index'] is None and sort_info['field'] == field:
               row['sort_value'] = value
             row['row'].append(value)
-        rows.append(row)
+
+        if valid_row and row['row']:
+          rows.append(row)
         if limit and limit == len(rows):
           limit_reached = True
 
-    if not rows:
+    if not rows and valid_row:
       print('HGET: An unexpected error occurred.', file=stderr)
       return 1
+
+    if not rows and not valid_row:
+      print('HGET: No data.')
+      return 0
 
     if sort_info:
       if sort_info['sort'] == 'rand':
@@ -514,6 +597,10 @@ class MicroDB:
   def idx(self) -> None:
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
+
+  def hlen(self, index: str) -> int:
+    ''' Return hkey count for the given index. '''
+    return sum(1 for k in self.store.keystore if k.startswith(index + ':'))
 
   def flush(self):
     return self.store.flush()
