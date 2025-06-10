@@ -2,6 +2,9 @@ import fcntl
 import os
 import json
 import struct
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from collections import deque
 from dataclasses import dataclass
@@ -56,6 +59,7 @@ class Store:
     self.keystore: Dict[str, KeyStoreEntry] = {}
     self.indexes = set()
     self.refs: Dict[str, set[str]] = {}
+    self.reverse_refs: Dict[str, set[str]] = {}
     self.file = None
     self._refs_file: str = os.path.join(self.database, '.references')
     self._file_id: int = self._max_id
@@ -151,22 +155,32 @@ class Store:
     finally:
       fcntl.flock(self.file, fcntl.LOCK_UN)
 
-  def write_references(self) -> int:
+  def write_references(self, ref_file: str=None) -> int:
+    if ref_file is not None:
+      rf = ref_file
+    else:
+      rf = self.active_refs
     if self.refs:
       refs = {ref: sorted(list(keys)) for ref, keys in self.refs.items()}
       data = json.dumps(refs)
       rsz = len(data)
-      with open(self._refs_file,'wb') as f:
+      with open(rf,'wb') as f:
         rec = struct.pack(f'<4sI{rsz}s', 'REFS'.encode(), rsz, data.encode())
         bytes_written = f.write(rec)
         if bytes_written != len(rec):
           print('Error writing references: incomplete write {bytes_written}/{len(rec)} bytes.', file=stderr)
           return 1
+      self.update_reverse_refs()
     return 0
 
-  def load_references(self) -> int:
-    if os.path.exists(self._refs_file):
-      with open(self._refs_file, 'rb') as f:
+  def load_references(self, ref_file: str=None) -> int:
+    if ref_file is not None:
+      rf = ref_file
+    else:
+      rf = self.active_refs
+
+    if os.path.exists(rf):
+      with open(rf, 'rb') as f:
         header = f.read(8)
         tag, rsz = struct.unpack('<4sI', header)
         if tag.decode() != 'REFS':
@@ -176,6 +190,7 @@ class Store:
         refs = json.loads(data.decode())
         for ref, keys in refs.items():
           self.refs[ref] = set(keys)
+    self.update_reverse_refs()
     return 0
 
   def read(self, key: str) -> str:
@@ -212,7 +227,7 @@ class Store:
 
     return val.decode()
 
-  def read_hash(self, key: str) -> dict:
+  def read_hash(self, key: str, dump: bool=False) -> dict:
     ''' Return the hash associated to the given key '''
     if key in self.keystore:
       entry: KeyStoreEntry = self.keystore.get(key)
@@ -231,7 +246,7 @@ class Store:
           f = open(fn, 'rb')
         except FileNotFoundError:
           print(f'Error: data file not found for `{key}` key.', file=stderr)
-          return {}
+          return None
 
       f.seek(pos)
       header = f.read(HEADER_SIZE)
@@ -241,7 +256,7 @@ class Store:
         if fn != self.active_file:
           f.close()
         print(f'Error: {key} is not a hash.', file=stderr)
-        return {}
+        return None
 
       f.seek(pos + HEADER_SIZE + ksz)
       val = f.read(vsz)
@@ -250,17 +265,21 @@ class Store:
         f.close()
 
       data = json.loads(val.decode())
+
+      if not dump:
+        ID = key.split(':')[1]
+        data['@id'] = ID
+        data['@hkey'] = key
+
       return data
 
-    return {}
+    return None
 
   def read_hash_field(self, key: str, field: str) -> int:
     data = self.read_hash(key)
     if data:
-      print(data.get(field, '?NOFIELD?'))
-      return 0
-    print('?NOHKEY?')
-    return 1
+      return(data.get(field, '?NOFIELD?'))
+    return None
 
   def delete(self, key: str) -> int:
     '''
@@ -269,7 +288,7 @@ class Store:
     '''
     if key in self.keystore:
       if self.is_refd(key):
-        print(f'DEL: Error: key `{key}` is referenced.', file=stderr)
+        print(f'Error: key `{key}` is referenced.', file=stderr)
         return 1
       ts = int(time())
       ksz = len(key)
@@ -291,14 +310,15 @@ class Store:
       if self.has_index(key) and self.is_index_empty(key):
         self.delete_index(key)
       self.write_references()
+      self.update_reverse_refs()
       return 0
     return 1
 
   def dump(self) -> None:
     ''' Dump current database in json format '''
-    for key in self.keystore.keys():
+    for key in sorted(self.keystore.keys()):
       if self.has_index(key): # hash
-        data = {key: self.read_hash(key)}
+        data = {key: self.read_hash(key, dump=True)}
       else:
         data = {key: self.read(key) }
       print(json.dumps(data))
@@ -314,16 +334,21 @@ class Store:
     err = 0
     for file in files:
       hint_file = file.replace('.log', '.hint')
+      ref_file = file.replace('.log', '.ref')
       # remove empty files...
       if os.path.getsize(file) == 0:
         os.remove(file)
         if os.path.exists(hint_file):
           os.remove(hint_file)
+        if os.path.exists(ref_file):
+          os.remove(ref_file)
         continue
       if os.path.exists(hint_file):
         err += self.reconstruct_from_hint(hint_file)
+        err += self.load_references(ref_file)
         continue
       err += self.reconstruct_keystore(file)
+      err += self.load_references(ref_file)
     # delete empty indexes if any:
     for index in self.indexes.copy():
       if self.is_index_empty(index):
@@ -424,6 +449,7 @@ class Store:
     name = strftime('%Y%m%d_%H%M%S')
     newfile = os.path.join(self.database, f'{name}.log')
     newhint = newfile.replace('.log', '.hint')
+    newrefs = newfile.replace('.log', '.ref')
     tmpfile = newfile + '.tmp'
     tmphint = newhint + '.tmp'
 
@@ -494,11 +520,16 @@ class Store:
       try:
         os.remove(file)
         hint_file = file.replace('.log', '.hint')
+        ref_file = file.replace('.log', '.ref')
         if os.path.exists(hint_file):
           os.remove(hint_file)
+        if os.path.exists(ref_file):
+          os.remove(ref_file)
       except Exception as e:
         print(f'Error removing file {file}: {e}', file=stderr)
         return 1
+
+      self.write_references(newrefs)
 
     print('Success!.', file=stderr)
     return warnings
@@ -515,21 +546,20 @@ class Store:
     self.indexes.add(index)
     return 0
 
-  def delete_index(self, key: str) -> int:
-    if self.is_index(key) and self.is_index_empty(key):
-      self.indexes.discard(key)
+  def delete_index(self, index: str) -> int:
+    ''' Delete the given empty index. '''
+    if self.is_index(index) and self.is_index_empty(index):
+      self.indexes.discard(index)
       return 0
-    if self.has_index(key):
-      if self.is_refd(key):
-        print(f'Error: `{key}` is referenced.', file=stderr)
-        return 1
-      try:
-        index = key.split(':')[0]
-        self.indexes.discard(index)
-      except KeyError:
-        print(f'Error: {index} index not found.', file=stderr)
-        return 1
-      return 0
+    if not self.is_index(index):
+      print(f'Error: `{index}`, no such index.', file=stderr)
+      return 1
+    keycount = len(self.get_index_keys(index))
+    print(
+        f'Error: `{index}` still contains {keycount}',
+        'hkeys' if keycount > 1 else 'hkey',
+        file=stderr
+    )
     return 1
 
   def get_index(self, key: str) -> str | None:
@@ -578,6 +608,13 @@ class Store:
         return ref
     return None
 
+  def update_reverse_refs(self):
+    reverse_refs = {}
+    for k, refs in self.refs.items():
+      for ref in refs:
+        reverse_refs.setdefault(ref, set()).add(k)
+    self.reverse_refs = reverse_refs
+
   def get_refs(self, key: str, index: str) -> list[str]:
     '''
     Return a list of keys of type `index` that are reachable
@@ -585,11 +622,6 @@ class Store:
     '''
     if not self.has_index(key) or not self.is_index(index):
       return []
-
-    reverse_refs = {}
-    for k, refs in self.refs.items():
-      for ref in refs:
-        reverse_refs.setdefault(ref, set()).add(k)
 
     forward_refs = set()
     queue = deque([key])
@@ -611,7 +643,7 @@ class Store:
 
     while queue:
       current_key = queue.popleft()
-      for neighbor in reverse_refs.get(current_key, set()):
+      for neighbor in self.reverse_refs.get(current_key, set()):
         if neighbor.startswith(index + ':'):
           reverse_refs_set.add(neighbor)
         if neighbor not in visited:
@@ -622,54 +654,47 @@ class Store:
 
   def get_ref_key(self, key: str) -> str:
     ''' Get the key that key references to... '''
-    for ref, keys in self.refs.items():
-      if ref in keys:
-        return ref
-    return None
+    return self.reverse_refs.get(key, [])
 
   def get_refs_of(self, hkey: str) -> list[str]:
     ''' Get references of key. '''
-    found_refs = []
-    for key, refs in self.refs.items():
-      if hkey in refs:
-        found_refs.append(key)
-    return found_refs
+    return self.refs.get(hkey, [])
 
   def are_related(self, k1: str, k2: str) -> bool:
     ''' Return True if k1 and k2 are directly related '''
     return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
 
-  def find_path(self, k1: str, k2: str) -> list[str]:
+  def find_path(self, k1: str, k2: str, use_index: bool=False) -> list[str]:
     '''
     Returns the keys that form a path from k1 to k2 (or k2 to k1), if any.
     Considers forward references from self.refs and reverse references.
+    Also works with indexes.
     '''
     # If at least one key does not exist, no path exists
-    if not self.has_index(k1) or not self.has_index(k2):
+    if not use_index and (not self.has_index(k1) or not self.has_index(k2)):
+      return []
+
+    # If at least one index does not exist, no path exists
+    if use_index and (not self.is_index(k1) or not self.is_index(k2)):
       return []
 
     # If keys are the same, no intermediate path exists
     if k1 == k2:
       return []
 
-    # Build reverse references (keys that reference the current key)
-    reverse_refs = {}
-    for key, refs in self.refs.items():
-      for ref in refs:
-        if ref not in reverse_refs:
-          reverse_refs[ref] = set()
-        reverse_refs[ref].add(key)
-
     # Initialize BFS
+    if use_index:
+      k1 = next(iter(self.get_index_keys(k1)), None)
+      k2 = next(iter(self.get_index_keys(k2)), None)
     queue = deque([(k1, [k1])])  # (current_key, path_so_far)
     visited = {k1}  # Track visited keys to avoid cycles
 
     while queue:
       current_key, path = queue.popleft()
 
-        # Get neighbors: forward refs from self.refs, reverse refs from reverse_refs
+      # Get neighbors: forward refs from self.refs, reverse refs from reverse_refs
       forward_neighbors = self.refs.get(current_key, set())
-      reverse_neighbors = reverse_refs.get(current_key, set())
+      reverse_neighbors = self.reverse_refs.get(current_key, set())
       neighbors = forward_neighbors | reverse_neighbors
 
       for neighbor in neighbors:
@@ -678,14 +703,17 @@ class Store:
           new_path = path + [neighbor]
           queue.append((neighbor, new_path))
 
-          if neighbor == k2:
+          if not use_index and neighbor == k2:
             # Return the path, excluding start and end keys
             return new_path[1:-1]
+          if use_index and self.get_index(neighbor) == self.get_index(k2):
+              index_path = [self.get_index(k) for k in new_path]
+              return index_path
 
     # No path found
     return []
 
-  def delete_key_of_ref(self, hkey: str, ref: str) -> int:
+  def delete_ref_of_key(self, hkey: str, ref: str) -> int:
     '''
     Delete the `ref` referenced by `hkey` and
     delete `hkey` if it's no longer referenced.
@@ -694,7 +722,7 @@ class Store:
     refs = self.refs.get(hkey)
     if refs is None:
       return 1
-    self.refs[key].discard(ref)
+    self.refs[hkey].discard(ref)
     if len(self.refs[hkey]) == 0:
       del self.refs[hkey]
     return 0
@@ -740,20 +768,21 @@ class Store:
     return list(self.read_hash(hkey).keys())
 
   def has_index(self, key: str) -> bool:
-    ''' Return True if a given key has an index, False otherwise. '''
+    ''' Return True if a given key exists and has an index, False otherwise. '''
     index = key.split(':')[0]
     return index in self.indexes and key in self.keystore
 
   def is_index(self, index: str) -> bool:
+    ''' Return True if index exists. '''
     return index in self.indexes
 
   def is_index_of(self, hkey: str, index: str) -> bool:
-    ''' Return true if hkey belongs to index. '''
+    ''' Return true if hkey exists and belongs to index. '''
     try:
       key, _ = hkey.split(':')
     except ValueError:
       return False
-    return self.is_index(index) and key == index
+    return self.is_index(index) and key == index and hkey in self.keystore
 
   def is_index_empty(self, index_or_key: str) -> bool:
     ''' Return True if index or key of index is empty. '''
@@ -762,23 +791,39 @@ class Store:
       return len(self.get_index_keys(index)) == 0
     return False
 
-  def is_refd(self, hkey: str) -> bool:
-    ''' Return True is hkey is referenced '''
-    for refs in self.refs.values():
-      if hkey in refs:
-        return True
-    return False
+  def is_ref(self, hkey: str) -> bool:
+    ''' Return True is hkey is a reference '''
+    return hkey in self.keystore and hkey in self.reverse_refs
 
   def is_refd_by(self, key: str, ref: str) -> bool:
     ''' Return True if `key` references `ref`. '''
     return ref in self.refs.get(key, {})
 
+  def is_refd_by_index(self, key: str, index: str) -> bool:
+    ''' Return True if key exists and at least one reference of key belongs to index. '''
+    refs = self.refs.get(key, [])
+    for ref in refs:
+      if ref.startswith(index + ':'):
+        return True and key in self.keystore
+    return False
+
   def has_ref(self, key: str) -> bool:
+    ''' Return True if key has references '''
     return key in self.refs
 
   def exists(self, key: str) -> bool:
     ''' Return True if `key` exists in the keystore. '''
     return key in self.keystore
+
+  def index_len(self, index: str) ->  int:
+    ''' Return the number of hkeys in the given index.'''
+    if self.is_index(index):
+      return sum(1 for k in self.keystore.keys() if k.startswith(index + ':'))
+    return 0
+
+  def autoid(self, index: str) -> str:
+    ''' Return current greatest ID + 1 in index '''
+    return str(self.index_len(index) + 1)
 
   @property
   def _max_id(self) -> int:
@@ -791,4 +836,24 @@ class Store:
   def active_file(self) -> str:
     name = f'data{str(self._file_id).zfill(4)}.log'
     return os.path.join(self.database, name)
+
+  @property
+  def active_refs(self) -> str:
+    name = f'data{str(self._file_id).zfill(4)}.ref'
+    return os.path.join(self.database, name)
+
+  @property
+  def relations(self) -> dict:
+    graph = {}
+    for index in self.indexes:
+      fields = self.get_fields_from_index(index)
+      for field in fields:
+        key = next(iter(self.get_index_keys(index)), None)
+        if key:
+          value = self.read_hash_field(key, field)
+          if self.exists(value):
+            target_index = self.get_index(value)
+            if self.is_refd_by(key, value):
+              graph[index] = target_index
+    return graph
 
