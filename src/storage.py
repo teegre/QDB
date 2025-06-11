@@ -287,7 +287,7 @@ class Store:
     and mark it for deletion
     '''
     if key in self.keystore:
-      if self.is_refd(key):
+      if self.has_ref(key):
         print(f'Error: key `{key}` is referenced.', file=stderr)
         return 1
       ts = int(time())
@@ -305,7 +305,7 @@ class Store:
       data = struct.pack('<L', crc) + rec
       self.write(data, key, vsz, ts)
       self.keystore.pop(key, None)
-      if self.is_refd(key):
+      if self.is_ref(key):
         self.delete_ref(key)
       if self.has_index(key) and self.is_index_empty(key):
         self.delete_index(key)
@@ -617,40 +617,31 @@ class Store:
 
   def get_refs(self, key: str, index: str) -> list[str]:
     '''
-    Return a list of keys of type `index` that are reachable
+    Return a list of keys that are reachable
     from `key` through any number of references!
     '''
     if not self.has_index(key) or not self.is_index(index):
       return []
 
-    forward_refs = set()
+    found_refs = []
     queue = deque([key])
     visited = {key}
 
     while queue:
       current_key = queue.popleft()
-      for neighbor in self.refs.get(current_key, set()):
-        if neighbor.startswith(index + ':'):
-          forward_refs.add(neighbor)
-        if neighbor not in visited:
-          visited.add(neighbor)
-          queue.append(neighbor)
+      forward_refs = self.refs.get(current_key, set())
+      reverse_refs = self.reverse_refs.get(current_key, set())
+      refs = forward_refs | reverse_refs
 
-    # Reverse lookup
-    reverse_refs_set = set()
-    queue = deque([key])
-    visited = {key}
+      for ref in refs:
+        if ref.startswith(index + ':'):
+          found_refs.append(ref)
+        if ref not in visited:
+          visited.add(ref)
+          queue.append(ref)
 
-    while queue:
-      current_key = queue.popleft()
-      for neighbor in self.reverse_refs.get(current_key, set()):
-        if neighbor.startswith(index + ':'):
-          reverse_refs_set.add(neighbor)
-        if neighbor not in visited:
-          visited.add(neighbor)
-          queue.append(neighbor)
 
-    return sorted(forward_refs | reverse_refs_set)
+    return sorted(found_refs)
 
   def get_ref_key(self, key: str) -> str:
     ''' Get the key that key references to... '''
