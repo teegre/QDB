@@ -623,7 +623,7 @@ class Store:
     if not self.has_index(key) or not self.is_index(index):
       return []
 
-    found_refs = []
+    found_refs = set()
     queue = deque([key])
     visited = {key}
 
@@ -634,8 +634,8 @@ class Store:
       refs = forward_refs | reverse_refs
 
       for ref in refs:
-        if ref.startswith(index + ':'):
-          found_refs.append(ref)
+        if ref.startswith(index + ':') and ref not in found_refs:
+          found_refs.add(ref)
         if ref not in visited:
           visited.add(ref)
           queue.append(ref)
