@@ -630,16 +630,26 @@ class Store:
     while queue:
       current_key = queue.popleft()
       forward_refs = self.refs.get(current_key, set())
-      reverse_refs = self.reverse_refs.get(current_key, set())
-      refs = forward_refs | reverse_refs
 
-      for ref in refs:
+      for ref in forward_refs:
         if ref.startswith(index + ':') and ref not in found_refs:
           found_refs.add(ref)
         if ref not in visited:
           visited.add(ref)
           queue.append(ref)
 
+    if not found_refs:
+      queue = deque([key])
+      while queue:
+        current_key = queue.popleft()
+        reverse_refs = self.reverse_refs.get(current_key, set())
+
+        for ref in reverse_refs:
+          if ref.startswith(index + ':') and ref not in found_refs:
+            found_refs.add(ref)
+          if ref not in visited:
+            visited.add(ref)
+            queue.append(ref)
 
     return sorted(found_refs)
 
