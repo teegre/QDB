@@ -37,4 +37,3 @@ An **index** is a unique identifier that holds similar hashmaps, i.e.:
 
 *HKEY* used as a *value* in a *field*
 
-## Data representation
