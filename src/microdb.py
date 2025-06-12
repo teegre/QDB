@@ -1,15 +1,33 @@
-import operator
 import json
+import operator
+import os
+import sys
 
+from collections import deque
 from random import shuffle
+from time import time
 from typing import Any
-from sys import stderr
 
-from storage import Store
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from src.datacache import Cache
+from src.exception import MDBQueryError, MDBParseError
+from src.parser import Parser
+from src.storage import Store
+
+def performance_measurement(func, *args):
+  def wrap_func(*args, **kwargs):
+    t1 = time()
+    result = func(*args, **kwargs)
+    t2 = time()
+    print(f'Executed in {(t2-t1):.4f}s.', file=sys.stderr)
+    return result
+  return wrap_func
 
 class MicroDB:
   def __init__(self, name: str):
     self.store = Store(name)
+    self.cache = Cache()
 
     self.commands = {
         'DEL' : self.delete,
@@ -40,6 +58,7 @@ class MicroDB:
         '$': 'dw',  # ends with
         '!$': 'nd', # not ends with
         '**': 'ct', # contains
+        '!*': 'nc', # not contains
     }
 
     self.__opfunc = {
@@ -57,11 +76,18 @@ class MicroDB:
         '??': 'rand',
     }
 
+    self.__special_fields = {
+        '@id': None,
+        '@hkey': None,
+    }
+
+    self.autoid = { '@autoid': self.store.autoid }
+
   def error(self, cmd: str=None, *args: str) -> int:
     if cmd not in self.commands:
-      print('Error: invalid command.', file=stderr)
+      print('Error: invalid command.', file=sys.stderr)
     else:
-      print(f'{cmd}: arguments missing.', file=stderr)
+      print(f'{cmd}: arguments missing.', file=sys.stderr)
     return 1
 
   def set(self, key: str, val: str) -> int:
@@ -85,7 +111,7 @@ class MicroDB:
         found += 1
         print(k)
     if found == 0:
-      print(f'KEYS: No key found.', file=stderr)
+      print(f'KEYS: No key found.', file=sys.stderr)
       return 1
     return 0
 
@@ -99,7 +125,7 @@ class MicroDB:
     items are key/value pairs
     '''
     if len(items) % 2 != 0:
-      print('MSET: invalid number of arguments.', file=stderr)
+      print('MSET: invalid number of arguments.', file=sys.stderr)
       return 1
     err = 0
     for key, val in zip(items[::2], items[1::2]):
@@ -119,7 +145,7 @@ class MicroDB:
     for key in keys:
       err += self.delete(key)
       if err:
-        print(f'MDEL: key `{key}` not found.', file=stderr)
+        print(f'MDEL: key `{key}` not found.', file=sys.stderr)
     return err
 
   def hset(self, hkey_or_index: str, *members: str) -> int:
@@ -128,7 +154,7 @@ class MicroDB:
     (a member is a field/value pair)
     '''
     if len(members) % 2 != 0:
-      print(f'HSET: members mismatch. (missing field or value)', file=stderr)
+      print(f'HSET: members mismatch. (missing field or value)', file=sys.stderr)
       return 1
 
     if self.store.is_index(hkey_or_index):
@@ -137,7 +163,7 @@ class MicroDB:
       keys = [hkey_or_index]
 
     if not keys:
-      print(f'HSET: `{hkey_or_index}` no such key or index.', file=stderr)
+      print(f'HSET: `{hkey_or_index}` no such key or index.', file=sys.stderr)
       return 1
 
     err = 0
@@ -146,6 +172,8 @@ class MicroDB:
       # Original hash
       kv = self.store.read_hash(key)
       subkv = {k: v for k, v in zip(members[::2], members[1::2])}
+      if kv is None: # New hash
+        kv = subkv.copy()
       refs: list(str) = []
 
       # Get fields for index or new fields
@@ -160,89 +188,27 @@ class MicroDB:
         if field in subkv:
           if self.store.has_index(v): # ref
             # delete former key in reference.
-            self.store.delete_key_of_ref(key, kv.get(field))
+            self.store.delete_ref_of_key(key, kv.get(field))
             refs.append(v)
           kv[field] = v
           subkv.pop(field, None)
 
       for k, v in subkv.items():
         kv[k] = v
+        # Reference?
         if self.store.exists(v):
           refs.append(v)
 
       # Serialize and write on disk
       data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
       if self.store.write(data, key, vsz, ts, refs) != 0:
-        print(f'HSET: Error: failed to update `{key}` hkey.', file=stderr)
+        print(f'HSET: Error: failed to update `{key}` hkey.', file=sys.stderr)
         err += 1
 
     return err
 
-  def parse_expr(self, expr: str) -> list[dict]:
-    parts = expr.split(':')
-    if parts[-1] == '*' and len(parts) != 2:
-      print(f'Error: invalid syntax in `{expr}`.', file=stderr)
-      return None
-    if parts[-1] == '*' and len(parts) == 2:
-      return [{'index': parts[0], 'fields': ['*']}]
-
-    result = []
-    current_index = None
-    current_fields = []
-    sort = None
-    sort_field = None
-
-    for i, part in enumerate(parts):
-      temp_field = part
-      temp_sort = self.__sort_prefix.get(part[:2])
-      condition = None
-
-      # Condition
-      for op in sorted(self.__ops.keys(), key=len, reverse=True):
-        if op in temp_field:
-          field_part, value = temp_field.split(op, 1)
-          if field_part and value:
-            temp_field = field_part
-            # Handle quoted values:
-            if value.startswith('"') and value.endswith('"'):
-              value = value [1:-1]
-            condition = {'op': self.__ops[op], 'field': temp_field, 'value': value}
-          break
-
-      # Sorting
-      if temp_sort:
-        temp_field = temp_field[2:]
-      if i == 0 and self.store.is_index(part):
-        current_index = temp_field
-      elif i == 0 and temp_sort:
-        if sort:
-          print(f'Error: multiple sort modifiers in `{expr}`.', file=stderr)
-          return None
-        sort = temp_sort
-        sort_field = temp_field
-        current_fields.append(temp_field)
-      elif i == 0:
-        current_fields.append(temp_field)
-      else:
-        if temp_sort:
-          if sort:
-            print(f'Error: multiple sort modifiers in `{expr}`.', file=stderr)
-            return None
-          sort = temp_sort
-          sort_field = temp_field
-        current_fields.append(temp_field)
-    if current_fields:
-      res = {'index': current_index, 'fields': current_fields, 'condition': condition}
-      if sort:
-        res['sort'] = sort
-        res['sort_field'] = sort_field
-      result.append(res)
-
-    if not result:
-      print(f'Error: invalid expression `{expr}`.', file=stderr)
-      return None
-
-    return result
+  def is_special_field(self, field: str) -> bool:
+    return field in self.__special_fields
 
   def is_numeric(self, value: str) -> bool:
     try:
@@ -267,7 +233,7 @@ class MicroDB:
       field_num = float(field_value)
       cond_num = float(condition_value)
       return self.__opfunc[op](field_num, cond_num)
-    if op not in ('sw', 'ns', 'dw', 'nd', 'ct'):
+    if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc'):
       return self.__opfunc[op](field_value, condition_value)
     match op:
       case 'sw':
@@ -280,11 +246,209 @@ class MicroDB:
         return not field_value.endswith(condition_value)
       case 'ct':
         return condition_value in field_value
+      case 'nc':
+        return condition_value not in field_value
     return False
 
+  def key_map_tree(self, primary_index: str, keys: dict[str: list[str]]) -> dict:
+    ''' Return a tree of indexes/hkeys '''
+
+    def process_sub_elems(refs: set, cur_idx, cur_map, last=False) -> tuple[dict, dict]:
+      for ref in refs:
+        keys = self.store.get_refs(ref, cur_idx)
+        if last:
+          cur_map[ref][cur_idx] = keys
+        else:
+          cur_map[ref][cur_idx] = {}
+          for key in keys:
+            cur_map[ref][cur_idx][key] = {}
+      if last:
+        return cur_map
+      return cur_map, keys
+
+    root = primary_index
+    key_map = { root: {} }
+    hutch = keys.get(root, [])
+    processed = set()
+
+    for start_key in hutch: # start_key & hutch
+      key_map[root][start_key] = {}
+      queue = deque([(start_key, root, key_map[root][start_key])])
+      used_indexes = [x for x in keys if x != root]
+      while queue:
+        cur_key, cur_idx, cur_map = queue.popleft()
+        if not used_indexes:
+          break
+        if (cur_key, cur_idx) in processed:
+          continue
+        processed.add((cur_key, cur_idx))
+        next_idx = used_indexes.pop(0)
+        refs = self.store.get_refs(cur_key, next_idx)
+        if refs:
+          cur_map[next_idx] = {}
+          for ref in refs:
+            cur_map[next_idx][ref] = {}
+
+          cur_map[next_idx], hkeys = process_sub_elems(
+              refs,
+              used_indexes.pop(0) if used_indexes else next_id,
+              cur_map[next_idx],
+              last=len(used_indexes) == 0
+          )
+
+          if len(used_indexes) > 0:          
+            queue.append((refs, used_indexes.pop(0), cur_map[next_idx]))
+    return key_map
+
+  def query(self, index_or_key: str, *exprs: str) -> tuple[list[dict], dict, list, dict] | None:
+    prm_index = index_or_key if self.store.is_index(index_or_key) else self.store.get_index(index_or_key)
+    if not prm_index:
+      raise MDBQueryError(f'Error: `{index_or_key}`, no such key or index.')
+
+    start_keys = self.store.get_index_keys(prm_index) if self.store.is_index(index_or_key) else [index_or_key]
+  
+    parser = Parser(store=self.store, primary_index=prm_index)
+    parsed_exprs = []
+    used_indexes = []
+    filt_indexes = set()
+
+    index_fields = self.store.get_fields_from_index(prm_index)
+
+    sort_info = {}
+
+    for expr in exprs:
+      try:
+        parsed = parser.parse(expr=expr)
+      except MDBParseError as e:
+        print(e, file=sys.stderr)
+        return None, None, None, None
+
+      # Sorting prefixes
+      if parsed['sort']:
+          p = parsed['sort']
+          sort_info['index'] = parsed['index']
+          sort_info.update(p[0]) # TODO: handle multiple fields sorting
+
+      parsed_exprs.append(parsed)
+
+    used_indexes = [prm_index] + [kv['index'] for kv in parsed_exprs if kv['index']]
+
+    # Validate fields
+    for pf in parsed_exprs:
+      index, fields = pf['index'], pf['fields']
+      if index is None:
+        for field in fields:
+          if field not in index_fields:
+            raise MDBQueryError(f'Error: `{field}`, no such field in `{index_or_key}`.')
+      elif index != prm_index and fields != ['*']:
+        ref_fields = self.store.get_fields_from_index(index)
+        for field in fields:
+          if field not in ref_fields:
+            raise MDBQueryError(f'Error: `{field}`, no such field in `{index}`.')
+
+    prm_filt_keys = None
+    sec_filt_keys = {}
+    filtered = False
+
+    # Pre-filter
+    for pf in parsed_exprs:
+      index, conditions = pf['index'], pf['conditions']
+      if conditions:
+        filtered = True
+        target_index = index if index else prm_index
+        filt_indexes.add(target_index)
+        keys = self.store.get_index_keys(target_index)
+        matching_keys = []
+        discarded_keys = []
+        for key in keys:
+          data = self.store.read_hash(key)
+          for condition in conditions:
+            op, field, value = condition['op'], condition['field'], condition['value']
+            if self.evaluate_condition(op, data.get(field), value):
+              if key not in discarded_keys:
+                matching_keys.append(key)
+                self.cache.write(key, data)
+            else:
+              discarded_keys.append(key)
+              if key in matching_keys:
+                matching_keys.remove(key)
+                self.cache.delete(key)
+        if not self.store.refs:
+          continue
+        if target_index == prm_index:
+          if prm_filt_keys is None:
+            prm_filt_keys = set(matching_keys)
+          else:
+            prm_filt_keys &= set(matching_keys)
+        else:
+          sec_filt_keys[target_index] = set(matching_keys)
+
+    if not prm_filt_keys and not sec_filt_keys and filtered:
+      start_keys = []
+
+    elif not prm_filt_keys and filtered:
+      prm_filt_keys = set(start_keys)
+    
+    # Filter secondary keys for primary index keys
+    if prm_filt_keys and sec_filt_keys:
+      for sec_idx, sec_keys in sec_filt_keys.copy().items():
+        filt_keys = set()
+        sec_is_bigger = len(sec_keys) > len(prm_filt_keys)
+        for p_key in prm_filt_keys.copy():
+          if sec_keys & set(refs := self.store.get_refs(p_key, sec_idx)):
+            if sec_is_bigger:
+              filt_keys.update(sec_filt_keys[sec_idx] & set(refs))
+            else:
+              filt_keys.add(p_key)
+        if not sec_is_bigger:
+          prm_filt_keys &= filt_keys
+          break
+        else:
+          sec_filt_keys[sec_idx] = filt_keys
+
+    elif prm_filt_keys and not sec_filt_keys: # No secondary keys
+      for pf in parsed_exprs:
+        for p_key in prm_filt_keys:
+          idx = pf['index'] if pf['index'] else prm_index
+          sec_filt_keys[idx] = self.store.get_refs(p_key, idx)
+          for k in sec_filt_keys[idx]:
+            self.cache.write(k, self.store.read_hash(k))
+
+    # Update start keys
+    if filtered:
+      prm_keys = set(self.store.get_index_keys(prm_index))
+      if prm_filt_keys is not None and prm_filt_keys & prm_keys:
+        start_keys = [k for k in prm_filt_keys]
+      else:
+        start_keys = []
+        for sec_keys in sec_filt_keys.values():
+          for sec_key in sec_keys:
+            refs = self.store.get_refs(sec_key, prm_index)
+            start_keys.extend(refs)
+
+    if filtered and not start_keys:
+      return None, None, None, None
+
+    filt_keys = {prm_index: prm_filt_keys if prm_filt_keys else start_keys}
+    filt_keys.update({idx: set() for idx in used_indexes if idx != prm_index})
+    if sec_filt_keys:
+      filt_keys.update({idx: set(keys) for idx, keys in sec_filt_keys.items()})
+
+    left_indexes = set(used_indexes) - filt_indexes & set(k for k,v in filt_keys.items() if not v)
+    if left_indexes:
+      for idx in left_indexes:
+        for key in filt_keys.copy()[prm_index]:
+          filt_keys[idx].update(self.store.get_refs(key, idx))
+          for k in filt_keys[idx]:
+            self.cache.write(k, self.store.read_hash(k))
+
+    return parsed_exprs, sort_info, used_indexes, filt_keys
+
+
+  @performance_measurement
   def hget(self, index_or_key: str, *fields: str) -> int:
     '''
-    Retrieve and print fields from keys or an index.
+    Query
     '''
 
     # Special syntax for limiting row count:
@@ -299,21 +463,21 @@ class MicroDB:
         limit = int(limit)
         assert limit > 0
       except (ValueError, AssertionError):
-        print(f'HGET: Error: invalid limit: `{limit}`.', file=stderr)
+        print(f'HGET: Error: invalid limit: `{limit}`.', file=sys.stderr)
         return 1
 
-
     if not (self.store.is_index(index_or_key) or self.store.has_index(index_or_key)):
-      print(f'HGET: Error: `{index_or_key}`, no such index or hkey.', file=stderr)
+      print(f'HGET: Error: `{index_or_key}`, no such index or hkey.', file=sys.stderr)
       return 1
 
     if self.store.is_index(index_or_key):
       start_keys: list = self.store.get_index_keys(index_or_key)
-      index_fields: list = self.store.get_fields_from_index(index_or_key)
+      prm_index = index_or_key
     elif self.store.exists(index_or_key):
       start_keys: list = [index_or_key]
-      index: str = self.store.get_index(index_or_key)
-      index_fields: list = self.store.get_fields_from_index(index)
+      prm_index: str = self.store.get_index(index_or_key)
+
+    index_fields: list = self.store.get_fields_from_index(index_or_key)
 
     rows: list = []
 
@@ -322,6 +486,8 @@ class MicroDB:
         row = [key]
         data = self.store.read_hash(key)
         for field in index_fields:
+          if self.is_special_field(field):
+            continue
           row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
         if any(row[1:]):
           rows.append(row)
@@ -330,243 +496,180 @@ class MicroDB:
       if rows:
         for row in rows:
           print(' | '.join(row))
+        rows_found = len(rows)
+        print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
         return 0
-      print(f'HGET: No data for `{index_or_key}`.', file=stderr)
+
+      print(f'HGET: No data for `{index_or_key}`.', file=sys.stderr)
       return 1
 
-    parsed_fields: list = []
-    sort_info = None
-    random_rows = False
 
-    for field in fields:
-      parsed = self.parse_expr(field)
-      if parsed is None:
-        return 1
-      for p in parsed:
-        if 'sort' in p:
-          if sort_info:
-            print(f'HGET: Error: multiple sort modifiers in query.', file=stderr)
-            return 1
-          sort_info = {
-              'sort': p['sort'],
-              'field': p['sort_field'],
-              'index': p['index']
-          }
-          if p['sort'] == 'rand':
-            random_rows = True
-      parsed_fields.extend(parsed)
-
-    used_indexes = {index_or_key} | { pf['index'] for pf in parsed_fields if pf['index'] }
+    try:
+      pe, si, ui, fk = self.query(index_or_key, *fields)
+    except (MDBParseError, MDBQueryError):
+      return 1
 
     limit_reached = False
-    if random_rows:
-      shuffle(start_keys)
+    if si and si['order'] == 'rand':
+      keys_to_process = fk.get(prm_index)
+      shuffle(keys_to_process)
+    else:
+      keys_to_process = sorted(fk.get(prm_index))
 
-    for start_key in start_keys if random_rows else sorted(start_keys):
+    for start_key in keys_to_process:
       if limit_reached:
         break
 
-      valid_row = True
-
-      key_map: dict[str: list[str]] = {
-          idx: sorted(set(self.store.get_refs(start_key, idx))) for idx in used_indexes
-          if self.store.is_index(idx)
+      key_map = {
+          idx: sorted(fk.get(idx, set()))
+          for idx in ui if self.store.is_index(idx)
       }
 
+      print(key_map)
+
       # Check query validity
-      for index, keys in key_map.copy().items():
-        # Ignore main index
-        if index == index_or_key:
-          continue
-        if not keys:
-          # No relation found, error...
-          print(f'HGET: Error: trying to query unrelated data: `{index}`.', file=stderr)
+      for idx, keys in key_map.items():
+        if idx != prm_index and not keys:
+          print('PRIMARY INDEX', prm_index)
+          print('START KEY:', start_key)
+          print('FILTER:', fk)
+          print('KEY MAP:', key_map)
+          print('DATA CACHE:', self.cache)
+          print(f'HGET: Error: trying to query unrelated data: `{idx}`.', file=sys.stderr)
           return 1
 
-      max_depth: int = max(
-          (len(f['fields']) if f['index'] else 0 for f in parsed_fields),
-           default=0
+      max_depth = max(
+          (len(pf['fields']) if pf['index'] else 0 for pf in pe), default=0
       )
 
-      deepest_index: str = None
-      for pf in reversed(parsed_fields):
-        if pf['index'] and len(pf['fields']) == max_depth:
-          deepest_index = pf['index']
-          break
+      deepest_index = next(
+          (pf['index'] for pf in reversed(pe)
+           if pf['index'] and len(pf['fields']) == max_depth),
+          None
+      )
 
-      if deepest_index:
-        deep_keys = key_map.get(deepest_index, [])
+      deep_keys = key_map.get(deepest_index, []) if deepest_index else [start_key]
 
-        for deep_key in deep_keys:
-          row = {'row': [], 'sort_value': None}
-          valid_row = True
-
-          for pf in parsed_fields:
-            index, fields, condition = (pf['index'], pf['fields'], pf['condition'])
-            if index is None or index == index_or_key:
-              data = self.store.read_hash(start_key)
-              if fields == ['*']:
-                for field, value in data.items():
-                  if sort_info and sort_info['index'] == index and sort_info['field'] == field:
-                    row['sort_value'] = value
-                  row['row'].append(f'{field}={value}')
-              else:
-                for field in fields:
-                  value = data.get(field)
-                  if value is None: # non existing unique field
-                    print(f'HGET: Error: `{field}`, no such field in `{start_key}`', file=stderr)
-                    return 1
-                  if condition:
-                    if condition['field'] == field:
-                      if not self.evaluate_condition(condition['op'], value, condition['value']):
-                        valid_row = False
-                        break
-                  if sort_info and sort_info['index'] is None and sort_info['field'] == field:
-                    row['sort_value'] = value
-                  row['row'].append(value)
-            else:
-              if self.store.is_index_of(deep_key, index):
-                data = self.store.read_hash(deep_key)
-              else:
-                try:
-                  assert len(key_map.get(index, [])) == 1
-                  key = key_map.get(index)[0]
-                  data = self.store.read_hash(key)
-                except AssertionError:
-                  print(f'HGET: Error: {index} -> {", ".join(key_map.get(index, []))}', file=stderr)
-                  return 1
-              if fields == ['*']:
-                for field, value in data.items():
-                  if sort_info and sort_info['index'] == index and sort_info['field'] == field:
-                    row['sort_value'] = value
-                  row['row'].append(f'{field}={value}')
-              else:
-                for field in fields:
-                  if field not in data:
-                    print(f'HGET: Error: `{field}` no such field in `{index}`.', file=stderr)
-                    return 1
-                  value = data.get(field, f'?NOFIELD?')
-                  if condition:
-                    if condition['field'] == field:
-                      if not self.evaluate_condition(condition['op'], value, condition['value']):
-                        valid_row = False
-                        break
-                  if sort_info and sort_info['index'] == index and sort_info['field'] == field:
-                    row['sort_value'] = value
-                  row['row'].append(value)
-          if valid_row and row['row']:
-            rows.append(row)
-          if limit and limit == len(rows):
-            limit_reached = True
-      else:
-        # Simple list of field as in
-        # `HGET index field1 field2` or `HGET hkey field1:field2`
-        # Must return an error if field is not in index_fields since
-        # fields are explicitly given.
+      for deep_key in deep_keys:
         row = {'row': [], 'sort_value': None}
-        data = self.store.read_hash(start_key)
-        for pf in parsed_fields:
-          fields, condition = (pf['fields'], pf['condition'])
-          for field in fields:
-            if field not in index_fields:
-              print(f'HGET: Error: `{field}`, no such field in `{index_or_key}`.', file=stderr)
-              return 1
-            value = data.get(field, f'{field}=?NOFIELD?')
-            if condition:
-              if condition['field'] == field:
-                if not self.evaluate_condition(condition['op'], value, condition['value']):
-                  valid_row = False
-                  break
-            if sort_info and sort_info['index'] is None and sort_info['field'] == field:
-              row['sort_value'] = value
-            row['row'].append(value)
+        valid_row = True
+
+        for pf in pe:
+          index, fields, conditions = pf['index'], pf['fields'], pf['conditions']
+          data_key = start_key if index is None or index == prm_index else (
+              deep_key if self.store.is_index_of(deep_key, index) else (
+                key_map.get(index, [None])[0] if key_map.get(index) else None
+              )
+          )
+
+          if data_key is None:
+            print('{deep_key} skipped?', file=sys.stderr)
+            continue
+
+          data = self.cache.read(data_key)
+          if fields == ['*']:
+            for field, value in data.items():
+              if si and si['index'] == index and si['field'] == field:
+                row['sort_value'] = value
+              row['row'].append(f'{field}={value}')
+          else:
+            for field in fields:
+              value = data.get(field, '?NOFIELD?')
+              if index and conditions:
+                for condition in conditions:
+                  if condition['field'] == field:
+                    if not self.evaluate_condition(condition['op'], value, condition['value']):
+                      valid_row = False
+                      break
+              if si and si['index'] == index and si['field'] == field:
+                row['sort_value'] = value
+              row['row'].append(value)
+            if not valid_row:
+              break
 
         if valid_row and row['row']:
           rows.append(row)
-        if limit and limit == len(rows):
-          limit_reached = True
+          if limit and len(rows) == limit:
+            limit_reached = True
+            break
 
-    if not rows and valid_row:
-      print('HGET: An unexpected error occurred.', file=stderr)
+    if not valid_row and not rows:
+      print('HGET: No data.', file=sys.stderr)
       return 1
 
-    if not rows and not valid_row:
-      print('HGET: No data.')
-      return 0
+    if valid_row and not rows:
+      print('HGET: An unexpected error occurred.', file=sys.stderr)
+      return 1
 
-    if sort_info:
-      if sort_info['sort'] == 'rand':
+    # Apply sorting
+    if si:
+      if si['order'] == 'rand':
         shuffle(rows)
       else:
-        reverse = sort_info['sort'] == 'desc'
+        # TODO: Sort on multiple keys...
+        reverse = si['order'] == 'desc'
         rows.sort(key=lambda x: self.get_sort_key(x['sort_value']), reverse=reverse)
 
     for row in rows:
       print(' | '.join(v for v in row['row']))
+    rows_found = len(rows)
+
+    print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
     return 0
 
-  def hdel(self, hkey_or_index: str, *fields: str) -> int:
+  def hdel(self, index_or_key: str, *fields: str) -> int:
     ''' Delete a hash or an index or fields in a hash or in an index '''
-
-    if self.store.is_index(hkey_or_index):
-      keys = self.store.get_index_keys(hkey_or_index)
-      is_index = True
+    is_index = self.store.is_index(index_or_key)
+    if is_index:
+      keys = self.store.get_index_keys(index_or_key)
     else:
-      keys = [hkey_or_index]
-      is_index = False
+      keys = [index_or_key]
 
     err = 0
 
-    if not fields and not keys and is_index:
-      return self.store.delete_index(hkey_or_index)
-
-    for key  in keys:
-      if self.store.is_refd(key) and not fields:
-        print(f'HDEL: Error: `{key}` is referenced (skipped).', file=stderr)
-        err += 1
-        continue
-      if not fields and is_index: # delete the whole key:
-        # Delete references here
-        index_keys = self.store.get_index_keys(hkey_or_index)
-        for k in index_keys:
-          if self.store.has_ref(k):
-            refs = self.store.get_refs_of(k)
-            for ref in refs:
-              self.store.delete_ref_of_key(k, ref)
-        err += self.store.delete(key)
-        continue
+    for key in keys:
+      # Delete the whole key
+      if not fields:
+         err += self.store.delete(key)
+         if err > 0:
+           return 1
+         continue
+      # Delete fields
       kv = self.store.read_hash(key)
-      if not kv and not key in self.store.keystore:
-        print(f'HDEL: `{key}`, no such key.', file=stderr)
-        err += 1
-        continue
-
-      if not fields: # Delete the key:
-        err += self.store.delete(key)
-        continue
-
       for field in fields:
         try:
           v = kv.pop(field)
-          if self.store.is_refd_by(key=key, ref=v):
-            self.store.delete_key_of_ref(key=key, ref=v)
+          if self.store.is_refd_by(key, v):
+            print(f'HDEL: deleting {v} referenced by {key}...')
+            self.store.delete_ref_of_key(ref=v, hkey=key)
         except KeyError:
-          print(f'HDEL: `{key}`: unknown field: {field}', file=stderr)
-          err += 1
-
+          print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)
+          continue
       if fields:
         data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
         err += self.store.write(data, key, vsz, ts)
-      else:
-        err += 1
-    return err
+    return 1 if err > 0 else 0
 
-  def hget_field(self, hkey: str, field: str) -> str:
+  def hget_field(self, hkey: str, field: str) -> int:
     ''' Return the value of a field in a hash. '''
-    return self.store.read_hash_field(hkey, field)
+    if self.store.exists(hkey):
+      value = self.store.read_hash_field(hkey, field)
+      if value == '?NOFIELD?':
+        print(f'HGETV: Error: `{field}`, no such field in `{hkey}`.', file=sys.stderr)
+        return 1
+      if value:
+        print(value)
+        return 0
+      print(f'HGETV: {hkey}: no data.', file=sys.stderr)
+      return 0
+    print(f'HGETV: Error: `{hkey}`, no such hkey.', file=sys.stderr)
+    return 1
 
   def hkey(self, key: str=None) -> int:
-    ''' Get all fields for the given key/index or all indexes if none is provided '''
+    ''' 
+    Get all fields for the given key/index
+    or for all indexes if none is provided.
+    '''
     if key:
       if self.store.is_index(key):
         keys = sorted([k for k in self.store.keystore if k.startswith(key + ':')])
@@ -574,16 +677,16 @@ class MicroDB:
         keys = [key]
       if not keys:
         if key in self.store.keystore:
-          print(f'HKEYS: Error: `{key}` is not a hash.', file=stderr)
+          print(f'HKEYS: Error: `{key}` is not a hash.', file=sys.stderr)
         else:
-          print(f'HKEYS: Error: `{key}` key not found.', file=stderr)
+          print(f'HKEYS: Error: `{key}` key not found.', file=sys.stderr)
         return 1
       for k in keys:
         kv = self.store.read_hash(k)
         if not kv:
-          print(f'HKEY: `{k}` no such key or index.', file=stderr)
+          print(f'HKEY: `{k}` no such key or index.', file=sys.stderr)
           return 1
-        print(f'{k}: {" | ".join(kv.keys())}')
+        print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_special_field(f)])}')
       return 0
     err = 0
     for k in sorted(self.store.keystore.keys()):
@@ -591,16 +694,27 @@ class MicroDB:
         continue
         err += self.hkey(k)
       kv = self.store.read_hash(k)
-      print(f'{k}: {" | ".join(kv.keys())}')
+      print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_special_field(field)])}')
     return 0 if err == 0 else 1
 
   def idx(self) -> None:
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
 
-  def hlen(self, index: str) -> int:
-    ''' Return hkey count for the given index. '''
-    return sum(1 for k in self.store.keystore if k.startswith(index + ':'))
+  def hlen(self, index: str=None) -> int:
+    '''
+    Print hkeys count for the given index.
+    Return 0 on success, 1 if index does not exist.
+    '''
+    if not index:
+      for idx in sorted(self.store.indexes):
+        print(f'{idx}: {self.store.index_len(idx)}')
+      return 0
+    if not self.store.is_index(index):
+      print(f'HLEN: Error: `{index}` no such index.', file=sys.stderr)
+      return 1
+    print(f'{index}: {self.store.index_len(index)}')
+    return 0
 
   def flush(self):
     return self.store.flush()
