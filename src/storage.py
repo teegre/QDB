@@ -695,15 +695,12 @@ class Store:
     Considers forward references from self.refs and reverse references.
     Also works with indexes.
     '''
-    # If at least one key does not exist, no path exists
     if not use_index and (not self.has_index(k1) or not self.has_index(k2)):
       return []
 
-    # If at least one index does not exist, no path exists
     if use_index and (not self.is_index(k1) or not self.is_index(k2)):
       return []
 
-    # If keys are the same, no intermediate path exists
     if k1 == k2:
       return []
 
@@ -711,14 +708,12 @@ class Store:
       k1 = next(iter(self.get_index_keys(k1)), None)
       k2 = next(iter(self.get_index_keys(k2)), None)
 
-    # Initialize BFS
-    queue = deque([(k1, [k1])])  # (current_key, path_so_far)
-    visited = {k1}  # Track visited keys to avoid cycles
+    queue = deque([(k1, [k1])])
+    visited = {k1}
 
     while queue:
       current_key, path = queue.popleft()
 
-      # Get neighbors: forward refs from self.refs, reverse refs from reverse_refs
       forward_neighbors = self.refs.get(current_key, set())
       reverse_neighbors = self.reverse_refs.get(current_key, set())
       neighbors = forward_neighbors | reverse_neighbors
@@ -730,8 +725,7 @@ class Store:
           queue.append((neighbor, new_path))
 
           if not use_index and neighbor == k2:
-            # Return the path, excluding start and end keys
-            return new_path[1:-1]
+            return new_path
           if use_index and self.get_index(neighbor) == self.get_index(k2):
               index_path = [self.get_index(k) for k in new_path]
               return index_path
@@ -877,7 +871,7 @@ class Store:
     visited = set()
 
     def print_tree(node, prefix='', is_last=True, not_related=False):
-      connector = '└─ ' if is_last else '├─ ' 
+      connector = '└─ ' if is_last else '├─ '
       line = prefix + connector + node
       if node in visited:
         line += ' (↻)'
