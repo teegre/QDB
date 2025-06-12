@@ -30,20 +30,22 @@ class MicroDB:
     self.cache = Cache()
 
     self.commands = {
-        'DEL' : self.delete,
-        'GET' : self.get,
-        'HDEL': self.hdel,
-        'HGET': self.hget,
-        'HGETV': self.hget_field,
-        'HKEY': self.hkey,
-        'HLEN': self.hlen,
-        'HSET': self.hset,
-        'IDX' : self.idx,
-        'KEY': self.keys,
-        'MDEL': self.mdel,
-        'MGET': self.mget,
-        'MSET': self.mset,
-        'SET' : self.set,
+        'COMPACT': self.compact,
+        'DEL' :    self.delete,
+        'GET' :    self.get,
+        'HDEL':    self.hdel,
+        'HGET':    self.hget,
+        'HGETV':   self.hget_field,
+        'HKEY':    self.hkey,
+        'HLEN':    self.hlen,
+        'HSET':    self.hset,
+        'IDX' :    self.idx,
+        'KEY':     self.keys,
+        'MDEL':    self.mdel,
+        'MGET':    self.mget,
+        'MSET':    self.mset,
+        'SCHEMA':  self.schema,
+        'SET' :    self.set,
     }
 
     self.__ops = {
@@ -477,7 +479,7 @@ class MicroDB:
       start_keys: list = [index_or_key]
       prm_index: str = self.store.get_index(index_or_key)
 
-    index_fields: list = self.store.get_fields_from_index(index_or_key)
+    index_fields: list = self.store.get_fields_from_index(prm_index)
 
     rows: list = []
 
@@ -715,6 +717,12 @@ class MicroDB:
       return 1
     print(f'{index}: {self.store.index_len(index)}')
     return 0
+
+  def compact(self):
+    return self.store.compact()
+
+  def schema(self):
+    self.store.database_schema()
 
   def flush(self):
     return self.store.flush()
