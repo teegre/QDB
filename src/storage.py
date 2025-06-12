@@ -490,6 +490,9 @@ class Store:
             warnings += 1
             break
 
+    if warnings > 0:
+      return 1
+
     with open(tmpfile, 'wb') as d, open(tmphint, 'wb') as h:
       pos = 0
       keystore: Dict[str, KeyStoreEntry] = {}
@@ -532,7 +535,7 @@ class Store:
 
       self.write_references(newrefs)
 
-    print('Success!.', file=stderr)
+    print('Success!', file=stderr)
     return warnings
 
   def create_index(self, hkey: str) -> int:
@@ -934,4 +937,3 @@ class Store:
             if self.is_refd_by(key, value):
               graph[index] = target_index
     return graph
-
