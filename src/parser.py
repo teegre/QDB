@@ -4,6 +4,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from src.exception import MDBParseError
 from src.storage import Store
 
 class Parser:
@@ -53,6 +54,17 @@ class Parser:
     if self.store.is_index(parts[0]):
       index = parts[0]
       parts = parts[1:]
+    if parts == ['*']:
+      return {
+          'index': index,
+          'fields': ['*'],
+          'conditions': None,
+          'sort': None
+      }
+
+    if '*' in parts:
+      raise MDBParseError('Error: `*` only allowed after an index.')
+
 
     fields = []
     sort = []
@@ -92,4 +104,3 @@ class Parser:
         'conditions': conditions if conditions else None,
         'sort': sort if sort else None
     }
-
