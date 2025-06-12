@@ -6,7 +6,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from glob import glob
 from shutil import move
@@ -304,11 +304,12 @@ class Store:
       crc = crc32(rec)
       data = struct.pack('<L', crc) + rec
       self.write(data, key, vsz, ts)
-      self.keystore.pop(key, None)
       if self.is_ref(key):
         self.delete_ref(key)
-      if self.has_index(key) and self.is_index_empty(key):
-        self.delete_index(key)
+      index = self.get_index(key)
+      self.keystore.pop(key, None)
+      if self.is_index_empty(index):
+        self.delete_index(index)
       self.write_references()
       self.update_reverse_refs()
       return 0
@@ -563,10 +564,13 @@ class Store:
     return 1
 
   def get_index(self, key: str) -> str | None:
-    ''' Return the index of a given key. '''
+    ''' Return the index of a given key if key and index exist. '''
     if not key in self.keystore:
       return None
-    index = key.split(':')[0]
+    try:
+      index = key.split(':')[0]
+    except ValueError:
+      return None
     if self.is_index(index):
       return index
     return None
@@ -599,7 +603,7 @@ class Store:
     for hkey, hrefs in self.refs.items():
       if hkey.startswith(index + ':'):
         refs.extend(list(hrefs))
-    return sorted([str(r) for r in refs])
+    return sorted(set(str(r) for r in refs))
 
   def get_ref(self, key: str) -> str:
     ''' Return the ref referenced by key if any. '''
@@ -615,42 +619,33 @@ class Store:
         reverse_refs.setdefault(ref, set()).add(k)
     self.reverse_refs = reverse_refs
 
-  def get_refs(self, key: str, index: str) -> list[str]:
-    '''
-    Return a list of keys that are reachable
-    from `key` through any number of references!
-    '''
+
+  def get_refs(self, key: str, index: str) -> list:
     if not self.has_index(key) or not self.is_index(index):
       return []
 
+    visited = set()
     found_refs = set()
-    queue = deque([key])
-    visited = {key}
 
-    while queue:
-      current_key = queue.popleft()
-      forward_refs = self.refs.get(current_key, set())
+    def dfs(cur_key: str) -> list:
+      if cur_key in visited:
+        return
+      visited.add(cur_key)
 
-      for ref in forward_refs:
-        if ref.startswith(index + ':') and ref not in found_refs:
+      refs = self.refs.get(cur_key, set())
+      for ref in refs:
+        if self.is_index_of(ref, index):
           found_refs.add(ref)
-        if ref not in visited:
-          visited.add(ref)
-          queue.append(ref)
+        elif not self.is_index_of(ref, self.get_index(key)):
+          dfs(ref)
 
-    if not found_refs:
-      queue = deque([key])
-      while queue:
-        current_key = queue.popleft()
-        reverse_refs = self.reverse_refs.get(current_key, set())
+      for rev in self.reverse_refs.get(cur_key, set()):
+        if self.is_index_of(rev, index):
+          found_refs.add(rev)
+        elif not self.is_index_of(rev, self.get_index(key)):
+          dfs(rev)
 
-        for ref in reverse_refs:
-          if ref.startswith(index + ':') and ref not in found_refs:
-            found_refs.add(ref)
-          if ref not in visited:
-            visited.add(ref)
-            queue.append(ref)
-
+    dfs(key)
     return sorted(found_refs)
 
   def get_ref_key(self, key: str) -> str:
@@ -664,6 +659,35 @@ class Store:
   def are_related(self, k1: str, k2: str) -> bool:
     ''' Return True if k1 and k2 are directly related '''
     return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
+
+  # def find_path2(self, iok1: str, iok2: str, use_index: bool=False) -> list[str]:
+  #   if use_index and (not self.is_index(iok1) or not self.is_index(iok2)):
+  #       return []
+  #   if not use_index and (not self.has_index(iok1) or not self.has_index(iok2)):
+  #       return []
+  #   if iok1 == iok2:
+  #     return []
+
+  #   start_keys = self.get_index_keys(iok1) if use_index else [iok1]
+  #   target_indexes = {iok2} if use_index else {self.get_index(iok2)}
+
+  #   queue = deque((key, [key]) for key in start_keys)
+  #   visited = set(start_keys)
+
+  #   while queue:
+  #     current_key, path = queue.popleft()
+  #     neighbors = self.refs.get(current_key, set()) | self.reverse_refs.get(current_key, set())
+  #     for neighbor in neighbors:
+  #       if neighbor not in visited:
+  #         visited.add(neighbor)
+  #         new_path = path + [neighbor]
+  #         if use_index and self.get_index(neighbor) in target_indexes:
+  #           return [self.get_index(k) for k in new_path]
+  #         if not use_index and neighbor == iok2:
+  #           return new_path
+  #         queue.append((neighbor, new_path))
+
+  #   return []
 
   def find_path(self, k1: str, k2: str, use_index: bool=False) -> list[str]:
     '''
@@ -683,10 +707,11 @@ class Store:
     if k1 == k2:
       return []
 
-    # Initialize BFS
     if use_index:
       k1 = next(iter(self.get_index_keys(k1)), None)
       k2 = next(iter(self.get_index_keys(k2)), None)
+
+    # Initialize BFS
     queue = deque([(k1, [k1])])  # (current_key, path_so_far)
     visited = {k1}  # Track visited keys to avoid cycles
 
@@ -713,6 +738,9 @@ class Store:
 
     # No path found
     return []
+
+  def find_index_path(self, idx1: str, idx2: str) -> list:
+    return self.find_path(idx1, idx2, use_index=True)
 
   def delete_ref_of_key(self, hkey: str, ref: str) -> int:
     '''
@@ -779,11 +807,9 @@ class Store:
 
   def is_index_of(self, hkey: str, index: str) -> bool:
     ''' Return true if hkey exists and belongs to index. '''
-    try:
-      key, _ = hkey.split(':')
-    except ValueError:
+    if hkey is None or index is None:
       return False
-    return self.is_index(index) and key == index and hkey in self.keystore
+    return self.get_index(hkey) == index
 
   def is_index_empty(self, index_or_key: str) -> bool:
     ''' Return True if index or key of index is empty. '''
@@ -798,7 +824,7 @@ class Store:
 
   def is_refd_by(self, key: str, ref: str) -> bool:
     ''' Return True if `key` references `ref`. '''
-    return ref in self.refs.get(key, {})
+    return ref in self.refs.get(key, set())
 
   def is_refd_by_index(self, key: str, index: str) -> bool:
     ''' Return True if key exists and at least one reference of key belongs to index. '''
@@ -808,9 +834,13 @@ class Store:
         return True and key in self.keystore
     return False
 
+  def is_ref_of(self, ref: str, key: str) -> bool:
+    ''' Return True if ref is a reference of key '''
+    return ref in self.refs.get(key, set())
+
   def has_ref(self, key: str) -> bool:
     ''' Return True if key has references '''
-    return key in self.refs
+    return key in self.keystore and key in self.refs
 
   def exists(self, key: str) -> bool:
     ''' Return True if `key` exists in the keystore. '''
@@ -821,6 +851,59 @@ class Store:
     if self.is_index(index):
       return sum(1 for k in self.keystore.keys() if k.startswith(index + ':'))
     return 0
+
+  def database_schema(self):
+    graph = defaultdict(set)
+    all_children = set()
+    unrelated = set()
+
+    indexes = sorted(self.indexes)
+    for i1 in indexes:
+      for i2 in indexes:
+        if i1 == i2:
+          continue
+        path = self.find_index_path(i1, i2)
+        if path:
+          for a, b in zip(path, path[1:]):
+            graph[a].add(b)
+            all_children.add(b)
+        else:
+          unrelated.update((i1, i2))
+
+    unrelated -= all_children
+    roots = sorted(self.indexes - unrelated)
+    starting_points = roots or sorted(self.indexes)
+
+    visited = set()
+
+    def print_tree(node, prefix='', is_last=True, not_related=False):
+      connector = '└─ ' if is_last else '├─ ' 
+      line = prefix + connector + node
+      if node in visited:
+        line += ' (↻)'
+        print(line)
+        return
+
+      if not_related:
+        print(line + ' (x)')
+      else:
+        print(line)
+
+      visited.add(node)
+
+      children = sorted(graph.get(node, []))
+      for i, child in enumerate(children):
+        next_is_last = i == len(children) - 1
+        next_prefix = prefix + ('   ' if is_last else '│  ')
+        print_tree(child, next_prefix, next_is_last)
+
+    for i, root in enumerate(starting_points):
+      if root not in visited:
+        print_tree(root, '', i == len(starting_points) - 1)
+    if unrelated:
+      print('x')
+      for i, root in enumerate(sorted(unrelated)):
+        print_tree(root, '', is_last=i == len(unrelated) - 1, not_related=True)
 
   def autoid(self, index: str) -> str:
     ''' Return current greatest ID + 1 in index '''
