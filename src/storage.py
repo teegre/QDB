@@ -622,9 +622,11 @@ class Store:
         reverse_refs.setdefault(ref, set()).add(k)
     self.reverse_refs = reverse_refs
 
-
   def get_refs(self, key: str, index: str) -> list:
     if not self.has_index(key) or not self.is_index(index):
+      return []
+
+    if self.get_index(key) == index:
       return []
 
     visited = set()
@@ -633,16 +635,20 @@ class Store:
     def dfs(cur_key: str) -> list:
       if cur_key in visited:
         return
-      visited.add(cur_key)
+      visited.add((cur_key, index))
 
       refs = self.refs.get(cur_key, set())
       for ref in refs:
+        if (ref, index) in visited:
+          continue
         if self.is_index_of(ref, index):
           found_refs.add(ref)
         elif not self.is_index_of(ref, self.get_index(key)):
           dfs(ref)
 
       for rev in self.reverse_refs.get(cur_key, set()):
+        if (rev, index) in visited:
+          continue
         if self.is_index_of(rev, index):
           found_refs.add(rev)
         elif not self.is_index_of(rev, self.get_index(key)):
@@ -650,6 +656,9 @@ class Store:
 
     dfs(key)
     return sorted(found_refs)
+
+  def get_rev_refs(self, key: str) -> set:
+    return self.reverse_refs.get(key, set())
 
   def get_ref_key(self, key: str) -> str:
     ''' Get the key that key references to... '''
