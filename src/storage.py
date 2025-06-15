@@ -56,12 +56,13 @@ class KeyStoreEntry:
 class Store:
   def __init__(self, name: str) :
     self.database: str = name
-    self.keystore: Dict[str, KeyStoreEntry] = {}
+    self.keystore: dict[str, KeyStoreEntry] = {}
     self.indexes = set()
-    self.refs: Dict[str, set[str]] = {}
-    self.reverse_refs: Dict[str, set[str]] = {}
+    self.refs: dict[str: set[str]] = {}
+    self.reverse_refs: Dict[str: set[str]] = {}
+    self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
+    self._refs_cache: dict = {}
     self.file = None
-    self._refs_file: str = os.path.join(self.database, '.references')
     self._file_id: int = self._max_id
     self._file_pos: int = 0
     self.reconstruct()
@@ -190,7 +191,6 @@ class Store:
         refs = json.loads(data.decode())
         for ref, keys in refs.items():
           self.refs[ref] = set(keys)
-    self.update_reverse_refs()
     return 0
 
   def read(self, key: str) -> str:
@@ -354,6 +354,7 @@ class Store:
     for index in self.indexes.copy():
       if self.is_index_empty(index):
         self.delete_index(index)
+    self.update_reverse_refs()
     return err
 
   def reconstruct_keystore(self, file: str) -> int:
@@ -623,11 +624,17 @@ class Store:
     self.reverse_refs = reverse_refs
 
   def get_refs(self, key: str, index: str) -> list:
+    '''
+    Return all forward or reverse refs related to index
+    '''
     if not self.has_index(key) or not self.is_index(index):
       return []
 
     if self.get_index(key) == index:
       return []
+
+    if (key, index) in self._refs_cache:
+      return self._refs_cache.get((key, index))
 
     visited = set()
     found_refs = set()
@@ -655,6 +662,8 @@ class Store:
           dfs(rev)
 
     dfs(key)
+
+    self._refs_cache[(key, index)] = found_refs
     return sorted(found_refs)
 
   def get_rev_refs(self, key: str) -> set:
@@ -671,6 +680,29 @@ class Store:
   def are_related(self, k1: str, k2: str) -> bool:
     ''' Return True if k1 and k2 are directly related '''
     return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
+
+  def get_transitive_backrefs(self, ref: str, index: str) -> set:
+    if ref in self.transitive_reverse_refs[index]:
+      return self.transitive_reverse_refs[index][ref]
+
+    visited = set()
+    result = set()
+
+    def dfs(ref):
+      if ref in visited:
+        return
+      visited.add(ref)
+
+      for backref in self.reverse_refs.get(ref, set()):
+        if self.get_index(backref) == index:
+          result.add(backref)
+        else:
+          dfs(backref)
+
+    dfs(ref)
+
+    self.transitive_reverse_refs[index][ref] = result
+    return result
 
   # def find_path2(self, iok1: str, iok2: str, use_index: bool=False) -> list[str]:
   #   if use_index and (not self.is_index(iok1) or not self.is_index(iok2)):

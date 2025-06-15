@@ -5,35 +5,13 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.exception import MDBParseError
+from src.ops import OP, SORTPREFIX
 from src.storage import Store
 
 class Parser:
-  def __init__(self, store: Store, primary_index: str=None, expr: str=None):
+  def __init__(self, store: Store, main_index: str=None):
     self.store = store
-    self._index = primary_index
-    self._expr = expr
-    self._idx = 0
-
-    self.__ops = {
-        '=': 'eq',  # equal
-        '!=': 'ne', # not equal
-        '>': 'gt',  # greater than
-        '>=': 'ge', # greater or equal
-        '<': 'lt',  # less than
-        '<=': 'le', # less than or equal
-        '^': 'sw',  # starts with
-        '!^': 'ns', # not starts with
-        '$': 'dw',  # ends with
-        '!$': 'nd', # not ends with
-        '**': 'ct', # contains
-        '!*': 'nc', # not contains
-    }
-
-    self.__sort_prefix = {
-        '++': 'asc',
-        '--': 'desc',
-        '??': 'rand',
-        }
+    self.main_index = main_index
 
   def parse(self, expr: str) -> dict:
     q_p = r'''(["'])(?:(?=(\\?))\2.)*?\1'''
@@ -50,32 +28,51 @@ class Parser:
     expr_safe = q_r.sub(store_quoted, expr)
 
     parts = expr_safe.split(':')
-    index = None
+
     if self.store.is_index(parts[0]):
       index = parts[0]
       parts = parts[1:]
+    else:
+      index = self.main_index
+
     if parts == ['*']:
       return {
           'index': index,
           'fields': ['*'],
           'conditions': None,
-          'sort': None
+          'sort': None,
+          'aggregations': None
       }
 
     if '*' in parts:
       raise MDBParseError('Error: `*` only allowed after an index.')
 
-
     fields = []
     sort = []
     conditions = []
+    aggregations = {}
 
     for part in parts:
       for k, v in q_v.items():
         part = part.replace(k, v)
 
+      agg_match = re.match(r'^(P<field>\w+):@\[([^\]]+)\]$', part)
+      if agg_match:
+        field = agg_match.group('field')
+        aggs = agg_match.group(2).split(',')
+        for agg in aggs:
+          if ':' not in agg:
+            raise MDBParseError(f'Invalid aggregation: `{agg}`.')
+          agg_op, agg_field = agg.split(':', 1)
+          aggregations.setdefault(field, []).append({
+            'op': agg_op.strip(),
+            'field': agg_field.strip()
+          })
+        fields.append(field)
+        continue
+
       match = re.match(
-          r'^(?P<sort>\+\+|--|\?\?)?(?P<field>[^=><!*^$]+)'
+          r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
           r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
           r'(?P<value>.+)?$', part
       )
@@ -87,10 +84,10 @@ class Parser:
       field = groups['field'].strip()
 
       if groups['sort']:
-        sort.append({'order': self.__sort_prefix[groups['sort']], 'field': field})
+        sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
 
       if groups['op']:
-        op = self.__ops[groups['op']]
+        op = OP[groups['op']]
         value = groups['value']
         for k, v in q_v.items():
           value = value.replace(k, v)
@@ -102,5 +99,6 @@ class Parser:
         'index': index,
         'fields': fields,
         'conditions': conditions if conditions else None,
-        'sort': sort if sort else None
+        'sort': sort if sort else None,
+        'aggregations': aggregations if aggregations else None
     }
