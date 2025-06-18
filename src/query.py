@@ -8,11 +8,11 @@ from collections import defaultdict
 from random import shuffle
 
 from src.datacache import Cache
-from src.exception import MDBParseError, MDBQueryError
+from src.exception import MDBParseError, MDBQueryError, MDBQueryNoData
 from src.ops import OPFUNC
 from src.parser import Parser
 from src.storage import Store
-from src.utils import is_numeric
+from src.utils import is_numeric, performance_measurement
 
 from src.utils import performance_measurement
 
@@ -68,10 +68,11 @@ class Query:
         return idx
     return None
 
-  def query(self, index_or_key: str, *exprs: str) -> dict:
+  def query(self, index_or_key: str, *exprs: str) -> (dict, list[dict]):
     limit = None
     random = False
 
+    # Random order, limit results
     if '?!' in index_or_key:
       index_or_key, limit = index_or_key.split('?!')
       random = True
@@ -86,12 +87,12 @@ class Query:
         limit = int(limit)
         assert limit > 0
       except (ValueError, AssertionError):
-        raise MDBQueryError(f'invalid limit: `{index_or_key}`.')
+        raise MDBQueryError(f'invalid limit: `{limit if limit else ' '}`.')
 
     # Check index_or_key validity
     main_index = index_or_key if self.store.is_index(index_or_key) else self.store.get_index(index_or_key)
     if not main_index:
-      raise MDBQueryError(f'Error: `{index_or_key}`, no such index or hkey')
+      raise MDBQueryError(f'Error: `{index_or_key}`, no such index or hkey.')
     
     def select_best_filter(exprs: list) -> dict:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
@@ -111,7 +112,10 @@ class Query:
     def resolve_to_primary(expr: dict) -> set:
       result = set()
       for match_key in cond_matches.get(expr.get('index'), []):
-        result.update(self.store.get_refs(match_key, prm_index))
+        if self.store.is_index_of(match_key, prm_index):
+          result.add(match_key)
+        else:
+          result.update(self.store.get_refs(match_key, prm_index))
       return result
 
     def build_ref_tree(node: dict, key: str):
@@ -135,11 +139,14 @@ class Query:
 
     # Gather used indexes
     used_indexes = [e['index'] for e in parsed_exprs]
+    if not all(self.store.is_index(idx) for idx in used_indexes):
+      raise MDBQueryError('Error: use of an invalid index in an expression.')
     if main_index not in used_indexes:
       used_indexes.insert(0, main_index)
 
+    # Determining query's primary index
     if exprs:
-      prm_index = self._find_prm_index(used_indexes, condition_exprs) or [main_index]
+      prm_index = self._find_prm_index(used_indexes, condition_exprs) or main_index
     else:
       prm_index = main_index
 
@@ -149,6 +156,7 @@ class Query:
         for expr in condition_exprs
     }
 
+    # Apply conditions
     if condition_exprs:
       best_expr = select_best_filter(condition_exprs)
 
@@ -163,25 +171,45 @@ class Query:
         all_keys &= keys
 
     else:
+      # Query is based on a particular hkey...
       if self.store.has_index(index_or_key):
         all_keys = { index_or_key }
+      # ... or an index
       else:
         all_keys = set(self.store.get_index_keys(prm_index))
 
+    # Stop here if nothing was found
+    if not all_keys:
+      raise MDBQueryNoData(f'No data for `{main_index}`.')
+
+    # Applu random
     if random:
       all_keys = list(all_keys)
       shuffle(all_keys)
 
+    # Apply limit
     if limit:
       all_keys = set(list(all_keys)[:limit])
 
+    # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
-    root_index = main_index if main_index == prm_index else prm_index
-    for idx, refs in cond_matches.items():
-      for ref in refs:
-        for key in self.store.get_transitive_backrefs(ref, root_index):
-          self.cache.write(ref, self.store.read_hash(ref))
-          refs_map[key][idx].add(ref)
+    root_index = prm_index if prm_index != main_index else main_index
+    if cond_matches:
+      for idx, refs in cond_matches.items():
+        for ref in refs:
+          for key in self.store.get_transitive_backrefs(ref, root_index):
+            self.cache.write(ref, self.store.read_hash(ref))
+            refs_map[key][idx].add(ref)
+    else:
+      flat_refs = self.store.build_hkeys_flat_refs(all_keys)
+      for key in sorted(all_keys):
+        for idx in used_indexes:
+          if idx == root_index:
+            continue
+          refs = flat_refs[key][idx]
+          for ref in refs:
+            self.cache.write(ref, self.store.read_hash(ref))
+            refs_map[key][idx].add(ref)
 
     # Build tree
     tree = { main_index: {} }
