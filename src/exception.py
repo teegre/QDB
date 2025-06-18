@@ -3,8 +3,14 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-class MDBQueryError(Exception):
+class MDBError(Exception):
   pass
-class MDBParseError(Exception):
+class MDBParseError(MDBError):
+  pass
+class MDBQueryError(MDBError):
+  pass
+class MDBQueryNoData(MDBError):
+  pass
+class MDBMissingFieldError(MDBError):
   pass
 
