@@ -4,7 +4,7 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.exception import MDBParseError
+from src.exception import MDBParseError, MDBMissingFieldError
 from src.ops import OP, SORTPREFIX
 from src.storage import Store
 
@@ -83,6 +83,7 @@ class Parser:
       groups = match.groupdict()
       field = groups['field'].strip()
 
+
       if groups['sort']:
         sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
 
@@ -94,6 +95,13 @@ class Parser:
         conditions.append({'field': field, 'op': op, 'value': value.strip()})
 
       fields.append(field)
+
+    # Field validity check
+    index_fields = self.store.get_fields_from_index(index)
+    invalid_fields = [f for f in fields if f not in index_fields]
+    if invalid_fields:
+      tag = 'field' if len(invalid_fields) == 1 else 'fields'
+      raise MDBMissingFieldError(f'Error: `{', '.join(invalid_fields)}`, no such {tag} in `{index}`.')
 
     return {
         'index': index,
