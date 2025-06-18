@@ -3,13 +3,24 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from collections.abc import Callable
+
+from src.storage import Store
+
 class Cache:
   __cache: dict = {}
   def write(self, key: str, data: dict[str]):
     self.__cache[key] = data
 
-  def read(self, key: str, default: dict[str]=None) -> dict[str] | str:
-    data = self.__cache.get(key, default)
+  def read(self, key: str, defaultreadhash: Callable[[str], None]=None) -> dict[str] | str:
+    data = self.__cache.get(key)
+    if data is None and defaultreadhash is not None:
+      try:
+        fname = getattr(defaultreadhash, '__name__')
+        if fname == 'read_hash' and hasattr(Store, fname):
+          data =  defaultreadhash(key)
+      except (AttributeError, TypeError):
+        return None
     return data
 
   def delete(self, key: str) -> int:
