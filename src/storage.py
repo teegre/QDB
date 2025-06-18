@@ -14,6 +14,8 @@ from sys import stdin, stdout, stderr
 from time import time, strftime
 from zlib import crc32
 
+from src.utils import performance_measurement
+
 # Record format on disk:
 # CRC TS VT KSZ VSZ K V
 #     <----- CRC ----->
@@ -56,16 +58,22 @@ class KeyStoreEntry:
 class Store:
   def __init__(self, name: str) :
     self.database: str = name
-    self.keystore: dict[str, KeyStoreEntry] = {}
+    self.keystore: Dict[str, KeyStoreEntry] = {}
     self.indexes = set()
-    self.refs: dict[str: set[str]] = {}
+    self.refs: Dict[str: set[str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
-    self._refs_cache: dict = {}
+    self._refs_cache: Dict = {}
     self.file = None
     self._file_id: int = self._max_id
     self._file_pos: int = 0
+    self.initialize()
+
+  @performance_measurement(message='Loaded')
+  def initialize(self):
     self.reconstruct()
+    self.update_reverse_refs()
+    # self.build_flat_refs()
 
   def open(self) -> int:
     if not os.path.exists(self.database):
@@ -171,7 +179,6 @@ class Store:
         if bytes_written != len(rec):
           print('Error writing references: incomplete write {bytes_written}/{len(rec)} bytes.', file=stderr)
           return 1
-      self.update_reverse_refs()
     return 0
 
   def load_references(self, ref_file: str=None) -> int:
@@ -311,7 +318,6 @@ class Store:
       if self.is_index_empty(index):
         self.delete_index(index)
       self.write_references()
-      self.update_reverse_refs()
       return 0
     return 1
 
@@ -354,7 +360,6 @@ class Store:
     for index in self.indexes.copy():
       if self.is_index_empty(index):
         self.delete_index(index)
-    self.update_reverse_refs()
     return err
 
   def reconstruct_keystore(self, file: str) -> int:
@@ -616,6 +621,62 @@ class Store:
         return ref
     return None
 
+  # def build_flat_refs(self):
+  #   self.flat_refs = defaultdict(lambda: defaultdict(set))
+
+  #   all_indexes = self.indexes
+  #   refd_indexes = {
+  #       self.get_index(ref)
+  #       for refs in self.refs.values()
+  #       for ref in refs
+  #   }
+
+  #   top_level_indexes = all_indexes - refd_indexes
+  #   visited = set()
+
+  #   def dfs(cur_key):
+  #     if cur_key in visited:
+  #       return
+  #     visited.add(cur_key)
+
+  #     for ref in self.refs.get(cur_key, set()):
+  #       idx = self.get_index(ref)
+  #       self.flat_refs[root_key][idx].add(ref)
+  #       dfs(ref)
+
+  #   for index in top_level_indexes:
+  #     for root_key in self.get_index_keys(index):
+  #       dfs(root_key)
+
+  def build_hkeys_flat_refs(self, hkeys: set) -> dict:
+    flat_refs = defaultdict(lambda: defaultdict(set))
+
+    refd_indexes = {
+        self.get_index(ref)
+        for refs in self.refs.values()
+        for ref in refs
+    }
+
+    visited = set()
+
+    def dfs(cur_key):
+      if (root_key, cur_key) in visited:
+        return
+      visited.add((root_key, cur_key))
+
+      refs = self.refs.get(cur_key, set())
+      # if not refs:
+      #   refs = self.reverse_refs.get(cur_key, set())
+      for ref in refs:
+        idx = self.get_index(ref)
+        flat_refs[root_key][idx].add(ref)
+        dfs(ref)
+
+    for root_key in hkeys:
+      dfs(root_key)
+
+    return flat_refs
+
   def update_reverse_refs(self):
     reverse_refs = {}
     for k, refs in self.refs.items():
@@ -792,6 +853,7 @@ class Store:
     self.refs[hkey].discard(ref)
     if len(self.refs[hkey]) == 0:
       del self.refs[hkey]
+    self.update_reverse_refs()
     return 0
 
   def delete_ref(self, ref: str) -> None:
@@ -799,16 +861,17 @@ class Store:
     Delete ref in all keys.
     Delete key if not used by any ref.
     '''
-    empty_refs = []
-    for key, refs in self.refs.items():
+    update = False
+    for key, refs in self.refs.copy().items():
       if ref in refs:
         self.refs[key].discard(ref)
+        update = True
         if len(refs) == 0:
-          empty_refs.append(key)
-    for key in empty_refs:
-      del self.refs[key]
+          del self.refs[key]
+    if update:
+      self.update_reverse_refs()
 
-  def get_most_recent_hkey_from_index(self, index: str) -> str:
+  def _get_most_recent_hkey_from_index(self, index: str) -> str:
     '''
     Get the most recent hkey containing the most data
     from a given index
@@ -829,7 +892,7 @@ class Store:
 
   def get_fields_from_index(self, index: str) -> list[str]:
     ''' Get fields of a given index. '''
-    hkey = self.get_most_recent_hkey_from_index(index)
+    hkey = self._get_most_recent_hkey_from_index(index)
     if not hkey:
       return []
     return list(self.read_hash(hkey).keys())
@@ -868,7 +931,7 @@ class Store:
     ''' Return True if key exists and at least one reference of key belongs to index. '''
     refs = self.refs.get(key, [])
     for ref in refs:
-      if ref.startswith(index + ':'):
+      if self.is_index_of(key, index):
         return True and key in self.keystore
     return False
 
@@ -963,18 +1026,3 @@ class Store:
   def active_refs(self) -> str:
     name = f'data{str(self._file_id).zfill(4)}.ref'
     return os.path.join(self.database, name)
-
-  @property
-  def relations(self) -> dict:
-    graph = {}
-    for index in self.indexes:
-      fields = self.get_fields_from_index(index)
-      for field in fields:
-        key = next(iter(self.get_index_keys(index)), None)
-        if key:
-          value = self.read_hash_field(key, field)
-          if self.exists(value):
-            target_index = self.get_index(value)
-            if self.is_refd_by(key, value):
-              graph[index] = target_index
-    return graph
