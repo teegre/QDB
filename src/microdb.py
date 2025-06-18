@@ -9,7 +9,7 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.datacache import Cache
-from src.exception import MDBQueryError, MDBParseError
+from src.exception import MDBError, MDBMissingFieldError
 from src.ops import OPFUNC, SPECIAL
 from src.query import Query
 from src.storage import Store
@@ -19,7 +19,7 @@ class MicroDB:
   def __init__(self, name: str):
     self.store = Store(name)
     self.cache = Cache()
-    self.query = Query(self.store, self.cache)
+    self.Q = Query(self.store, self.cache)
 
     self.commands = {
         'COMPACT': self.compact,
@@ -32,6 +32,7 @@ class MicroDB:
         'HLEN':    self.hlen,
         'HSET':    self.hset,
         'IDX' :    self.idx,
+        'IDXF':    self.idxf,
         'KEY':     self.keys,
         'MDEL':    self.mdel,
         'MGET':    self.mget,
@@ -179,21 +180,21 @@ class MicroDB:
   @performance_measurement
   def hget(self, index_or_key: str, *exprs: str) -> int:
     try:
-      tree, fields = self.query.query(index_or_key, *exprs)
-    except (MDBParseError, MDBQueryError) as e:
+      tree, fields_data = self.Q.query(index_or_key, *exprs)
+    except MDBError as e:
       print(f'HGET: {e}', file=sys.stderr)
       return 1
 
-
-    prm_index = list(tree.keys())[0]
-    index_fields: list = self.store.get_fields_from_index(prm_index)
+    main_index = list(tree.keys())[0]
+    index_fields: list = self.store.get_fields_from_index(main_index)
 
     rows: list = []
 
-    if not fields:
-      for key in tree[prm_index].keys():
+    # No field case
+    if not fields_data:
+      for key in tree[main_index].keys():
         row = [key]
-        data = self.store.read_hash(key)
+        data = self.cache.read(key, self.store.read_hash)
         for field in index_fields:
           if self.is_special_field(field):
             continue
@@ -207,43 +208,71 @@ class MicroDB:
         print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
         return 0
 
-      print(f'HGET: No data for `{index_or_key}`.', file=sys.stderr)
+      print(f'HGET: An unexpected error occured.', file=sys.stderr)
       return 1
 
 
-    # keys_to_process = sorted(fk.get(prm_index))
+    def walk(index: str, key: str, node: dict, row: list, row_meta: dict):
+      data = self.cache.read(key, self.store.read_hash)
+      fields = fields_data[index]['fields']
+      sort_data = fields_data[index]['sort']
+      if fields == ['*']:
+        for f, v in data.items():
+          if self.is_special_field(f):
+            continue
+          row.append(f'{f}={v}')
+      else:
+        for field in fields:
+          try:
+            value = data[field]
+          except KeyError:
+            raise MDBError(f'HGET: An unexpected error involving `{field}` occured.')
+          row.append(value)
+        if row_meta.get('sort_value') is None:
+          if sort_data:
+            for rule in sort_data:
+              if rule['field'] == field:
+                row_meta['sort_value'] = value
+                break
+      for child_idx, children in node.items():
+        for child_key, child_node in children.items():
+          walk(child_idx, child_key, child_node, row, row_meta)
 
-    # for start_key in keys_to_process:
-    #   if limit_reached:
-    #     break
+    # Fields
+    elements = tree.get(main_index, [])
 
-    #   key_map = {
-    #       idx: sorted(fk.get(idx, set()))
-    #       for idx in ui if self.store.is_index(idx)
-    #   }
+    # Build rows
+    rows = []
+    for key, children in elements.items():
+      row = []
+      row_meta = { 'sort_value': None }
+      try:
+        walk(main_index, key, children, row, row_meta)
+      except MDBError as e:
+        print(e, file=sys.stderr)
+        return 1
+      rows.append({'row': row, 'sort_value': row_meta['sort_value']})
 
-    #   # Check query validity
-    #   for idx, keys in key_map.items():
-    #     if idx != prm_index and not keys:
-    #       print('PRIMARY INDEX', prm_index)
-    #       print('START KEY:', start_key)
-    #       print('FILTER:', fk)
-    #       print('KEY MAP:', key_map)
-    #       print('DATA CACHE:', self.cache)
-    #       print(f'HGET: Error: trying to query unrelated data: `{idx}`.', file=sys.stderr)
-    #       return 1
+    if not rows:
+      print(f'HGET: an unexpected error occured.', file=sys.stderr)
+      return 1
 
-    #   max_depth = max(
-    #       (len(pf['fields']) if pf['index'] else 0 for pf in pe), default=0
-    #   )
 
-    #   deepest_index = next(
-    #       (pf['index'] for pf in reversed(pe)
-    #        if pf['index'] and len(pf['fields']) == max_depth),
-    #       None
-    #   )
+    # Sorting and output
+    rows.sort(key=lambda r: str(r['sort_value'] if r['sort_value'] is not None else ''))
+    for row in rows:
+      print(' | '.join(row['row']))
 
-    #   deep_keys = key_map.get(deepest_index, []) if deepest_index else [start_key]
+    rows_found = len(rows)
+    print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
+    return 0
+
+
+
+
+    # Sort and print
+
+
 
     #   for deep_key in deep_keys:
     #     row = {'row': [], 'sort_value': None}
@@ -396,6 +425,15 @@ class MicroDB:
   def idx(self) -> None:
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
+
+  def idxf(self, index: str) -> None:
+    if self.store.is_index(index):
+      fields = self.store.get_fields_from_index(index)
+      print(f'{index}: {' | '.join([f for f in fields if not self.is_special_field(f)])}')
+      return 0
+    print(f'Error: `{index}`, no such index.', file=sys.stderr)
+
+
 
   def hlen(self, index: str=None) -> int:
     '''
