@@ -211,8 +211,7 @@ class MicroDB:
       print(f'HGET: An unexpected error occured.', file=sys.stderr)
       return 1
 
-
-    def walk(index: str, key: str, node: dict, row: list, row_meta: dict):
+    def walk(index: str, key: str, node: dict, values: dict, row_meta: dict):
       data = self.cache.read(key, self.store.read_hash)
       fields = fields_data[index]['fields']
       sort_data = fields_data[index]['sort']
@@ -220,14 +219,14 @@ class MicroDB:
         for f, v in data.items():
           if self.is_special_field(f):
             continue
-          row.append(f'{f}={v}')
+          values[(index, f)] = v
       else:
         for field in fields:
           try:
             value = data[field]
           except KeyError:
             raise MDBError(f'HGET: An unexpected error involving `{field}` occured.')
-          row.append(value)
+          values[(index, field)] = value
         if row_meta.get('sort_value') is None:
           if sort_data:
             for rule in sort_data:
@@ -236,27 +235,36 @@ class MicroDB:
                 break
       for child_idx, children in node.items():
         for child_key, child_node in children.items():
-          walk(child_idx, child_key, child_node, row, row_meta)
+          walk(child_idx, child_key, child_node, values, row_meta)
 
-    # Fields
-    elements = tree.get(main_index, [])
+    # Tree
+    elements = tree.get(main_index, {})
 
     # Build rows
     rows = []
     for key, children in elements.items():
-      row = []
+      values = {}
       row_meta = { 'sort_value': None }
       try:
-        walk(main_index, key, children, row, row_meta)
+        walk(main_index, key, children, values, row_meta)
       except MDBError as e:
         print(e, file=sys.stderr)
         return 1
+
+      row = []
+      for index, spec in fields_data.items():
+        for field in spec['fields']:
+          if field == '*':
+            star_fields = [k[1] for k in values.keys() if k[0] == index]
+            for star_field in star_fields:
+              row.append(values[(index, star_field)])
+          else:
+            row.append(values[(index, field)])
       rows.append({'row': row, 'sort_value': row_meta['sort_value']})
 
     if not rows:
       print(f'HGET: an unexpected error occured.', file=sys.stderr)
       return 1
-
 
     # Sorting and output
     rows.sort(key=lambda r: str(r['sort_value'] if r['sort_value'] is not None else ''))
@@ -266,81 +274,6 @@ class MicroDB:
     rows_found = len(rows)
     print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
     return 0
-
-
-
-
-    # Sort and print
-
-
-
-    #   for deep_key in deep_keys:
-    #     row = {'row': [], 'sort_value': None}
-    #     valid_row = True
-
-    #     for pf in pe:
-    #       index, fields, conditions = pf['index'], pf['fields'], pf['conditions']
-    #       data_key = start_key if index is None or index == prm_index else (
-    #           deep_key if self.store.is_index_of(deep_key, index) else (
-    #             key_map.get(index, [None])[0] if key_map.get(index) else None
-    #           )
-    #       )
-
-    #       if data_key is None:
-    #         print('{deep_key} skipped?', file=sys.stderr)
-    #         continue
-
-    #       data = self.cache.read(data_key, self.store.read_hash(data_key))
-
-    #       if fields == ['*']:
-    #         for field, value in data.items():
-    #           if si and si['index'] == index and si['field'] == field:
-    #             row['sort_value'] = value
-    #           row['row'].append(f'{field}={value}')
-    #       else:
-    #         for field in fields:
-    #           value = data.get(field, '?NOFIELD?')
-    #           if index and conditions:
-    #             for condition in conditions:
-    #               if condition['field'] == field:
-    #                 if not self.evaluate_condition(condition['op'], value, condition['value']):
-    #                   valid_row = False
-    #                   break
-    #           if si and si['index'] == index and si['field'] == field:
-    #             row['sort_value'] = value
-    #           row['row'].append(value)
-    #         if not valid_row:
-    #           break
-
-    #     if valid_row and row['row']:
-    #       rows.append(row)
-    #       if limit and len(rows) == limit:
-    #         limit_reached = True
-    #         break
-
-    # if not valid_row and not rows:
-    #   print('HGET: No data.', file=sys.stderr)
-    #   return 1
-
-    # if valid_row and not rows:
-    #   print('HGET: An unexpected error occurred.', file=sys.stderr)
-    #   return 1
-
-    # # Apply sorting
-    # if si:
-    #   if si['order'] == 'rand':
-    #     shuffle(rows)
-    #   else:
-    #     # TODO: Sort on multiple keys...
-    #     reverse = si['order'] == 'desc'
-    #     rows.sort(key=lambda x: self.get_sort_key(x['sort_value']), reverse=reverse)
-
-    # for row in rows:
-    #   print(' | '.join(v for v in row['row']))
-    # rows_found = len(rows)
-
-    # print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
-    # return 0
 
   def hdel(self, index_or_key: str, *fields: str) -> int:
     ''' Delete a hash or an index or fields in a hash or in an index '''

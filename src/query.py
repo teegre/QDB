@@ -48,17 +48,8 @@ class Query:
         return condition_value not in field_value
     return False
 
-  def _find_prm_index(self, indexes: list, condition_exprs: dict) -> str:
-    # Prioritize main index
-    main_index = indexes[0]
-    if all(
-        main_index == other or self.store.find_index_path(main_index, other)
-        for other in indexes
-    ):
-      return main_index
-
-    # Fallback to best-connected index
-    candidates = sorted(indexes, key=lambda idx: self.store.index_len(idx))
+  def _find_prm_index(self, indexes: list) -> str:
+    candidates = reversed(sorted(indexes, key=lambda idx: self.store.index_len(idx)))
     for idx in candidates:
       reachable = all(
           idx == other or self.store.find_index_path(idx, other)
@@ -119,9 +110,8 @@ class Query:
       return result
 
     def build_ref_tree(node: dict, key: str):
+      nonlocal tree
       for idx, refs in refs_map.get(key, {}).items():
-        if idx == self.store.get_index(key):
-          continue
         node[idx] = {}
         for ref in refs:
           edge = (key, idx, ref)
@@ -139,14 +129,12 @@ class Query:
 
     # Gather used indexes
     used_indexes = [e['index'] for e in parsed_exprs]
-    if not all(self.store.is_index(idx) for idx in used_indexes):
-      raise MDBQueryError('Error: use of an invalid index in an expression.')
     if main_index not in used_indexes:
       used_indexes.insert(0, main_index)
 
     # Determining query's primary index
     if exprs:
-      prm_index = self._find_prm_index(used_indexes, condition_exprs) or main_index
+      prm_index = self._find_prm_index(used_indexes) or main_index
     else:
       prm_index = main_index
 
@@ -180,7 +168,7 @@ class Query:
 
     # Stop here if nothing was found
     if not all_keys:
-      raise MDBQueryNoData(f'No data for `{main_index}`.')
+      raise MDBQueryNoData(f'No data.')
 
     # Applu random
     if random:
@@ -193,31 +181,38 @@ class Query:
 
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
-    root_index = prm_index if prm_index != main_index else main_index
+    root_index = main_index
     if cond_matches:
       for idx, refs in cond_matches.items():
         for ref in refs:
           for key in self.store.get_transitive_backrefs(ref, root_index):
-            self.cache.write(ref, self.store.read_hash(ref))
+            if not self.cache.exists(key):
+              self.cache.write(ref, self.store.read_hash(ref))
             refs_map[key][idx].add(ref)
-    else:
+
+    cond_indexes = set(cond_matches.keys())
+    if set(used_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in sorted(all_keys):
         for idx in used_indexes:
-          if idx == root_index:
+          if idx == prm_index:
             continue
           refs = flat_refs[key][idx]
+          if not refs: # try get_refs:
+            refs = self.store.get_refs(key, idx)
           for ref in refs:
-            self.cache.write(ref, self.store.read_hash(ref))
+            if not self.cache.exists(ref):
+              self.cache.write(ref, self.store.read_hash(ref))
             refs_map[key][idx].add(ref)
 
     # Build tree
-    tree = { main_index: {} }
+    tree = { prm_index: {} }
     visited = set()
 
-    for key in all_keys:
-      self.cache.write(key, self.store.read_hash(key))
-      node = tree[main_index][key] = {}
+    for key in refs_map.keys():
+      if not self.cache.exists(key):
+        self.cache.write(key, self.store.read_hash(key))
+      node = tree[prm_index][key] = {}
       build_ref_tree(node, key)
 
     # Fields

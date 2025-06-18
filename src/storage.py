@@ -651,11 +651,6 @@ class Store:
   def build_hkeys_flat_refs(self, hkeys: set) -> dict:
     flat_refs = defaultdict(lambda: defaultdict(set))
 
-    refd_indexes = {
-        self.get_index(ref)
-        for refs in self.refs.values()
-        for ref in refs
-    }
 
     visited = set()
 
@@ -755,7 +750,7 @@ class Store:
       visited.add(ref)
 
       for backref in self.reverse_refs.get(ref, set()):
-        if self.get_index(backref) == index:
+        if self.is_index_of(backref, index):
           result.add(backref)
         else:
           dfs(backref)
