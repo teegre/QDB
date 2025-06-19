@@ -13,7 +13,7 @@ class Parser:
     self.store = store
     self.main_index = main_index
 
-  def parse(self, expr: str) -> dict:
+  def parse(self, expr: str, index_hint: str=None) -> dict:
     q_p = r'''(["'])(?:(?=(\\?))\2.)*?\1'''
     q_r = re.compile(q_p)
     q_v = {}
@@ -27,13 +27,16 @@ class Parser:
 
     expr_safe = q_r.sub(store_quoted, expr)
 
+    if not expr_safe.strip():
+      raise MDBParseError('Error: empty expression.')
+
     parts = expr_safe.split(':')
 
     if self.store.is_index(parts[0]):
       index = parts[0]
       parts = parts[1:]
     else:
-      index = self.main_index
+      index = index_hint or self.main_index
 
     if parts == ['*']:
       return {
@@ -56,7 +59,7 @@ class Parser:
       for k, v in q_v.items():
         part = part.replace(k, v)
 
-      agg_match = re.match(r'^(P<field>\w+):@\[([^\]]+)\]$', part)
+      agg_match = re.match(r'^(?P<field>\w+):@\[([^\]]+)\]$', part)
       if agg_match:
         field = agg_match.group('field')
         aggs = agg_match.group(2).split(',')

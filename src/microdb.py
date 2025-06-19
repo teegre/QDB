@@ -179,6 +179,10 @@ class MicroDB:
 
   @performance_measurement
   def hget(self, index_or_key: str, *exprs: str) -> int:
+    if not index_or_key:
+      print(f'HGET: missing index or hkey.', file=sys.stderr)
+      return 1
+
     try:
       tree, fields_data = self.Q.query(index_or_key, *exprs)
     except MDBError as e:
@@ -211,6 +215,22 @@ class MicroDB:
       print(f'HGET: An unexpected error occured.', file=sys.stderr)
       return 1
 
+
+    pos = 0
+    field_positions = {}
+    for idx, fields in fields_data.items():
+      if fields['fields'] == ['*']:
+        all_fields = self.store.get_fields_from_index(idx)
+        star = True
+      else:
+        all_fields = fields['fields']
+        star = False
+      for f in all_fields:
+        if star and self.is_special_field(f):
+          continue
+        field_positions[f'{idx}:{f}'] = pos
+        pos += 1
+
     def walk(index: str, key: str, node: dict, values: dict, row_meta: dict):
       data = self.cache.read(key, self.store.read_hash)
       fields = fields_data[index]['fields']
@@ -236,6 +256,40 @@ class MicroDB:
       for child_idx, children in node.items():
         for child_key, child_node in children.items():
           walk(child_idx, child_key, child_node, values, row_meta)
+
+    def _descending_value(val):
+      if is_numeric(val):
+        val = float(val)
+      if isinstance(val, float):
+        return -val
+      return ''.join(chr(255 - ord(c)) for c in val)
+
+    def sort_key(row: list, fields_info: dict) -> tuple:
+      key = []
+      for index, info in fields_info.items():
+        sort_list = info.get('sort')
+        if not sort_list:
+          continue
+        for sort_entry in sort_list:
+          field = sort_entry['field']
+          order = sort_entry['order']
+          full_field = f'{index}:{field}'
+          pos = field_positions.get(full_field)
+          if pos is None:
+            value = row.get('sort_value')
+          else:
+            value = row['row'][pos]
+
+          if self.store.has_index(value): # reference
+            _, value = value.split(':')
+  
+          if is_numeric(value):
+            value = float(value)
+          elif value is None:
+            value = ''
+
+          key.append(_descending_value(value) if order == 'desc' else value)
+      return tuple(key)
 
     # Tree
     elements = tree.get(main_index, {})
@@ -267,7 +321,9 @@ class MicroDB:
       return 1
 
     # Sorting and output
-    rows.sort(key=lambda r: str(r['sort_value'] if r['sort_value'] is not None else ''))
+    rows.sort(key=lambda row: sort_key(row, fields_data))
+    # rows.sort(key=lambda r: str(r['sort_value'] if r['sort_value'] is not None else ''))
+
     for row in rows:
       print(' | '.join(row['row']))
 
@@ -365,8 +421,6 @@ class MicroDB:
       print(f'{index}: {' | '.join([f for f in fields if not self.is_special_field(f)])}')
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
-
-
 
   def hlen(self, index: str=None) -> int:
     '''

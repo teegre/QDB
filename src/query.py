@@ -20,6 +20,24 @@ class Query:
   def __init__(self, store: Store, cache: Cache):
     self.store = store
     self.cache = cache
+    self.parser = Parser(self.store)
+
+  def _dispatch_parse(self, main_index: str, exprs: list) -> list:
+    parsed_exprs = []
+    current_index = main_index
+
+    for expr in exprs:
+      head = expr.split(':', 1)[0]
+
+      if self.store.is_index(head):
+        current_index = head
+        parsed = self.parser.parse(expr)
+      else:
+        parsed = self.parser.parse(expr, current_index)
+
+      parsed_exprs.append(parsed)
+
+    return parsed_exprs
 
   def eval_cond(self, op: str, field_value: str, condition_value: str) -> bool:
     if op in ('gt', 'ge', 'lt', 'le'):
@@ -122,8 +140,8 @@ class Query:
           build_ref_tree(node[idx][ref], ref)
 
     # Parse expressions
-    parser = Parser(self.store, main_index)
-    parsed_exprs = [parser.parse(e) for e in exprs]
+    self.parser = Parser(self.store, main_index)
+    parsed_exprs = self._dispatch_parse(main_index, exprs)
     condition_exprs = [e for e in parsed_exprs if e['conditions']]
     all_keys = None
 
@@ -132,7 +150,7 @@ class Query:
     fields = {}
 
     # Assuming '*' when no fields are selected for the main index,
-    if main_index not in selected_indexes:
+    if main_index not in selected_indexes and parsed_exprs:
       fields = {main_index: {'fields': ['*'], 'sort': None }}
 
     for d in parsed_exprs:
@@ -190,6 +208,12 @@ class Query:
     if limit:
       all_keys = set(list(all_keys)[:limit])
 
+    if not parsed_exprs and not fields:
+      tree = {main_index: {}}
+      for key in all_keys:
+        tree[main_index][key] = {}
+      return tree, {}
+
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
     root_index = main_index
@@ -219,6 +243,13 @@ class Query:
 
     # Build tree
     tree = { prm_index: {} }
+    if not refs_map:
+      for k in all_keys:
+        refs_map[k][prm_index].add(k)
+
+    if not refs_map:
+      raise MDBQueryNoData('No data.')
+
     visited = set()
 
     for key in refs_map.keys():
