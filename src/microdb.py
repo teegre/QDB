@@ -257,7 +257,7 @@ class MicroDB:
           if field == '*':
             star_fields = [k[1] for k in values.keys() if k[0] == index]
             for star_field in star_fields:
-              row.append(values[(index, star_field)])
+              row.append(f'{star_field}={values[(index, star_field)]}')
           else:
             row.append(values[(index, field)])
       rows.append({'row': row, 'sort_value': row_meta['sort_value']})

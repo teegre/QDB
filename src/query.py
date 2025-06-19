@@ -127,6 +127,17 @@ class Query:
     condition_exprs = [e for e in parsed_exprs if e['conditions']]
     all_keys = None
 
+    # Fields
+    selected_indexes = {e['index'] for e in parsed_exprs}
+    fields = {}
+
+    # Assuming '*' when no fields are selected for the main index,
+    if main_index not in selected_indexes:
+      fields = {main_index: {'fields': ['*'], 'sort': None }}
+
+    for d in parsed_exprs:
+      fields[d['index']] = {'fields': d['fields'], 'sort': d['sort']}
+
     # Gather used indexes
     used_indexes = [e['index'] for e in parsed_exprs]
     if main_index not in used_indexes:
@@ -183,7 +194,8 @@ class Query:
     refs_map = defaultdict(lambda: defaultdict(set))
     root_index = main_index
     if cond_matches:
-      for idx, refs in cond_matches.items():
+      for idx, candidates in cond_matches.items():
+        refs = candidates & all_keys
         for ref in refs:
           for key in self.store.get_transitive_backrefs(ref, root_index):
             if not self.cache.exists(key):
@@ -214,11 +226,5 @@ class Query:
         self.cache.write(key, self.store.read_hash(key))
       node = tree[prm_index][key] = {}
       build_ref_tree(node, key)
-
-    # Fields
-    fields =  {
-        d['index']: {'fields': d['fields'], 'sort': d['sort']}
-        for d in parsed_exprs
-    }
 
     return tree, fields
