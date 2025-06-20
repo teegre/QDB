@@ -14,7 +14,7 @@ from sys import stdin, stdout, stderr
 from time import time, strftime
 from zlib import crc32
 
-from src.utils import performance_measurement
+# from src.utils import performance_measurement
 
 # Record format on disk:
 # CRC TS VT KSZ VSZ K V
@@ -43,7 +43,7 @@ HINT_HEADER_SIZE = HEADER_SIZE - 1
 # hkey : a key in a key/hash pair
 # field : a key in a hash
 # index: kind of like a table
-# reference: a key used as a value in a field
+# reference: a hkey used as a value in a field
 
 class MuDBError(Exception):
   pass
@@ -69,7 +69,7 @@ class Store:
     self._file_pos: int = 0
     self.initialize()
 
-  @performance_measurement(message='Loaded')
+  # @performance_measurement(message='Loaded')
   def initialize(self):
     self.reconstruct()
     self.update_reverse_refs()
@@ -598,11 +598,20 @@ class Store:
     if not self.exists(hkey):
       return 1
     refs = self.refs.get(hkey)
+    rev_refs = self.refs.get(ref)
     if refs is None and self.has_index(hkey):
       self.refs[hkey] = set([ref])
+      if rev_refs is None:
+        self.reverse_refs[ref] = set([hkey])
+      else:
+        self.reverse_refs[ref].add(hkey)
       return 0
     if self.has_index(hkey):
       self.refs[hkey].add(ref)
+      if rev_refs is None:
+        self.reverse_refs[ref] = set([hkey])
+      else:
+        self.reverse_refs[ref].add(hkey)
       return 0
     return 1
 

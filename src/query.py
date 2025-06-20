@@ -205,9 +205,12 @@ class Query:
       shuffle(all_keys)
 
     # Apply limit
-    if limit:
-      all_keys = set(list(all_keys)[:limit])
+    if limit and random:
+      all_keys = all_keys[:limit]
+    elif limit:
+      all_keys = sorted(all_keys)[:limit]
 
+    # Unique index quey, build tree an return it
     if not parsed_exprs and not fields:
       tree = {main_index: {}}
       for key in all_keys:

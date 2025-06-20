@@ -279,10 +279,6 @@ class MicroDB:
             value = row.get('sort_value')
           else:
             value = row['row'][pos]
-
-          if self.store.has_index(value): # reference
-            _, value = value.split(':')
-  
           if is_numeric(value):
             value = float(value)
           elif value is None:

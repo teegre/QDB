@@ -38,6 +38,9 @@ class Parser:
     else:
       index = index_hint or self.main_index
 
+    if expr == '*':
+      raise MDBParseError('Error: `*` only allowed after an index.')
+
     if parts == ['*']:
       return {
           'index': index,
