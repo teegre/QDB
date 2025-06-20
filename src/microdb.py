@@ -10,7 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.datacache import Cache
 from src.exception import MDBError, MDBMissingFieldError
-from src.ops import OPFUNC, SPECIAL
+from src.ops import OPFUNC, VIRTUAL
 from src.query import Query
 from src.storage import Store
 from src.utils import performance_measurement, is_numeric
@@ -40,8 +40,6 @@ class MicroDB:
         'SCHEMA':  self.schema,
         'SET' :    self.set,
     }
-
-    self.autoid = { '@autoid': self.store.autoid }
 
   def error(self, cmd: str=None, *args: str) -> int:
     if cmd not in self.commands:
@@ -167,8 +165,8 @@ class MicroDB:
 
     return err
 
-  def is_special_field(self, field: str) -> bool:
-    return field in SPECIAL
+  def is_virtual_field(self, field: str) -> bool:
+    return field in VIRTUAL
 
   def get_sort_key(self, value: Any) -> tuple:
     if '?NOFIELD?' in value:
@@ -200,7 +198,7 @@ class MicroDB:
         row = [key]
         data = self.cache.read(key, self.store.read_hash)
         for field in index_fields:
-          if self.is_special_field(field):
+          if self.is_virtual_field(field):
             continue
           row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
         if any(row[1:]):
@@ -226,7 +224,7 @@ class MicroDB:
         all_fields = fields['fields']
         star = False
       for f in all_fields:
-        if star and self.is_special_field(f):
+        if star and self.is_virtual_field(f):
           continue
         field_positions[f'{idx}:{f}'] = pos
         pos += 1
@@ -237,7 +235,7 @@ class MicroDB:
       sort_data = fields_data[index]['sort']
       if fields == ['*']:
         for f, v in data.items():
-          if self.is_special_field(f):
+          if self.is_virtual_field(f):
             continue
           values[(index, f)] = v
       else:
@@ -396,7 +394,7 @@ class MicroDB:
         if not kv:
           print(f'HKEY: `{k}` no such key or index.', file=sys.stderr)
           return 1
-        print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_special_field(f)])}')
+        print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_virtual_field(f)])}')
       return 0
     err = 0
     for k in sorted(self.store.keystore.keys()):
@@ -404,7 +402,7 @@ class MicroDB:
         continue
         err += self.hkey(k)
       kv = self.store.read_hash(k)
-      print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_special_field(f)])}')
+      print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_virtual_field(f)])}')
     return 0 if err == 0 else 1
 
   def idx(self) -> None:
@@ -414,7 +412,7 @@ class MicroDB:
   def idxf(self, index: str) -> None:
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
-      print(f'{index}: {' | '.join([f for f in fields if not self.is_special_field(f)])}')
+      print(f'{index}: {' | '.join([f for f in fields if not self.is_virtual_field(f)])}')
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
 

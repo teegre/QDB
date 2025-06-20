@@ -20,6 +20,8 @@ OP = {
   '!*': 'nc', # not contains
 }
 
+BINOP = ('AND', 'OR')
+
 OPFUNC = {
   'eq': operator.eq,
   'ne': operator.ne,
@@ -34,7 +36,4 @@ SORTPREFIX = {
   '--': 'desc',
 }
 
-SPECIAL = {
-  '@id': None,
-  '@hkey': None,
-}
+VIRTUAL = ('@autoid', '@id', '@hkey')

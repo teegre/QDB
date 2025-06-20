@@ -2,6 +2,8 @@ import os
 import re
 import sys
 
+from typing import Optional
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.exception import MDBParseError, MDBMissingFieldError
@@ -12,6 +14,34 @@ class Parser:
   def __init__(self, store: Store, main_index: str=None):
     self.store = store
     self.main_index = main_index
+
+  def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
+      match = re.match(
+          r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
+          r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
+          r'(?P<value>.+)?$', part
+      )
+
+      if not match:
+        raise MDBParseError(f'Error: Invalid expression: `{part}`')
+
+      groups = match.groupdict()
+      field = groups['field'].strip()
+      if field not in fields:
+        fields.append(field)
+
+      if groups['sort']:
+        sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
+
+      if groups['op']:
+        return {
+            'field': field,
+            'op': OP[groups['op']],
+            'value': groups['value'].strip() if groups['value'] else ''
+        }
+
+      return None
+
 
   def parse(self, expr: str, index_hint: str=None) -> dict:
     q_p = r'''(["'])(?:(?=(\\?))\2.)*?\1'''
@@ -62,6 +92,30 @@ class Parser:
       for k, v in q_v.items():
         part = part.replace(k, v)
 
+      # Logical operators
+      if '&&' in part or '||' in part:
+        binop = '&&' if '&&' in part else '||'
+        sub_parts = part.split(binop)
+        cond_group = {'op': 'AND' if binop == '&&' else 'OR', 'conditions': []}
+        last_field = None
+        for sub_part in sub_parts:
+          sub_part = sub_part.strip()
+          if not re.match(r'^[^=><!*^$]+', sub_part):
+            if last_field is None:
+              raise MDBParseError(f'Error: missing field in `{sub_part}`.')
+            sub_part = f'{last_field}{sub_part}'
+          else:
+            m = re.match(r'^(?P<field>[^=><!*^$]+)', sub_part)
+            if m:
+              last_field = m.group('field').strip()
+          cond_group['conditions'].append(
+              self._parse_condition(sub_part, fields, sort)
+          )
+        conditions.append(cond_group)
+        continue
+
+      conditions.append(self._parse_condition(part, fields, sort))
+
       agg_match = re.match(r'^(?P<field>\w+):@\[([^\]]+)\]$', part)
       if agg_match:
         field = agg_match.group('field')
@@ -74,33 +128,9 @@ class Parser:
             'op': agg_op.strip(),
             'field': agg_field.strip()
           })
-        fields.append(field)
+        if field not in fields:
+          fields.append(field)
         continue
-
-      match = re.match(
-          r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
-          r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
-          r'(?P<value>.+)?$', part
-      )
-
-      if not match:
-        raise MDBParseError(f'Error: Invalid expression: `{part}`')
-
-      groups = match.groupdict()
-      field = groups['field'].strip()
-
-
-      if groups['sort']:
-        sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
-
-      if groups['op']:
-        op = OP[groups['op']]
-        value = groups['value']
-        for k, v in q_v.items():
-          value = value.replace(k, v)
-        conditions.append({'field': field, 'op': op, 'value': value.strip()})
-
-      fields.append(field)
 
     # Field validity check
     index_fields = self.store.get_fields_from_index(index)
@@ -116,3 +146,4 @@ class Parser:
         'sort': sort if sort else None,
         'aggregations': aggregations if aggregations else None
     }
+

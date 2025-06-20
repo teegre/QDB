@@ -9,7 +9,7 @@ from random import shuffle
 
 from src.datacache import Cache
 from src.exception import MDBParseError, MDBQueryError, MDBQueryNoData
-from src.ops import OPFUNC
+from src.ops import OPFUNC, BINOP
 from src.parser import Parser
 from src.storage import Store
 from src.utils import is_numeric, performance_measurement
@@ -38,6 +38,21 @@ class Query:
       parsed_exprs.append(parsed)
 
     return parsed_exprs
+
+  def eval_binop_cond(self, key: str, record: dict, expr: dict) -> bool:
+    op = expr['op']
+    conditions = expr['conditions']
+
+    if op == 'AND':
+      return all(
+          self.eval_cond(cond['op'], record.get(cond['field']), cond['value'])
+          for cond in conditions
+      )
+
+    return any(
+        self.eval_cond(cond['op'], record.get(cond['field']), cond['value'])
+        for cond in conditions
+    )
 
   def eval_cond(self, op: str, field_value: str, condition_value: str) -> bool:
     if op in ('gt', 'ge', 'lt', 'le'):
@@ -106,17 +121,21 @@ class Query:
     def select_best_filter(exprs: list) -> dict:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
 
-    def filter_keys(expr: dict) -> dict:
+    def filter_keys(expr: dict) -> set:
       index = expr.get('index') or main_index
-      return {
-          k for k in self.store.get_index_keys(index)
-          if all(self.eval_cond(
-            op['op'],
-            self.store.read_hash(k).get(op['field']),
-            op['value'])
-            for op in expr['conditions']
-          )
-      }
+      valid_keys = set()
+      for k in self.store.get_index_keys(index):
+        kv = self.store.read_hash(k)
+        for op in expr['conditions']:
+          if op is None:
+            continue
+          if op['op'] in BINOP:
+            if self.eval_binop_cond(k, kv, op):
+              valid_keys.add(k)
+            continue
+          if self.eval_cond(op['op'], kv.get(op['field']), op['value']):
+            valid_keys.add(k)
+      return valid_keys
 
     def resolve_to_primary(expr: dict) -> set:
       result = set()
@@ -142,7 +161,7 @@ class Query:
     # Parse expressions
     self.parser = Parser(self.store, main_index)
     parsed_exprs = self._dispatch_parse(main_index, exprs)
-    condition_exprs = [e for e in parsed_exprs if e['conditions']]
+    condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
     all_keys = None
 
     # Fields
@@ -173,7 +192,6 @@ class Query:
         for expr in condition_exprs
     }
 
-    # Apply conditions
     if condition_exprs:
       best_expr = select_best_filter(condition_exprs)
 
@@ -222,7 +240,7 @@ class Query:
     root_index = main_index
     if cond_matches:
       for idx, candidates in cond_matches.items():
-        refs = candidates & all_keys
+        refs = candidates & set(all_keys)
         for ref in refs:
           for key in self.store.get_transitive_backrefs(ref, root_index):
             if not self.cache.exists(key):
