@@ -1,7 +1,7 @@
 import argparse
 import sys
 
-from microdb import MicroDB
+from src.microdb import MicroDB
 
 class Client:
   def __init__(self, name: str):
