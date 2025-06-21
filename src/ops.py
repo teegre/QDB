@@ -31,6 +31,14 @@ OPFUNC = {
   'le': operator.le,
 }
 
+AGGFUNC = (
+    'avg',
+    'sum',
+    'min',
+    'max',
+    'count',
+)
+
 SORTPREFIX = {
   '++': 'asc',
   '--': 'desc',

@@ -163,6 +163,7 @@ class Store:
       return 1
     finally:
       fcntl.flock(self.file, fcntl.LOCK_UN)
+      self.update_reverse_refs()
 
   def write_references(self, ref_file: str=None) -> int:
     if ref_file is not None:

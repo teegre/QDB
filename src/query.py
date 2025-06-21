@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import sys
@@ -39,22 +40,22 @@ class Query:
 
     return parsed_exprs
 
-  def eval_binop_cond(self, key: str, record: dict, expr: dict) -> bool:
+  def _eval_binop_cond(self, key: str, record: dict, expr: dict) -> bool:
     op = expr['op']
     conditions = expr['conditions']
 
     if op == 'AND':
       return all(
-          self.eval_cond(cond['op'], record.get(cond['field']), cond['value'])
+          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'])
           for cond in conditions
       )
 
     return any(
-        self.eval_cond(cond['op'], record.get(cond['field']), cond['value'])
+        self._eval_cond(cond['op'], record.get(cond['field']), cond['value'])
         for cond in conditions
     )
 
-  def eval_cond(self, op: str, field_value: str, condition_value: str) -> bool:
+  def _eval_cond(self, op: str, field_value: str, condition_value: str) -> bool:
     if op in ('gt', 'ge', 'lt', 'le'):
       if not is_numeric(field_value) or not is_numeric(condition_value):
         return False
@@ -91,6 +92,65 @@ class Query:
       if reachable:
         return idx
     return None
+
+  def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list) -> dict:
+    leaf_index = [list(a.keys())[0] for a in agg_exprs][0]
+
+    def walk(node: dict, idx: str) -> dict:
+      results = defaultdict(list)
+      is_leaf_level = idx == leaf_index
+      if is_leaf_level:
+        collected = defaultdict(list)
+
+        for key, data_node in node.items():
+          data = self.cache.read(key)
+          for entries in agg_exprs:
+            if idx in entries:
+              for entry in entries[idx]:
+                op, f = entry['op'], entry['field']
+                val = data.get(f)
+                if is_numeric(val):
+                  val = float(val) if not val.isdigit() else int(val)
+                collected[f'{op}:{f}'].append(val)
+        results = self._reduce_aggs(collected)
+      else:
+        for key, child in node.items():
+          results.setdefault(key, {})
+          for child_idx, sub_node in child.items():
+            if child_idx in agg_indexes:
+              r = {'aggregated': walk(sub_node, child_idx)}
+            else:
+              r = walk(sub_node, child_idx)
+            results[key][child_idx] = r
+      return results
+
+
+    root_key = list(tree.keys())[0]
+    result = {root_key: walk(tree[root_key], root_key)}
+    return result
+
+  def _reduce_aggs(self, values: dict) -> dict:
+    reduced = {}
+    for k, v in values.items():
+      clean_values = [x for x in v if x is not None]
+      if not clean_values:
+        reduced[k] = None
+        continue
+
+      op, field = k.split(':', 1)
+      match op:
+        case 'avg':
+          reduced[f'[{op}:{field}]'] = { str(round(sum(clean_values) / len(clean_values), 2)): {} }
+        case 'sum':
+          reduced[f'[{op}:{field}]'] = { str(sum(clean_values)): {} }
+        case 'min':
+          reduced[f'[{op}:{field}]'] = { str(min(clean_values)): {} }
+        case 'max':
+          reduced[f'[{op}:{field}]'] = { str(max(clean_values)): {} }
+        case 'count':
+          reduced[f'[{op}:{field}]'] = { str(len(clean_values)): {} }
+
+    return reduced
 
   def query(self, index_or_key: str, *exprs: str) -> (dict, list[dict]):
     limit = None
@@ -130,10 +190,10 @@ class Query:
           if op is None:
             continue
           if op['op'] in BINOP:
-            if self.eval_binop_cond(k, kv, op):
+            if self._eval_binop_cond(k, kv, op):
               valid_keys.add(k)
             continue
-          if self.eval_cond(op['op'], kv.get(op['field']), op['value']):
+          if self._eval_cond(op['op'], kv.get(op['field']), op['value']):
             valid_keys.add(k)
       return valid_keys
 
@@ -146,8 +206,7 @@ class Query:
           result.update(self.store.get_refs(match_key, prm_index))
       return result
 
-    def build_ref_tree(node: dict, key: str):
-      nonlocal tree
+    def build_ref_tree(node: dict, key: str, is_next_level_leaf: bool=False):
       for idx, refs in refs_map.get(key, {}).items():
         node[idx] = {}
         for ref in refs:
@@ -156,12 +215,15 @@ class Query:
             continue
           visited.add(edge)
           node[idx][ref] = {}
-          build_ref_tree(node[idx][ref], ref)
+          if not is_next_level_leaf:
+            build_ref_tree(node[idx][ref], ref, is_next_level_leaf=(idx == leaf_index))
 
     # Parse expressions
     self.parser = Parser(self.store, main_index)
     parsed_exprs = self._dispatch_parse(main_index, exprs)
     condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
+    agg_exprs = [{e['index']: e['aggregations']} for e in parsed_exprs if e['aggregations']]
+    agg_indexes = [list(a.keys())[0] for a in agg_exprs] if agg_exprs else None
     all_keys = None
 
     # Fields
@@ -181,10 +243,14 @@ class Query:
       used_indexes.insert(0, main_index)
 
     # Determining query's primary index
-    if exprs:
+
+    if exprs and not agg_exprs:
       prm_index = self._find_prm_index(used_indexes) or main_index
+      leaf_index = None
     else:
       prm_index = main_index
+      if agg_exprs:
+        leaf_index = [list(a.keys())[0] for a in agg_exprs][0] # nul à chier!
 
     # Precompute matched keys
     cond_matches = {
@@ -248,7 +314,18 @@ class Query:
             refs_map[key][idx].add(ref)
 
     cond_indexes = set(cond_matches.keys())
-    if set(used_indexes) - cond_indexes - {root_index} or not refs_map:
+
+    if agg_exprs:
+      for key in all_keys:
+        for index in used_indexes:
+          if index == main_index:
+            continue
+          refs = self.store.get_refs(key, index)
+          for ref in refs:
+            if not self.cache.exists(ref):
+              self.cache.write(ref, self.store.read_hash(ref))
+            refs_map[key][index].add(ref)
+    elif set(used_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in sorted(all_keys):
         for idx in used_indexes:
@@ -278,5 +355,9 @@ class Query:
         self.cache.write(key, self.store.read_hash(key))
       node = tree[prm_index][key] = {}
       build_ref_tree(node, key)
+
+    if agg_exprs:
+      agg_results = self._apply_aggregations(tree, agg_exprs, agg_indexes)
+      return agg_results, fields
 
     return tree, fields

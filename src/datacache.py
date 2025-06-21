@@ -10,6 +10,8 @@ from src.storage import Store
 class Cache:
   __cache: dict = {}
   def write(self, key: str, data: dict[str]):
+    if current := self.__cache.get(key) and current == data:
+      return
     self.__cache[key] = data
 
   def read(self, key: str, defaultreadhash: Callable[[str], None]=None) -> dict[str] | str:
@@ -41,5 +43,3 @@ class Cache:
     idxs = [ k.split(':')[0] for k in sorted(self.__cache.keys()) ]
     rpr = sorted(set(f'{idx} ({idxs.count(idx)})' for idx in idxs))
     return f'Cache: {", ".join(rpr)}' if rpr else 'Cache: empty.'
-
-  

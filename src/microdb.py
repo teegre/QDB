@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import traceback
 
 from random import shuffle
 from time import time
@@ -149,10 +150,12 @@ class MicroDB:
             self.store.delete_ref_of_key(key, kv.get(field))
             refs.append(v)
           kv[field] = v
+          self.cache.write(k, v)
           subkv.pop(field, None)
 
       for k, v in subkv.items():
         kv[k] = v
+        self.cache.write(k, v)
         # Reference?
         if self.store.exists(v):
           refs.append(v)
@@ -185,7 +188,7 @@ class MicroDB:
       tree, fields_data = self.Q.query(index_or_key, *exprs)
     except MDBError as e:
       print(f'HGET: {e}', file=sys.stderr)
-      return 1
+      raise
 
     main_index = list(tree.keys())[0]
     index_fields: list = self.store.get_fields_from_index(main_index)
@@ -213,7 +216,6 @@ class MicroDB:
       print(f'HGET: An unexpected error occured.', file=sys.stderr)
       return 1
 
-
     pos = 0
     field_positions = {}
     for idx, fields in fields_data.items():
@@ -231,8 +233,16 @@ class MicroDB:
 
     def walk(index: str, key: str, node: dict, values: dict, row_meta: dict):
       data = self.cache.read(key, self.store.read_hash)
+
+      is_aggregation = False
+
       fields = fields_data[index]['fields']
       sort_data = fields_data[index]['sort']
+
+      if key == 'aggregated':
+        data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
+        is_aggregation = True
+
       if fields == ['*']:
         for f, v in data.items():
           if self.is_virtual_field(f):
@@ -243,15 +253,18 @@ class MicroDB:
           try:
             value = data[field]
           except KeyError:
-            raise MDBError(f'HGET: An unexpected error involving `{field}` occured.')
+            raise MDBError(f'HGET: an unexpected error involving `{field}` occured.')
           values[(index, field)] = value
         if row_meta.get('sort_value') is None:
           if sort_data:
             for rule in sort_data:
-              if rule['field'] == field:
-                row_meta['sort_value'] = value
-                break
+              for field in fields:
+                if rule['field'] == field:
+                  row_meta['sort_value'] = value
+                  break
       for child_idx, children in node.items():
+        if is_aggregation:
+          break
         for child_key, child_node in children.items():
           walk(child_idx, child_key, child_node, values, row_meta)
 

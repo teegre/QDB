@@ -1,3 +1,4 @@
+import difflib
 import os
 import re
 import sys
@@ -7,13 +8,48 @@ from typing import Optional
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.exception import MDBParseError, MDBMissingFieldError
-from src.ops import OP, SORTPREFIX
+from src.ops import OP, SORTPREFIX, AGGFUNC
 from src.storage import Store
 
 class Parser:
   def __init__(self, store: Store, main_index: str=None):
     self.store = store
     self.main_index = main_index
+
+  def validate_field(self, index: str, field: str, excepted: list=[], context: str=None) -> None:
+    valid_fields = self.store.get_fields_from_index(index)
+    if field not in valid_fields + excepted:
+      suggestions = difflib.get_close_matches(field, valid_fields, n=3, cutoff=0.5)
+
+      msg = f'Error: `{field}` is not a valid field for `{index}`'
+      msg += '.' if not context else f' in `{context}`.'
+
+      if suggestions:
+        raise MDBParseError(
+            msg +
+            f'\nDid you mean: {', '.join(suggestions)}?'
+        )
+      else:
+        raise MDBParseError(
+            msg +
+            f'\nAvailable fields: {', '.join(valid_fields)}'
+        )
+
+  def validate_aggregation_func(self, index, func: str, field: str) -> None:
+    if func not in AGGFUNC:
+      suggestions = difflib.get_close_matches(func, AGGFUNC, n=3, cutoff=0.5)
+      msg = f'Error: `{func}` no such aggregation function in `{index}:@[{func}:{field}]`.'
+
+      if suggestions:
+        raise MDBParseError(
+            msg +
+            f'\nDid you mean {', '.join(suggestions)}?'
+        )
+      else:
+        raise MDBParseError(
+            msg +
+            f'\nAvailable aggregation functions: {', '.join(sorted(AGGFUNC))}'
+        )
 
   def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
       match = re.match(
@@ -23,11 +59,11 @@ class Parser:
       )
 
       if not match:
-        raise MDBParseError(f'Error: Invalid expression: `{part}`')
+        raise MDBParseError(f'Error: invalid expression: `{part}`')
 
       groups = match.groupdict()
       field = groups['field'].strip()
-      if field not in fields:
+      if field not in fields and not field.startswith('@['):
         fields.append(field)
 
       if groups['sort']:
@@ -42,7 +78,6 @@ class Parser:
 
       return None
 
-
   def parse(self, expr: str, index_hint: str=None) -> dict:
     q_p = r'''(["'])(?:(?=(\\?))\2.)*?\1'''
     q_r = re.compile(q_p)
@@ -55,12 +90,32 @@ class Parser:
       q_v[key] = unescaped
       return key
 
+    def safe_split_colon(s: str) -> list:
+      parts = []
+      cur = ''
+      br_depth = 0
+      for c in s:
+        if c == '[':
+          br_depth += 1
+        elif c == ']':
+          br_depth -= 1
+        if c == ':' and br_depth == 0:
+          parts.append(cur)
+          cur = ''
+        else:
+          cur += c
+
+      if cur:
+        parts.append(cur)
+      return parts
+
     expr_safe = q_r.sub(store_quoted, expr)
 
+    # How come?
     if not expr_safe.strip():
       raise MDBParseError('Error: empty expression.')
 
-    parts = expr_safe.split(':')
+    parts = safe_split_colon(expr_safe)
 
     if self.store.is_index(parts[0]):
       index = parts[0]
@@ -84,9 +139,12 @@ class Parser:
       raise MDBParseError('Error: `*` only allowed after an index.')
 
     fields = []
-    sort = []
+    sort_info = []
     conditions = []
-    aggregations = {}
+    aggregations = []
+    agg_fields = []
+    fields_to_check = []
+    index_fields = self.store.get_fields_from_index(index)
 
     for part in parts:
       for k, v in q_v.items():
@@ -109,41 +167,55 @@ class Parser:
             if m:
               last_field = m.group('field').strip()
           cond_group['conditions'].append(
-              self._parse_condition(sub_part, fields, sort)
+              self._parse_condition(sub_part, fields, sort_info)
           )
         conditions.append(cond_group)
         continue
 
-      conditions.append(self._parse_condition(part, fields, sort))
+      conditions.append(self._parse_condition(part, fields, sort_info))
 
-      agg_match = re.match(r'^(?P<field>\w+):@\[([^\]]+)\]$', part)
+      agg_match = re.match(r'^@\[(?P<aggs>[^\]]+)\]$', part)
       if agg_match:
-        field = agg_match.group('field')
-        aggs = agg_match.group(2).split(',')
-        for agg in aggs:
-          if ':' not in agg:
-            raise MDBParseError(f'Invalid aggregation: `{agg}`.')
-          agg_op, agg_field = agg.split(':', 1)
-          aggregations.setdefault(field, []).append({
-            'op': agg_op.strip(),
-            'field': agg_field.strip()
-          })
-        if field not in fields:
-          fields.append(field)
-        continue
+        aggs = agg_match.group('aggs')
+
+        if not aggs:
+          raise MDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
+
+        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[\w@]+)'
+
+        items = aggs.split(',')
+
+        for item in items:
+          item = item.strip()
+          m = re.match(item_r, item)
+          if m:
+            agg_sort = m.group('sort') or None
+            op = m.group('op')
+            f = m.group('field')
+
+            self.validate_aggregation_func(index, op, f)
+            self.validate_field(index, f, context=f'{index}:@[{item}]')
+
+            aggregations.append({
+              'op': op,
+              'field': f
+            })
+
+            composite_field = f'[{op}:{f}]'
+            if composite_field not in agg_fields:
+              agg_fields.append(composite_field)
+              if agg_sort:
+                sort_info.append({'order': SORTPREFIX[agg_sort], 'field': composite_field})
 
     # Field validity check
-    index_fields = self.store.get_fields_from_index(index)
-    invalid_fields = [f for f in fields if f not in index_fields]
-    if invalid_fields:
-      tag = 'field' if len(invalid_fields) == 1 else 'fields'
-      raise MDBMissingFieldError(f'Error: `{', '.join(invalid_fields)}`, no such {tag} in `{index}`.')
+    for field in fields:
+      self.validate_field(index, field, excepted=agg_fields)
 
     return {
         'index': index,
-        'fields': fields,
-        'conditions': conditions if conditions else None,
-        'sort': sort if sort else None,
+        'fields': fields + agg_fields,
+        'conditions': conditions,
+        'sort': sort_info if sort_info else None,
         'aggregations': aggregations if aggregations else None
     }
 
