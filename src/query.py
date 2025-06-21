@@ -93,7 +93,7 @@ class Query:
         return idx
     return None
 
-  def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list) -> dict:
+  def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list, unique:bool=False) -> dict:
     leaf_index = [list(a.keys())[0] for a in agg_exprs][0]
 
     def walk(node: dict, idx: str) -> dict:
@@ -113,6 +113,8 @@ class Query:
                   val = float(val) if not val.isdigit() else int(val)
                 collected[f'{op}:{f}'].append(val)
         results = self._reduce_aggs(collected)
+        if unique:
+          results = { 'aggregated': results }
       else:
         for key, child in node.items():
           results.setdefault(key, {})
@@ -357,7 +359,8 @@ class Query:
       build_ref_tree(node, key)
 
     if agg_exprs:
-      agg_results = self._apply_aggregations(tree, agg_exprs, agg_indexes)
+      agg_results = self._apply_aggregations(tree, agg_exprs, agg_indexes, unique=(len(used_indexes) == 1))
       return agg_results, fields
+
 
     return tree, fields
