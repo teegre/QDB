@@ -233,7 +233,7 @@ class MicroDB:
       fields = fields_data[index]['fields']
       sort_data = fields_data[index]['sort']
 
-      if key == 'aggregated':
+      if key == '@[aggregated]':
         data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
         is_aggregation = True
 

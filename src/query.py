@@ -111,13 +111,13 @@ class Query:
             collected[f'{idx}:{op}:{f}'].append(val)
         results = self._reduce_aggs(collected)
         if unique:
-          results = { 'aggregated': results }
+          results = { '@[aggregated]': results }
       else:
         for key, child in node.items():
           results.setdefault(key, {})
           for child_idx, sub_node in child.items():
             if child_idx in agg_indexes:
-              r = {'aggregated': walk(sub_node, child_idx)}
+              r = {'@[aggregated]': walk(sub_node, child_idx)}
             else:
               r = walk(sub_node, child_idx)
             results[key][child_idx] = r
