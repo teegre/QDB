@@ -94,24 +94,21 @@ class Query:
     return None
 
   def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list, unique:bool=False) -> dict:
-    leaf_index = [list(a.keys())[0] for a in agg_exprs][0]
 
     def walk(node: dict, idx: str) -> dict:
       results = defaultdict(list)
-      is_leaf_level = idx == leaf_index
+      is_leaf_level = idx in agg_indexes
       if is_leaf_level:
         collected = defaultdict(list)
 
         for key, data_node in node.items():
           data = self.cache.read(key)
-          for entries in agg_exprs:
-            if idx in entries:
-              for entry in entries[idx]:
-                op, f = entry['op'], entry['field']
-                val = data.get(f)
-                if is_numeric(val):
-                  val = float(val) if not val.isdigit() else int(val)
-                collected[f'{op}:{f}'].append(val)
+          for agg in agg_exprs[idx]:
+            op, f = agg['op'], agg['field']
+            val = data.get(f.replace('*', '@id'))
+            if is_numeric(val):
+              val = float(val) if not val.isdigit() else int(val)
+            collected[f'{idx}:{op}:{f}'].append(val)
         results = self._reduce_aggs(collected)
         if unique:
           results = { 'aggregated': results }
@@ -126,7 +123,6 @@ class Query:
             results[key][child_idx] = r
       return results
 
-
     root_key = list(tree.keys())[0]
     result = {root_key: walk(tree[root_key], root_key)}
     return result
@@ -139,18 +135,18 @@ class Query:
         reduced[k] = None
         continue
 
-      op, field = k.split(':', 1)
+      idx, op, f = k.split(':')
       match op:
         case 'avg':
-          reduced[f'[{op}:{field}]'] = { str(round(sum(clean_values) / len(clean_values), 2)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { str(round(sum(clean_values) / len(clean_values), 2)): {} }
         case 'sum':
-          reduced[f'[{op}:{field}]'] = { str(sum(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { str(sum(clean_values)): {} }
         case 'min':
-          reduced[f'[{op}:{field}]'] = { str(min(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { str(min(clean_values)): {} }
         case 'max':
-          reduced[f'[{op}:{field}]'] = { str(max(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { str(max(clean_values)): {} }
         case 'count':
-          reduced[f'[{op}:{field}]'] = { str(len(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { str(len(clean_values)): {} }
 
     return reduced
 
@@ -208,7 +204,8 @@ class Query:
           result.update(self.store.get_refs(match_key, prm_index))
       return result
 
-    def build_ref_tree(node: dict, key: str, is_next_level_leaf: bool=False):
+    def build_ref_tree(node: dict, key: str):
+      nonlocal agg_indexes
       for idx, refs in refs_map.get(key, {}).items():
         node[idx] = {}
         for ref in refs:
@@ -217,15 +214,15 @@ class Query:
             continue
           visited.add(edge)
           node[idx][ref] = {}
-          if not is_next_level_leaf:
-            build_ref_tree(node[idx][ref], ref, is_next_level_leaf=(idx == leaf_index))
+          if not idx in agg_indexes:
+            build_ref_tree(node[idx][ref], ref)
 
     # Parse expressions
     self.parser = Parser(self.store, main_index)
     parsed_exprs = self._dispatch_parse(main_index, exprs)
     condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
-    agg_exprs = [{e['index']: e['aggregations']} for e in parsed_exprs if e['aggregations']]
-    agg_indexes = [list(a.keys())[0] for a in agg_exprs] if agg_exprs else None
+    agg_exprs = { e['index']: e['aggregations'] for e in parsed_exprs if e['aggregations'] }
+    agg_indexes = list(agg_exprs.keys()) if agg_exprs else []
     all_keys = None
 
     # Fields
@@ -248,11 +245,8 @@ class Query:
 
     if exprs and not agg_exprs:
       prm_index = self._find_prm_index(used_indexes) or main_index
-      leaf_index = None
     else:
       prm_index = main_index
-      if agg_exprs:
-        leaf_index = [list(a.keys())[0] for a in agg_exprs][0] # nul à chier!
 
     # Precompute matched keys
     cond_matches = {
@@ -361,6 +355,5 @@ class Query:
     if agg_exprs:
       agg_results = self._apply_aggregations(tree, agg_exprs, agg_indexes, unique=(len(used_indexes) == 1))
       return agg_results, fields
-
 
     return tree, fields

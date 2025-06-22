@@ -107,6 +107,7 @@ class MicroDB:
         print(f'MDEL: key `{key}` not found.', file=sys.stderr)
     return err
 
+  @performance_measurement(message='Written')
   def hset(self, hkey_or_index: str, *members: str) -> int:
     ''' 
     Create/update multiple members to a hash
@@ -168,17 +169,10 @@ class MicroDB:
 
     return err
 
-  def is_virtual_field(self, field: str) -> bool:
+  def _is_virtual_field(self, field: str) -> bool:
     return field in VIRTUAL
 
-  def get_sort_key(self, value: Any) -> tuple:
-    if '?NOFIELD?' in value:
-      return (2, value)
-    if self.is_numeric(value):
-      return (0, float(value))
-    return (1, str(value))
-
-  @performance_measurement
+  @performance_measurement(message='Processed')
   def hget(self, index_or_key: str, *exprs: str) -> int:
     if not index_or_key:
       print(f'HGET: missing index or hkey.', file=sys.stderr)
@@ -201,7 +195,7 @@ class MicroDB:
         row = [key]
         data = self.cache.read(key, self.store.read_hash)
         for field in index_fields:
-          if self.is_virtual_field(field):
+          if self._is_virtual_field(field):
             continue
           row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
         if any(row[1:]):
@@ -226,7 +220,7 @@ class MicroDB:
         all_fields = fields['fields']
         star = False
       for f in all_fields:
-        if star and self.is_virtual_field(f):
+        if star and self._is_virtual_field(f):
           continue
         field_positions[f'{idx}:{f}'] = pos
         pos += 1
@@ -245,7 +239,7 @@ class MicroDB:
 
       if fields == ['*']:
         for f, v in data.items():
-          if self.is_virtual_field(f):
+          if self._is_virtual_field(f):
             continue
           values[(index, f)] = v
       else:
@@ -290,6 +284,8 @@ class MicroDB:
             value = row.get('sort_value')
           else:
             value = row['row'][pos]
+            if '=' in value:
+              value = value.split('=', 1)[1]
           if is_numeric(value):
             value = float(value)
           elif value is None:
@@ -329,7 +325,6 @@ class MicroDB:
 
     # Sorting and output
     rows.sort(key=lambda row: sort_key(row, fields_data))
-    # rows.sort(key=lambda r: str(r['sort_value'] if r['sort_value'] is not None else ''))
 
     for row in rows:
       print(' | '.join(row['row']))
@@ -407,7 +402,7 @@ class MicroDB:
         if not kv:
           print(f'HKEY: `{k}` no such key or index.', file=sys.stderr)
           return 1
-        print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_virtual_field(f)])}')
+        print(f'{k}: {" | ".join([f for f in kv.keys() if not self._is_virtual_field(f)])}')
       return 0
     err = 0
     for k in sorted(self.store.keystore.keys()):
@@ -415,7 +410,7 @@ class MicroDB:
         continue
         err += self.hkey(k)
       kv = self.store.read_hash(k)
-      print(f'{k}: {" | ".join([f for f in kv.keys() if not self.is_virtual_field(f)])}')
+      print(f'{k}: {" | ".join([f for f in kv.keys() if not self._is_virtual_field(f)])}')
     return 0 if err == 0 else 1
 
   def idx(self) -> None:
@@ -425,7 +420,7 @@ class MicroDB:
   def idxf(self, index: str) -> None:
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
-      print(f'{index}: {' | '.join([f for f in fields if not self.is_virtual_field(f)])}')
+      print(f'{index}: {' | '.join([f for f in fields if not self._is_virtual_field(f)])}')
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
 

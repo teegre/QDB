@@ -181,7 +181,7 @@ class Parser:
         if not aggs:
           raise MDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
 
-        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[\w@]+)'
+        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[\w|\*@]+)'
 
         items = aggs.split(',')
 
@@ -194,18 +194,20 @@ class Parser:
             f = m.group('field')
 
             self.validate_aggregation_func(index, op, f)
-            self.validate_field(index, f, context=f'{index}:@[{item}]')
+            self.validate_field(index, f, context=f'{index}:@[{item}]', excepted=['*'] if op == 'count' else [])
 
             aggregations.append({
               'op': op,
               'field': f
             })
 
-            composite_field = f'[{op}:{f}]'
+            composite_field = f'{index}:{op}:{f}'
             if composite_field not in agg_fields:
               agg_fields.append(composite_field)
               if agg_sort:
                 sort_info.append({'order': SORTPREFIX[agg_sort], 'field': composite_field})
+          else:
+            raise MDBParseError(f'syntax error in: `@[{item}]`')
 
     # Field validity check
     for field in fields:
