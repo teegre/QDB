@@ -195,9 +195,8 @@ class MicroDB:
         row = [key]
         data = self.cache.read(key, self.store.read_hash)
         for field in index_fields:
-          if self._is_virtual_field(field):
-            continue
-          row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
+          if not self._is_virtual_field(field):
+            row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
         if any(row[1:]):
           rows.append(row)
       if rows:
@@ -226,7 +225,10 @@ class MicroDB:
         pos += 1
 
     def walk(index: str, key: str, node: dict, values: dict, row_meta: dict):
+      results = []
       data = self.cache.read(key, self.store.read_hash)
+
+      current_values = dict(values)
 
       is_aggregation = False
 
@@ -239,28 +241,29 @@ class MicroDB:
 
       if fields == ['*']:
         for f, v in data.items():
-          if self._is_virtual_field(f):
-            continue
-          values[(index, f)] = v
+          if not self._is_virtual_field(f):
+            current_values[(index, f)] = v
       else:
         for field in fields:
           try:
-            value = data[field]
+            current_values[(index, field)] = data[field]
           except KeyError:
             raise MDBError(f'HGET: an unexpected error involving `{field}` occured.')
-          values[(index, field)] = value
         if row_meta.get('sort_value') is None:
           if sort_data:
             for rule in sort_data:
               for field in fields:
                 if rule['field'] == field:
-                  row_meta['sort_value'] = value
+                  row_meta['sort_value'] = data[field]
                   break
-      for child_idx, children in node.items():
-        if is_aggregation:
-          break
-        for child_key, child_node in children.items():
-          walk(child_idx, child_key, child_node, values, row_meta)
+      if node and not is_aggregation:
+        for child_idx, children in node.items():
+          for child_key, child_node in children.items():
+            results.extend(walk(child_idx, child_key, child_node, current_values, dict(row_meta)))
+      else:
+        results.append(current_values)
+
+      return results
 
     def _descending_value(val):
       if is_numeric(val):
@@ -298,26 +301,32 @@ class MicroDB:
     elements = tree.get(main_index, {})
 
     # Build rows
-    rows = []
+    all_rows = []
     for key, children in elements.items():
-      values = {}
       row_meta = { 'sort_value': None }
       try:
-        walk(main_index, key, children, values, row_meta)
+        results_for_key = walk(main_index, key, children, {}, row_meta)
+        all_rows.extend(results_for_key)
       except MDBError as e:
         print(e, file=sys.stderr)
         return 1
 
-      row = []
-      for index, spec in fields_data.items():
-        for field in spec['fields']:
-          if field == '*':
-            star_fields = [k[1] for k in values.keys() if k[0] == index]
-            for star_field in star_fields:
-              row.append(f'{star_field}={values[(index, star_field)]}')
-          else:
-            row.append(values[(index, field)])
-      rows.append({'row': row, 'sort_value': row_meta['sort_value']})
+      rows = []
+      for results_values in all_rows:
+        row = []
+        for index, spec in fields_data.items():
+          for field in spec['fields']:
+            if field == '*':
+              star_fields = [k[1] for k in values.keys() if k[0] == index]
+              for star_field in star_fields:
+                row.append(f'{star_field}={values[(index, star_field)]}')
+            else:
+              try:
+                row.append(results_values[(index, field)])
+              except KeyError:
+                print('Error: not implemented yet.', file=sys.stderr)
+                return 1
+        rows.append({'row': row, 'sort_value': row_meta['sort_value']})
 
     if not rows:
       print(f'HGET: an unexpected error occured.', file=sys.stderr)
