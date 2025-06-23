@@ -146,7 +146,7 @@ class Query:
         case 'max':
           reduced[f'{idx}:{op}:{f}'] = { str(max(clean_values)): {} }
         case 'count':
-          reduced[f'{idx}:{op}:{f}'] = { str(len(clean_values)): {} }
+          reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(len(clean_values)): {} }
 
     return reduced
 

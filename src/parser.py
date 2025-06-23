@@ -130,7 +130,7 @@ class Parser:
       return {
           'index': index,
           'fields': ['*'],
-          'conditions': None,
+          'conditions': [],
           'sort': None,
           'aggregations': None
       }
@@ -201,7 +201,7 @@ class Parser:
               'field': f
             })
 
-            composite_field = f'{index}:{op}:{f}'
+            composite_field = f'{index}:{op}{':'+f if f != '*' else ''}'
             if composite_field not in agg_fields:
               agg_fields.append(composite_field)
               if agg_sort:

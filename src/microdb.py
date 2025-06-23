@@ -151,12 +151,10 @@ class MicroDB:
             self.store.delete_ref_of_key(key, kv.get(field))
             refs.append(v)
           kv[field] = v
-          self.cache.write(k, v)
           subkv.pop(field, None)
 
       for k, v in subkv.items():
         kv[k] = v
-        self.cache.write(k, v)
         # Reference?
         if self.store.exists(v):
           refs.append(v)
@@ -166,6 +164,8 @@ class MicroDB:
       if self.store.write(data, key, vsz, ts, refs) != 0:
         print(f'HSET: Error: failed to update `{key}` hkey.', file=sys.stderr)
         err += 1
+      else:
+        self.cache.write(key, kv)
 
     return err
 
@@ -317,9 +317,9 @@ class MicroDB:
         for index, spec in fields_data.items():
           for field in spec['fields']:
             if field == '*':
-              star_fields = [k[1] for k in values.keys() if k[0] == index]
+              star_fields = [k[1] for k in results_values.keys() if k[0] == index]
               for star_field in star_fields:
-                row.append(f'{star_field}={values[(index, star_field)]}')
+                row.append(f'{star_field}={results_values[(index, star_field)]}')
             else:
               try:
                 row.append(results_values[(index, field)])

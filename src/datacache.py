@@ -10,7 +10,8 @@ from src.storage import Store
 class Cache:
   __cache: dict = {}
   def write(self, key: str, data: dict[str]):
-    if current := self.__cache.get(key) and current == data:
+    cdata = self.__cache.get(key)
+    if cdata and cdata == data:
       return
     self.__cache[key] = data
 
