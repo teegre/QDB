@@ -257,10 +257,23 @@ class MicroDB:
                   row_meta['sort_value'] = data[field]
                   break
       if node and not is_aggregation:
+        combined_results = []
         for child_idx, children in node.items():
+          temp_results = []
           for child_key, child_node in children.items():
-            results.extend(walk(child_idx, child_key, child_node, current_values, dict(row_meta)))
-      else:
+            for result in walk(child_idx, child_key, child_node, dict(current_values), dict(row_meta)):
+              temp_results.append(result)
+
+          if combined_results:
+            combined_results = [
+                {**a, **b}
+                for a in combined_results
+                for b in temp_results
+            ]
+          else:
+            combined_results = temp_results
+        results.extend(combined_results)
+      elif not node or is_aggregation:
         results.append(current_values)
 
       return results
@@ -302,6 +315,7 @@ class MicroDB:
 
     # Build rows
     all_rows = []
+
     for key, children in elements.items():
       row_meta = { 'sort_value': None }
       try:
@@ -321,11 +335,7 @@ class MicroDB:
               for star_field in star_fields:
                 row.append(f'{star_field}={results_values[(index, star_field)]}')
             else:
-              try:
-                row.append(results_values[(index, field)])
-              except KeyError:
-                print('Error: not implemented yet.', file=sys.stderr)
-                return 1
+              row.append(results_values[(index, field)])
         rows.append({'row': row, 'sort_value': row_meta['sort_value']})
 
     if not rows:

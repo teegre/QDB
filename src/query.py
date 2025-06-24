@@ -96,32 +96,33 @@ class Query:
   def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list, unique:bool=False) -> dict:
 
     def walk(node: dict, idx: str) -> dict:
-      results = defaultdict(list)
-      is_leaf_level = idx in agg_indexes
-      if is_leaf_level:
-        collected = defaultdict(list)
-
-        for key, data_node in node.items():
-          data = self.cache.read(key)
-          for agg in agg_exprs[idx]:
-            op, f = agg['op'], agg['field']
-            val = data.get(f.replace('*', '@id'))
-            if is_numeric(val):
-              val = float(val) if not val.isdigit() else int(val)
-            collected[f'{idx}:{op}:{f}'].append(val)
-        results = self._reduce_aggs(collected)
-        if unique:
-          results = { '@[aggregated]': results }
+      if idx in agg_indexes:
+        results = {}
+        for key, child_node in node.items():
+          if key == '@[aggregated]':
+            collected = defaultdict(list)
+            for ref in child_node.keys():
+              data = self.cache.read(ref)
+              for agg in agg_exprs[idx]:
+                op, f = agg['op'], agg['field']
+                val = data.get(f.replace('*', '@id'))
+                if is_numeric(val):
+                  val = float(val) if not val.isdigit() else int(val)
+                collected[f'{idx}:{op}:{f}'].append(val)
+            results = { '@[aggregated]': self._reduce_aggs(collected) }
+          else:
+            results.setdefault(key, {})
+            for child_idx, sub_node in child_node.items():
+              results[key][child_idx] = walk(sub_node, child_idx)
+        return results
       else:
-        for key, child in node.items():
+        results = {}
+        for key, child_node in node.items():
           results.setdefault(key, {})
-          for child_idx, sub_node in child.items():
-            if child_idx in agg_indexes:
-              r = {'@[aggregated]': walk(sub_node, child_idx)}
-            else:
-              r = walk(sub_node, child_idx)
-            results[key][child_idx] = r
-      return results
+          for child_idx, sub_node in child_node.items():
+            results[key][child_idx] = walk(sub_node, child_idx)
+
+        return results
 
     root_key = list(tree.keys())[0]
     result = {root_key: walk(tree[root_key], root_key)}
@@ -204,18 +205,21 @@ class Query:
           result.update(self.store.get_refs(match_key, prm_index))
       return result
 
-    def build_ref_tree(node: dict, key: str):
-      nonlocal agg_indexes
-      for idx, refs in refs_map.get(key, {}).items():
-        node[idx] = {}
-        for ref in refs:
-          edge = (key, idx, ref)
-          if edge in visited:
-            continue
-          visited.add(edge)
-          node[idx][ref] = {}
-          if not idx in agg_indexes:
-            build_ref_tree(node[idx][ref], ref)
+    def build_ref_tree(node: dict, rmap: dict|set):
+      ''' Build a hierarchical references tree from a references map. '''
+      if isinstance(rmap, set):
+        for ref in rmap:
+          node.setdefault(ref, {})
+        return
+      for idx, refs in rmap.items():
+        if idx in agg_indexes: # It's an aggregation index
+          agg_node = node.setdefault(idx, {}).setdefault("@[aggregated]", {})
+          build_ref_tree(agg_node, refs)
+        else:
+          node.setdefault(idx, {})
+          for k, submap in refs.items():
+            node[idx].setdefault(k, {})
+            build_ref_tree(node[idx][k], submap)  # Recurse
 
     # Parse expressions
     self.parser = Parser(self.store, main_index)
@@ -292,10 +296,10 @@ class Query:
 
     # Unique index quey, build tree an return it
     if not parsed_exprs and not fields:
-      tree = {main_index: {}}
+      data_tree = {main_index: {}}
       for key in all_keys:
-        tree[main_index][key] = {}
-      return tree, {}
+        data_tree[main_index][key] = {}
+      return data_tree, {}
 
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
@@ -312,48 +316,69 @@ class Query:
     cond_indexes = set(cond_matches.keys())
 
     if agg_exprs:
+      # determine datasets for aggregated indexes
+      processed_agg_indexes = set()
       for key in all_keys:
-        for index in used_indexes:
-          if index == main_index:
-            continue
-          refs = self.store.get_refs(key, index)
-          for ref in refs:
-            if not self.cache.exists(ref):
-              self.cache.write(ref, self.store.read_hash(ref))
-            refs_map[key][index].add(ref)
+        self.cache.write(key, self.store.read_hash(key))
+        refs_map.setdefault(key, defaultdict(dict))
+        for agg_index in agg_indexes:
+          base_dataset = set(self.store.get_refs(key, agg_index))
+          for index in used_indexes:
+            if index != agg_index and index != prm_index:
+              processed_agg_indexes.add(agg_index)
+              # grouping on mutltiple fields, narrowing  the base dataset
+              node = refs_map[key][index]
+              refs_map[key].setdefault(index, defaultdict(dict))
+              if index in cond_indexes:
+                refs = cond_matches[index]
+              else:
+                refs = set(self.store.get_index_keys(index))
+              for ref in sorted(refs):
+                self.cache.write(ref, self.store.read_hash(ref))
+                dataset = base_dataset & set(self.store.get_refs(ref, agg_index))
+                node[ref] = defaultdict(set)
+                node[ref][agg_index] = dataset
+                # write to cache
+                for r in dataset:
+                  if not self.cache.exists(r):
+                    self.cache.write(r, self.store.read_hash(r))
+            elif index == agg_index and index not in processed_agg_indexes: # ???
+              # write to cache
+              processed_agg_indexes.add(index)
+              for ref in base_dataset:
+                self.cache.write(ref, self.store.read_hash(ref))
+              refs_map[key][index] = base_dataset
+
     elif set(used_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
-      for key in sorted(all_keys):
+      for key in all_keys:
         for idx in used_indexes:
           if idx == prm_index:
             continue
           refs = flat_refs[key][idx]
-          if not refs: # try get_refs:
+          if not refs: # try get_refs
             refs = self.store.get_refs(key, idx)
+          if idx in cond_indexes:
+            refs = sorted(cond_matches[idx] & set(refs))
           for ref in refs:
-            if not self.cache.exists(ref):
-              self.cache.write(ref, self.store.read_hash(ref))
+            self.cache.write(ref, self.store.read_hash(ref))
             refs_map[key][idx].add(ref)
 
     # Build tree
-    tree = { prm_index: {} }
+    data_tree = { prm_index: {} }
     if not refs_map:
       for k in all_keys:
+        self.cache.write(k, self.store.read_hash(k))
         refs_map[k][prm_index].add(k)
 
     if not refs_map:
       raise MDBQueryNoData('No data.')
 
-    visited = set()
-
-    for key in refs_map.keys():
-      if not self.cache.exists(key):
-        self.cache.write(key, self.store.read_hash(key))
-      node = tree[prm_index][key] = {}
-      build_ref_tree(node, key)
+    for key in all_keys:
+      node = data_tree[prm_index][key] = {}
+      build_ref_tree(node, refs_map[key])
 
     if agg_exprs:
-      agg_results = self._apply_aggregations(tree, agg_exprs, agg_indexes, unique=(len(used_indexes) == 1))
-      return agg_results, fields
+      data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes, unique=(len(used_indexes) == 1))
 
-    return tree, fields
+    return data_tree, fields
