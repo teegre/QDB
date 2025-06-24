@@ -7,7 +7,7 @@ from typing import Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.exception import MDBParseError, MDBMissingFieldError
+from src.exception import MDBParseError
 from src.ops import OP, SORTPREFIX, AGGFUNC
 from src.storage import Store
 

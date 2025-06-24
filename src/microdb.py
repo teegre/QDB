@@ -10,7 +10,7 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.datacache import Cache
-from src.exception import MDBError, MDBMissingFieldError
+from src.exception import MDBError
 from src.ops import OPFUNC, VIRTUAL
 from src.query import Query
 from src.storage import Store

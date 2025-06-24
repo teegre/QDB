@@ -14,8 +14,6 @@ from sys import stdin, stdout, stderr
 from time import time, strftime
 from zlib import crc32
 
-# from src.utils import performance_measurement
-
 # Record format on disk:
 # CRC TS VT KSZ VSZ K V
 #     <----- CRC ----->
@@ -38,15 +36,13 @@ from zlib import crc32
 HEADER_SIZE = 4 + 8 + 1 + 4 + 4
 HINT_HEADER_SIZE = HEADER_SIZE - 1
 
+# Terminology:
 # key: a key in simple key/value pair
 # hash: a multiple field/value pair
 # hkey : a key in a key/hash pair
 # field : a key in a hash
 # index: kind of like a table
 # reference: a hkey used as a value in a field
-
-class MuDBError(Exception):
-  pass
 
 @dataclass
 class KeyStoreEntry:
@@ -69,11 +65,9 @@ class Store:
     self._file_pos: int = 0
     self.initialize()
 
-  # @performance_measurement(message='Loaded')
   def initialize(self):
     self.reconstruct()
     self.update_reverse_refs()
-    # self.build_flat_refs()
 
   def open(self) -> int:
     if not os.path.exists(self.database):

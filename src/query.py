@@ -217,9 +217,13 @@ class Query:
           build_ref_tree(agg_node, refs)
         else:
           node.setdefault(idx, {})
+          if isinstance(refs, set):
+            for ref in refs:
+              node[idx].setdefault(ref, {})
+            return
           for k, submap in refs.items():
             node[idx].setdefault(k, {})
-            build_ref_tree(node[idx][k], submap)  # Recurse
+            build_ref_tree(node[idx][k], submap)
 
     # Parse expressions
     self.parser = Parser(self.store, main_index)
@@ -317,8 +321,8 @@ class Query:
 
     if agg_exprs:
       # determine datasets for aggregated indexes
-      processed_agg_indexes = set()
-      for key in all_keys:
+      for key in sorted(all_keys):
+        processed_agg_indexes = set()
         self.cache.write(key, self.store.read_hash(key))
         refs_map.setdefault(key, defaultdict(dict))
         for agg_index in agg_indexes:
@@ -326,7 +330,7 @@ class Query:
           for index in used_indexes:
             if index != agg_index and index != prm_index:
               processed_agg_indexes.add(agg_index)
-              # grouping on mutltiple fields, narrowing  the base dataset
+              # grouping on multiple fields, narrowing the base dataset
               node = refs_map[key][index]
               refs_map[key].setdefault(index, defaultdict(dict))
               if index in cond_indexes:
@@ -343,12 +347,12 @@ class Query:
                   if not self.cache.exists(r):
                     self.cache.write(r, self.store.read_hash(r))
             elif index == agg_index and index not in processed_agg_indexes: # ???
-              # write to cache
               processed_agg_indexes.add(index)
+              refs_map[key] = defaultdict(set)
+              refs_map[key][index] = base_dataset
+              # write to cache
               for ref in base_dataset:
                 self.cache.write(ref, self.store.read_hash(ref))
-              refs_map[key][index] = base_dataset
-
     elif set(used_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in all_keys:
@@ -364,17 +368,18 @@ class Query:
             self.cache.write(ref, self.store.read_hash(ref))
             refs_map[key][idx].add(ref)
 
-    # Build tree
-    data_tree = { prm_index: {} }
     if not refs_map:
-      for k in all_keys:
+      for k in sorted(all_keys):
         self.cache.write(k, self.store.read_hash(k))
+        refs_map.setdefault(k, defaultdict(set))
         refs_map[k][prm_index].add(k)
 
     if not refs_map:
       raise MDBQueryNoData('No data.')
 
-    for key in all_keys:
+    # Build tree
+    data_tree = { prm_index: {} }
+    for key in sorted(all_keys):
       node = data_tree[prm_index][key] = {}
       build_ref_tree(node, refs_map[key])
 

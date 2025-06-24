@@ -11,6 +11,7 @@ class MDBQueryError(MDBError):
   pass
 class MDBQueryNoData(MDBError):
   pass
-class MDBMissingFieldError(MDBError):
+class MDBWriteError(MDBError):
   pass
-
+class MDBReadError(MDBError):
+  pass
