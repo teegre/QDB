@@ -59,7 +59,6 @@ class Store:
     self.refs: Dict[str: set[str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
-    self._refs_cache: Dict = {}
     self.file = None
     self._file_id: int = self._max_id
     self._file_pos: int = 0
@@ -693,15 +692,12 @@ class Store:
     if self.get_index(key) == index:
       return []
 
-    if (key, index) in self._refs_cache:
-      return self._refs_cache.get((key, index))
-
     visited = set()
-    found_refs = set()
 
     def dfs(cur_key: str) -> list:
+      results = set()
       if cur_key in visited:
-        return
+        return set()
       visited.add((cur_key, index))
 
       refs = self.refs.get(cur_key, set())
@@ -709,22 +705,33 @@ class Store:
         if (ref, index) in visited:
           continue
         if self.is_index_of(ref, index):
-          found_refs.add(ref)
+          results.add(ref)
         elif not self.is_index_of(ref, self.get_index(key)):
-          dfs(ref)
+          results |= dfs(ref)
+
+      return results
+
+    def dfs_r(cur_key: str) -> set:
+      results = set()
+      if cur_key in visited:
+        return set()
+      visited.add((cur_key, index))
 
       for rev in self.reverse_refs.get(cur_key, set()):
-        if (rev, index) in visited:
-          continue
-        if self.is_index_of(rev, index):
-          found_refs.add(rev)
-        elif not self.is_index_of(rev, self.get_index(key)):
-          dfs(rev)
+          if (rev, index) in visited:
+            continue
+          if self.is_index_of(rev, index):
+            results.add(rev)
+          elif not self.is_index_of(rev, self.get_index(key)):
+            results |= dfs_r(rev)
 
-    dfs(key)
+      return results
 
-    self._refs_cache[(key, index)] = found_refs
-    return sorted(found_refs)
+    found_refs = dfs(key)
+    if not found_refs:
+      found_refs = dfs_r(key)
+
+    return sorted(found_refs) or []
 
   def get_rev_refs(self, key: str) -> set:
     return self.reverse_refs.get(key, set())
