@@ -61,10 +61,13 @@ class Query:
         return False
 
       field_num = float(field_value)
-      cond_num = float(condition_value)
+      cond_num  = float(condition_value)
       return OPFUNC[op](field_num, cond_num)
 
     if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc'):
+      if is_numeric(field_value) and is_numeric(condition_value):
+        field_value = float(field_value)
+        condition_value = float(condition_value)
       return OPFUNC[op](field_value, condition_value)
 
     match op:
@@ -82,6 +85,37 @@ class Query:
         return condition_value not in field_value
     return False
 
+  def _cardinality(self, A: str, B: str, sample_size: int=100) -> int:
+    ''' Estimate _cardinality between index A and B. '''
+    Ak = sorted(self.store.get_index_keys(A))
+    Bk = sorted(self.store.get_index_keys(B))
+    ss = min(sample_size, len(Ak), len(Bk))
+
+    Ac = [len(self.store.get_refs(k, B)) for k in Ak[:ss]]
+    Bc = [len(self.store.get_refs(k, A)) for k in Bk[:ss]]
+
+    Aac = round(sum(Ac) / len(Ac)) if Ac else 0 # A → B
+    Bac = round(sum(Bc) / len(Bc)) if Bc else 0 # B → A
+
+    tolerance = 0.1
+    is_one_AtoB = (1 - tolerance) <= Aac <= (1 + tolerance)
+    is_one_BtoA = (1 - tolerance) <= Bac <= (1 + tolerance)
+
+    print(f'{A} → {B}:', end=' ', file=sys.stderr)
+    if is_one_AtoB and Bac > (1 + tolerance):
+      print('2-1', file=sys.stderr)
+      return 21 # many-to-one
+    if Aac > (1 + tolerance) and is_one_BtoA:
+      print('1-2', file=sys.stderr)
+      return 12 # one-to-many
+    if Aac > (1 + tolerance) and Bac > (1 + tolerance):
+      print('2-2', file=sys.stderr)
+      return 22 # many-to-many
+    if is_one_AtoB and is_one_BtoA:
+      print('1-1', file=sys.stderr)
+      return 11 # one-to-one
+    return 0 # ???
+
   def _find_prm_index(self, indexes: list) -> str:
     candidates = reversed(sorted(indexes, key=lambda idx: self.store.index_len(idx)))
     for idx in candidates:
@@ -93,13 +127,34 @@ class Query:
         return idx
     return None
 
-  def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list, unique:bool=False) -> dict:
+  def _find_prm_index2(self, indexes: list) -> str:
+    if len(indexes) == 1:
+      return indexes[0]
 
+    candidates = []
+    for A in indexes:
+      scores = []
+      for B in indexes:
+        if A != B:
+          relation = self._cardinality(A, B)
+          scores.append(relation)
+
+      otm_c = scores.count(12)
+      mto_c = scores.count(21)
+      mtm_c = scores.count(22)
+
+      candidates.append((otm_c, mto_c, mtm_c, A))
+
+    candidates.sort(reverse=True)
+    return candidates[0][3]
+
+
+  def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list, unique:bool=False) -> dict:
     def walk(node: dict, idx: str) -> dict:
       if idx in agg_indexes:
         results = {}
         for key, child_node in node.items():
-          if key == '@[aggregated]':
+          if key == '@[aggregate]':
             collected = defaultdict(list)
             for ref in child_node.keys():
               data = self.cache.read(ref)
@@ -109,7 +164,9 @@ class Query:
                 if is_numeric(val):
                   val = float(val) if not val.isdigit() else int(val)
                 collected[f'{idx}:{op}:{f}'].append(val)
-            results = { '@[aggregated]': self._reduce_aggs(collected) }
+            results = { '@[aggregate]': self._reduce_aggs(collected) }
+            if unique:
+              return results
           else:
             results.setdefault(key, {})
             for child_idx, sub_node in child_node.items():
@@ -213,7 +270,7 @@ class Query:
         return
       for idx, refs in rmap.items():
         if idx in agg_indexes: # It's an aggregation index
-          agg_node = node.setdefault(idx, {}).setdefault("@[aggregated]", {})
+          agg_node = node.setdefault(idx, {}).setdefault("@[aggregate]", {})
           build_ref_tree(agg_node, refs)
         else:
           node.setdefault(idx, {})
@@ -237,9 +294,9 @@ class Query:
     selected_indexes = {e['index'] for e in parsed_exprs}
     fields = {}
 
-    # Assuming '*' when no fields are selected for the main index,
+    # Assuming '@hkey' when no fields are selected for the main index,
     if main_index not in selected_indexes and parsed_exprs:
-      fields = {main_index: {'fields': ['*'], 'sort': None }}
+      fields = {main_index: {'fields': ['@hkey'], 'sort': None }}
 
     for d in parsed_exprs:
       fields[d['index']] = {'fields': d['fields'], 'sort': d['sort']}
@@ -250,9 +307,10 @@ class Query:
       used_indexes.insert(0, main_index)
 
     # Determining query's primary index
-
-    if exprs and not agg_exprs:
-      prm_index = self._find_prm_index(used_indexes) or main_index
+    if exprs and agg_exprs:
+      prm_index = self._find_prm_index2(used_indexes)
+    elif exprs:
+      prm_index = self._find_prm_index(used_indexes)
     else:
       prm_index = main_index
 
@@ -319,8 +377,8 @@ class Query:
 
     cond_indexes = set(cond_matches.keys())
 
-    if agg_exprs:
-      # determine datasets for aggregated indexes
+    if agg_exprs: # FIXME: OPTIMIZE + GENERALIZE!!
+      # determine datasets for aggregate indexes
       for key in sorted(all_keys):
         processed_agg_indexes = set()
         self.cache.write(key, self.store.read_hash(key))
@@ -337,7 +395,7 @@ class Query:
                 refs = cond_matches[index]
               else:
                 refs = set(self.store.get_index_keys(index))
-              for ref in sorted(refs):
+              for ref in refs:
                 self.cache.write(ref, self.store.read_hash(ref))
                 dataset = base_dataset & set(self.store.get_refs(ref, agg_index))
                 node[ref] = defaultdict(set)
@@ -348,11 +406,12 @@ class Query:
                     self.cache.write(r, self.store.read_hash(r))
             elif index == agg_index and index not in processed_agg_indexes: # ???
               processed_agg_indexes.add(index)
-              refs_map[key] = defaultdict(set)
-              refs_map[key][index] = base_dataset
+              refs_map.setdefault(key, defaultdict(dict))
               # write to cache
               for ref in base_dataset:
-                self.cache.write(ref, self.store.read_hash(ref))
+                refs_map[key][index].setdefault(ref, {})
+                if not self.cache.exists(ref):
+                  self.cache.write(ref, self.store.read_hash(ref))
     elif set(used_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in all_keys:

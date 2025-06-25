@@ -69,6 +69,9 @@ class Parser:
       if groups['sort']:
         sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
 
+      if not groups['value'] and groups['op']:
+        raise MDBParseError(f'Error: missing value in condition: `{part}`')
+
       if groups['op']:
         return {
             'field': field,

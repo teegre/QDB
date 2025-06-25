@@ -235,7 +235,7 @@ class MicroDB:
       fields = fields_data[index]['fields']
       sort_data = fields_data[index]['sort']
 
-      if key == '@[aggregated]':
+      if key == '@[aggregate]':
         data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
         is_aggregation = True
 
@@ -247,7 +247,8 @@ class MicroDB:
         for field in fields:
           try:
             current_values[(index, field)] = data[field]
-          except KeyError:
+          except (KeyError, TypeError):
+            print(current_values)
             raise MDBError(f'HGET: an unexpected error involving `{field}` occured.')
         if row_meta.get('sort_value') is None:
           if sort_data:

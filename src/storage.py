@@ -57,6 +57,7 @@ class Store:
     self.keystore: Dict[str, KeyStoreEntry] = {}
     self.indexes = set()
     self.refs: Dict[str: set[str]] = {}
+    self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
     self.file = None
@@ -692,6 +693,9 @@ class Store:
     if self.get_index(key) == index:
       return []
 
+    if (key, index) in self._refs_cache:
+      return self._refs_cache[(key, index)]
+
     visited = set()
 
     def dfs(cur_key: str) -> list:
@@ -732,6 +736,8 @@ class Store:
     found_refs = dfs(key)
     if not found_refs:
       found_refs = dfs_r(key)
+
+    self._refs_cache[(key, index)] = found_refs
 
     return sorted(found_refs)
 
