@@ -724,6 +724,8 @@ class Store:
             results.add(rev)
           elif not self.is_index_of(rev, self.get_index(key)):
             results |= dfs_r(rev)
+            if not results:
+              results |= dfs(rev)
 
       return results
 
@@ -731,7 +733,7 @@ class Store:
     if not found_refs:
       found_refs = dfs_r(key)
 
-    return sorted(found_refs) or []
+    return sorted(found_refs)
 
   def get_rev_refs(self, key: str) -> set:
     return self.reverse_refs.get(key, set())
