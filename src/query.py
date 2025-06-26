@@ -101,18 +101,13 @@ class Query:
     is_one_AtoB = (1 - tolerance) <= Aac <= (1 + tolerance)
     is_one_BtoA = (1 - tolerance) <= Bac <= (1 + tolerance)
 
-    print(f'{A} → {B}:', end=' ', file=sys.stderr)
     if is_one_AtoB and Bac > (1 + tolerance):
-      print('2-1', file=sys.stderr)
       return 21 # many-to-one
     if Aac > (1 + tolerance) and is_one_BtoA:
-      print('1-2', file=sys.stderr)
       return 12 # one-to-many
     if Aac > (1 + tolerance) and Bac > (1 + tolerance):
-      print('2-2', file=sys.stderr)
       return 22 # many-to-many
     if is_one_AtoB and is_one_BtoA:
-      print('1-1', file=sys.stderr)
       return 11 # one-to-one
     return 0 # ???
 
@@ -139,9 +134,9 @@ class Query:
           relation = self._cardinality(A, B)
           scores.append(relation)
 
-      otm_c = scores.count(12)
-      mto_c = scores.count(21)
-      mtm_c = scores.count(22)
+      otm_c = scores.count(12) # one-to-many
+      mto_c = scores.count(21) # many-to-one
+      mtm_c = scores.count(22) # many-to-many
 
       candidates.append((otm_c, mto_c, mtm_c, A))
 
@@ -208,6 +203,7 @@ class Query:
 
     return reduced
 
+  @performance_measurement(message='Fetched')
   def query(self, index_or_key: str, *exprs: str) -> (dict, list[dict]):
     limit = None
     random = False
@@ -277,6 +273,8 @@ class Query:
           if isinstance(refs, set):
             for ref in refs:
               node[idx].setdefault(ref, {})
+            if idx not in agg_exprs:
+              continue
             return
           for k, submap in refs.items():
             node[idx].setdefault(k, {})
@@ -345,7 +343,7 @@ class Query:
     if not all_keys:
       raise MDBQueryNoData(f'No data.')
 
-    # Applu random
+    # Apply random FIXME: useless here
     if random:
       all_keys = list(all_keys)
       shuffle(all_keys)
@@ -359,14 +357,17 @@ class Query:
     # Unique index quey, build tree an return it
     if not parsed_exprs and not fields:
       data_tree = {main_index: {}}
-      for key in all_keys:
+      for key in sorted(all_keys):
+        self.cache.write(key, self.store.read_hash(key))
         data_tree[main_index][key] = {}
       return data_tree, {}
 
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
     root_index = main_index
-    if cond_matches:
+
+    # Populate based on condition matches
+    if cond_matches and not agg_exprs:
       for idx, candidates in cond_matches.items():
         refs = candidates & set(all_keys)
         for ref in refs:
@@ -377,55 +378,56 @@ class Query:
 
     cond_indexes = set(cond_matches.keys())
 
-    if agg_exprs: # FIXME: OPTIMIZE + GENERALIZE!!
-      # determine datasets for aggregate indexes
+    if agg_exprs:
       for key in sorted(all_keys):
-        processed_agg_indexes = set()
         self.cache.write(key, self.store.read_hash(key))
         refs_map.setdefault(key, defaultdict(dict))
         for agg_index in agg_indexes:
           base_dataset = set(self.store.get_refs(key, agg_index))
-          for index in used_indexes:
-            if index != agg_index and index != prm_index:
-              processed_agg_indexes.add(agg_index)
-              # grouping on multiple fields, narrowing the base dataset
-              node = refs_map[key][index]
-              refs_map[key].setdefault(index, defaultdict(dict))
-              if index in cond_indexes:
-                refs = cond_matches[index]
-              else:
-                refs = set(self.store.get_index_keys(index))
-              for ref in refs:
+
+          # Get out if no data and 1 key:
+          if not base_dataset:
+            if len(all_keys) == 1:
+              raise MDBQueryNoData(f'No data: `{self.store.get_index(key)} → {agg_index}`.')
+            continue
+
+          other_indexes = [i for i in used_indexes if i not in (agg_index, prm_index)]
+          if not other_indexes:
+            # Simple case: only aggregate index
+            for ref in base_dataset:
+              refs_map.setdefault(key, defaultdict(dict))
+              refs_map[key][agg_index].setdefault(ref, {})
+              if not self.cache.exists(ref):
                 self.cache.write(ref, self.store.read_hash(ref))
-                dataset = base_dataset & set(self.store.get_refs(ref, agg_index))
-                node[ref] = defaultdict(set)
-                node[ref][agg_index] = dataset
-                # write to cache
+            continue
+
+          # Complex case: aggregate + other indexes
+          for index in other_indexes:
+            refs_for_index = cond_matches.get(index, set(self.store.get_index_keys(index)))
+            for ref in refs_for_index:
+              ref_data = set(self.store.get_refs(ref, agg_index))
+              dataset = base_dataset & ref_data
+              if dataset:
+                node = refs_map.setdefault(key, defaultdict(dict))
+                node.setdefault(index, defaultdict(dict))
+                node[index][ref][agg_index] = dataset
                 for r in dataset:
                   if not self.cache.exists(r):
                     self.cache.write(r, self.store.read_hash(r))
-            elif index == agg_index and index not in processed_agg_indexes: # ???
-              processed_agg_indexes.add(index)
-              refs_map.setdefault(key, defaultdict(dict))
-              # write to cache
-              for ref in base_dataset:
-                refs_map[key][index].setdefault(ref, {})
-                if not self.cache.exists(ref):
-                  self.cache.write(ref, self.store.read_hash(ref))
+
     elif set(used_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in all_keys:
         for idx in used_indexes:
           if idx == prm_index:
             continue
-          refs = flat_refs[key][idx]
-          if not refs: # try get_refs
-            refs = self.store.get_refs(key, idx)
+          refs = flat_refs[key][idx] or self.store.get_refs(key, idx)
           if idx in cond_indexes:
             refs = sorted(cond_matches[idx] & set(refs))
+          refs_map[key][idx].update(refs)
           for ref in refs:
-            self.cache.write(ref, self.store.read_hash(ref))
-            refs_map[key][idx].add(ref)
+            if not self.cache.exists(ref):
+              self.cache.write(ref, self.store.read_hash(ref))
 
     if not refs_map:
       for k in sorted(all_keys):
