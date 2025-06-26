@@ -56,6 +56,7 @@ class Store:
     self.database: str = name
     self.keystore: Dict[str, KeyStoreEntry] = {}
     self.indexes = set()
+    self.indexes_map: Dict[str: set[str]] = {}
     self.refs: Dict[str: set[str]] = {}
     self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
@@ -67,6 +68,7 @@ class Store:
 
   def initialize(self):
     self.reconstruct()
+    self.build_indexes_map()
     self.update_reverse_refs()
 
   def open(self) -> int:
@@ -582,6 +584,9 @@ class Store:
   def get_index_keys(self, index: str) -> list:
     ''' Get all the keys for a given index. '''
     if self.is_index(index):
+      keys = self.indexes_map.get(index)
+      if keys:
+        return keys
       return [k for k in self.keystore.keys() if k.startswith(index + ':')]
     return []
 
@@ -609,6 +614,12 @@ class Store:
         self.reverse_refs[ref].add(hkey)
       return 0
     return 1
+
+  def build_indexes_map(self):
+    for index in self.indexes:
+      self.indexes_map.setdefault(index, set())
+      for key in self.get_index_keys(index):
+        self.indexes_map[index].add(key)
 
   def get_all_ref_hkeys(self, index: str) -> list[str]:
     ''' Return all referenced hkeys'''
