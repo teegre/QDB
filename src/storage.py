@@ -655,7 +655,6 @@ class Store:
   def build_hkeys_flat_refs(self, hkeys: set) -> dict:
     flat_refs = defaultdict(lambda: defaultdict(set))
 
-
     visited = set()
 
     def dfs(cur_key):
@@ -683,6 +682,27 @@ class Store:
         reverse_refs.setdefault(ref, set()).add(k)
     self.reverse_refs = reverse_refs
 
+  def get_refs_with_index(self, key: str, index: str) -> set:
+    '''
+    Return the direct references or reverse references of 'key'
+    if they are related to 'index'
+    '''
+    results = set()
+
+    if not self.exists(key) or not self.is_index(index):
+      return results
+
+    for ref in self.refs.get(key, []):
+      if self.is_index_of(ref, index):
+        results.add(ref)
+
+    if not results:
+      for ref in self.reverse_refs.get(key, []):
+        if self.is_index_of(ref, index):
+          results.add(ref)
+
+    return results
+
   def get_refs(self, key: str, index: str) -> list:
     '''
     Return all forward or reverse refs related to index
@@ -696,53 +716,22 @@ class Store:
     if (key, index) in self._refs_cache:
       return self._refs_cache[(key, index)]
 
-    visited = set()
+    path = self.find_index_path(self.get_index(key), index)
+    if not path:
+      return []
 
-    def dfs(cur_key: str) -> list:
-      results = set()
-      if cur_key in visited:
-        return set()
-      visited.add((cur_key, index))
+    results = {key}
+    for i in range(len(path) - 1):
+      next_idx = path[i + 1]
+      refs = set()
+      for ref in results:
+        refs |= set(self.get_refs_with_index(ref, next_idx))
+      results = refs
 
-      refs = self.refs.get(cur_key, set())
-      for ref in refs:
-        if (ref, index) in visited:
-          continue
-        if self.is_index_of(ref, index):
-          results.add(ref)
-        elif not self.is_index_of(ref, self.get_index(key)):
-          results |= dfs(ref)
+    if results:
+      self._refs_cache[(key, index)] = sorted(results)
 
-      return results
-
-    def dfs_r(cur_key: str) -> set:
-      results = set()
-      if cur_key in visited:
-        return set()
-      visited.add((cur_key, index))
-
-      for rev in self.reverse_refs.get(cur_key, set()):
-          if (rev, index) in visited:
-            continue
-          if self.is_index_of(rev, index):
-            results.add(rev)
-          elif not self.is_index_of(rev, self.get_index(key)):
-            results |= dfs_r(rev)
-            if not results:
-              results |= dfs(rev)
-
-      return results
-
-    found_refs = dfs(key)
-    if not found_refs:
-      found_refs = dfs_r(key)
-
-    self._refs_cache[(key, index)] = found_refs
-
-    return sorted(found_refs)
-
-  def get_rev_refs(self, key: str) -> set:
-    return self.reverse_refs.get(key, set())
+    return sorted(results)
 
   def get_ref_key(self, key: str) -> str:
     ''' Get the key that key references to... '''
