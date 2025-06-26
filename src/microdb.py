@@ -167,7 +167,7 @@ class MicroDB:
       else:
         self.cache.write(key, kv)
 
-    return err
+    return 1 if err > 0 else 0
 
   def _is_virtual_field(self, field: str) -> bool:
     return field in VIRTUAL
@@ -182,7 +182,8 @@ class MicroDB:
       tree, fields_data = self.Q.query(index_or_key, *exprs)
     except MDBError as e:
       print(f'HGET: {e}', file=sys.stderr)
-      raise
+      # raise
+      return 1
 
     main_index = list(tree.keys())[0]
     index_fields: list = self.store.get_fields_from_index(main_index)
