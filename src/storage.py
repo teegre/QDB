@@ -636,33 +636,6 @@ class Store:
         return ref
     return None
 
-  # def build_flat_refs(self):
-  #   self.flat_refs = defaultdict(lambda: defaultdict(set))
-
-  #   all_indexes = self.indexes
-  #   refd_indexes = {
-  #       self.get_index(ref)
-  #       for refs in self.refs.values()
-  #       for ref in refs
-  #   }
-
-  #   top_level_indexes = all_indexes - refd_indexes
-  #   visited = set()
-
-  #   def dfs(cur_key):
-  #     if cur_key in visited:
-  #       return
-  #     visited.add(cur_key)
-
-  #     for ref in self.refs.get(cur_key, set()):
-  #       idx = self.get_index(ref)
-  #       self.flat_refs[root_key][idx].add(ref)
-  #       dfs(ref)
-
-  #   for index in top_level_indexes:
-  #     for root_key in self.get_index_keys(index):
-  #       dfs(root_key)
-
   def build_hkeys_flat_refs(self, hkeys: set) -> dict:
     flat_refs = defaultdict(lambda: defaultdict(set))
 
@@ -778,35 +751,6 @@ class Store:
 
     self.transitive_reverse_refs[index][ref] = result
     return result
-
-  # def find_path2(self, iok1: str, iok2: str, use_index: bool=False) -> list[str]:
-  #   if use_index and (not self.is_index(iok1) or not self.is_index(iok2)):
-  #       return []
-  #   if not use_index and (not self.has_index(iok1) or not self.has_index(iok2)):
-  #       return []
-  #   if iok1 == iok2:
-  #     return []
-
-  #   start_keys = self.get_index_keys(iok1) if use_index else [iok1]
-  #   target_indexes = {iok2} if use_index else {self.get_index(iok2)}
-
-  #   queue = deque((key, [key]) for key in start_keys)
-  #   visited = set(start_keys)
-
-  #   while queue:
-  #     current_key, path = queue.popleft()
-  #     neighbors = self.refs.get(current_key, set()) | self.reverse_refs.get(current_key, set())
-  #     for neighbor in neighbors:
-  #       if neighbor not in visited:
-  #         visited.add(neighbor)
-  #         new_path = path + [neighbor]
-  #         if use_index and self.get_index(neighbor) in target_indexes:
-  #           return [self.get_index(k) for k in new_path]
-  #         if not use_index and neighbor == iok2:
-  #           return new_path
-  #         queue.append((neighbor, new_path))
-
-  #   return []
 
   def find_path(self, k1: str, k2: str, use_index: bool=False) -> list[str]:
     '''
