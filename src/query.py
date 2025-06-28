@@ -276,7 +276,7 @@ class Query:
           result.update(self.store.get_refs(match_key, prm_index))
       return result
 
-    def build_ref_tree(node: dict, rmap: dict|set, unique: bool=False):
+    def build_ref_tree(node: dict, rmap: dict|set, unique: bool=False, flat: bool=False):
       ''' Build a hierarchical references tree from a references map. '''
       if isinstance(rmap, set):
         for ref in rmap:
@@ -286,6 +286,10 @@ class Query:
         agg_node = node.setdefault('@[aggregate]', {})
         for key in rmap.keys():
           agg_node[key] = {}
+        return
+      if flat:
+        for key in node.keys():
+          node[key] = {}
         return
       for idx, refs in rmap.items():
         if idx in agg_indexes: # It's an aggregation index
@@ -309,23 +313,23 @@ class Query:
     condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
     agg_exprs = { e['index']: e['aggregations'] for e in parsed_exprs if e['aggregations'] }
     agg_indexes = list(agg_exprs.keys()) if agg_exprs else []
+    data_tree = {root_index: {}}
     all_keys = None
 
+    # Gather used indexes
+    used_indexes = {e['index'] for e in parsed_exprs}
+    if root_index not in used_indexes:
+      used_indexes.insert(0, root_index)
+
     # Fields
-    selected_indexes = {e['index'] for e in parsed_exprs}
     fields = {}
 
     # Assuming '@hkey' when no fields are selected for the main index,
-    if root_index not in selected_indexes and parsed_exprs:
+    if root_index not in used_indexes and parsed_exprs:
       fields = {root_index: {'fields': ['@hkey'], 'sort': None }}
 
     for d in parsed_exprs:
       fields[d['index']] = {'fields': d['fields'], 'sort': d['sort']}
-
-    # Gather used indexes
-    used_indexes = [e['index'] for e in parsed_exprs]
-    if root_index not in used_indexes:
-      used_indexes.insert(0, root_index)
 
     # Determining query's primary index
     if exprs and agg_exprs:
@@ -408,24 +412,26 @@ class Query:
       if limit:
         all_keys = all_keys[:limit] if random else sorted(all_keys)[:limit]
 
-    # Unique index query, build tree an return it
-    if not parsed_exprs and not fields:
-      data_tree = {root_index: {}}
+    # Unique index query, no expressions: build tree an return it
+    if not parsed_exprs and len(used_indexes) == 1:
       for key in sorted(all_keys) if not random else all_keys:
-        self.cache.write(key, self.store.read_hash(key))
+        if not self.cache.exists(key):
+          self.cache.write(key, self.store.read_hash(key))
         data_tree[root_index][key] = {}
-      return data_tree, {}
+      return data_tree, {}, False
 
     # Unique index query + aggregations
+    breakpoint()
     if agg_exprs and len(used_indexes) == 1:
-      tree = { root_index: {} }
+      refs_map = {}
       for key in all_keys:
-        self.cache.write(key, self.store.read_hash(key))
-      refs_map = {key: {} for key in all_keys}
-      node = tree[prm_index] = {}
+        refs_map[key] = {}
+        if not self.cache.exists(key):
+          self.cache.write(key, self.store.read_hash(key))
+      node = data_tree[root_index] = {}
       build_ref_tree(node, refs_map, unique=True)
-      tree = self._apply_aggregations(tree, agg_exprs, agg_indexes, unique=True)
-      return tree, fields
+      data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes, unique=True)
+      return data_tree, fields, False
 
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
@@ -445,7 +451,8 @@ class Query:
     if agg_exprs:
       empty_keys = set()
       for key in all_keys.copy():
-        self.cache.write(key, self.store.read_hash(key))
+        if not self.cache.exists(key):
+          self.cache.write(key, self.store.read_hash(key))
         refs_map.setdefault(key, defaultdict(dict))
         for agg_index in agg_indexes:
           base_dataset = set(self.store.get_refs(key, agg_index))
@@ -502,20 +509,27 @@ class Query:
 
     if not refs_map and not agg_exprs:
       for k in sorted(all_keys):
-        self.cache.write(k, self.store.read_hash(k))
+        if not self.cache.exists(ref):
+          self.cache.write(k, self.store.read_hash(k))
         refs_map.setdefault(k, defaultdict(set))
         refs_map[k][prm_index].add(k)
 
     if not refs_map:
       raise MDBQueryNoData('No data.')
 
+    flat = (
+        not condition_exprs and
+        not agg_exprs and
+        len(used_indexes) == 1
+    )
+
     # Build tree
     data_tree = { prm_index: {} }
     for key in sorted(all_keys):
       node = data_tree[prm_index][key] = {}
-      build_ref_tree(node, refs_map[key])
+      build_ref_tree(node, refs_map[key], flat)
 
     if agg_exprs:
       data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes)
 
-    return data_tree, fields
+    return data_tree, fields, flat
