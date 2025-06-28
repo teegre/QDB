@@ -89,7 +89,7 @@ class Parser:
     def store_quoted(m):
       key = f'__Q{len(q_v)}__'
       quoted = m.group(0)[1:-1]
-      unescaped = bytes(quoted, 'utf-8').decode('unicode_escape')
+      unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode('utf-8')
       q_v[key] = unescaped
       return key
 
