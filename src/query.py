@@ -508,7 +508,7 @@ class Query:
 
     if not refs_map and not agg_exprs:
       for k in sorted(all_keys):
-        if not self.cache.exists(ref):
+        if not self.cache.exists(k):
           self.cache.write(k, self.store.read_hash(k))
         refs_map.setdefault(k, defaultdict(set))
         refs_map[k][prm_index].add(k)
