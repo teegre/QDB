@@ -172,6 +172,80 @@ class MicroDB:
   def _is_virtual_field(self, field: str) -> bool:
     return field in VIRTUAL
 
+  def _sort_key(self, row: list, fields_info: dict, field_positions: dict) -> tuple:
+    def _descending_value(val: str) -> float | str:
+      if is_numeric(val):
+        val = float(val)
+      if isinstance(val, float):
+        return -val
+      return ''.join(chr(255 - ord(c)) for c in val)
+
+    key = []
+    for index, info in fields_info.items():
+      sort_list = info.get('sort')
+      if not sort_list:
+        continue
+      for sort_entry in sort_list:
+        field = sort_entry['field']
+        order = sort_entry['order']
+        full_field = f'{index}:{field}'
+        pos = field_positions.get(full_field)
+        if pos is None:
+          value = row.get('sort_value')
+        else:
+          value = row['row'][pos]
+          if '=' in value:
+            value = value.split('=', 1)[1]
+        if is_numeric(value):
+          value = float(value)
+        elif value is None:
+          value = ''
+
+        key.append(_descending_value(value) if order == 'desc' else value)
+    return tuple(key)
+
+
+  def _hget_flat(self, tree: dict, fields_data: dict, field_positions: dict, root_index: str) -> int:
+    rows = []
+    elements = tree[root_index]
+    index_fields = self.store.get_fields_from_index(root_index) if not fields_data else None
+    for key in elements:
+      row = []
+      data = self.cache.read(key)
+      if index_fields:
+        for field in index_fields:
+          if not self._is_virtual_field(field):
+            val = data.get(field, '?NOFIELD?')
+            row.append(val)
+        if any(row[1:]):
+          rows.append({'row': row, 'sort_value': None})
+      else:
+        for index, spec in fields_data.items():
+          fields = spec['fields']
+          if fields == ['*']:
+            for f, v in data.items():
+              if not self._is_virtual_field(f):
+                row.append(f'{f}={v}')
+          else:
+            for field in fields:
+              val = data.get(field, '?NOFIELD?')
+              row.append(val)
+              sort_data = fields_data[root_index]['sort']
+        rows.append({'row': row, 'sort_value': sort_data})
+
+    if not rows:
+      print(f'HGET: an unexpected error occured.', file=sys.stderr)
+      return 1
+
+    # Sorting and output
+    if index_fields is None:
+      rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions))
+
+    for row in rows:
+      print(' | '.join(row['row']))
+    print(f'{len(rows)}', 'rows' if len(row) > 1 else 'row', 'found.', file=sys.stderr)
+    return 0
+
   @performance_measurement(message='Processed')
   def hget(self, index_or_key: str, *exprs: str) -> int:
     if not index_or_key:
@@ -179,36 +253,16 @@ class MicroDB:
       return 1
 
     try:
-      tree, fields_data = self.Q.query(index_or_key, *exprs)
+      tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
     except MDBError as e:
       print(f'HGET: {e}', file=sys.stderr)
       # raise
       return 1
 
-    main_index = list(tree.keys())[0]
-    index_fields: list = self.store.get_fields_from_index(main_index)
+    root_index = list(tree.keys())[0]
+    index_fields: list = self.store.get_fields_from_index(root_index)
 
     rows: list = []
-
-    # No field case
-    if not fields_data:
-      for key in tree[main_index].keys():
-        row = [key]
-        data = self.cache.read(key, self.store.read_hash)
-        for field in index_fields:
-          if not self._is_virtual_field(field):
-            row.append(f'{field}=' + str(data.get(field, '?NOFIELD?')))
-        if any(row[1:]):
-          rows.append(row)
-      if rows:
-        for row in rows:
-          print(' | '.join(row))
-        rows_found = len(rows)
-        print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
-        return 0
-
-      print(f'HGET: An unexpected error occured.', file=sys.stderr)
-      return 1
 
     pos = 0
     field_positions = {}
@@ -224,6 +278,10 @@ class MicroDB:
           continue
         field_positions[f'{idx}:{f}'] = pos
         pos += 1
+
+    if flat or not fields_data:
+      return self._hget_flat(tree, fields_data if fields_data else None, field_positions, root_index)
+
 
     def walk(index: str, key: str, node: dict, values: dict, row_meta: dict):
       results = []
@@ -280,40 +338,8 @@ class MicroDB:
 
       return results
 
-    def _descending_value(val):
-      if is_numeric(val):
-        val = float(val)
-      if isinstance(val, float):
-        return -val
-      return ''.join(chr(255 - ord(c)) for c in val)
-
-    def sort_key(row: list, fields_info: dict) -> tuple:
-      key = []
-      for index, info in fields_info.items():
-        sort_list = info.get('sort')
-        if not sort_list:
-          continue
-        for sort_entry in sort_list:
-          field = sort_entry['field']
-          order = sort_entry['order']
-          full_field = f'{index}:{field}'
-          pos = field_positions.get(full_field)
-          if pos is None:
-            value = row.get('sort_value')
-          else:
-            value = row['row'][pos]
-            if '=' in value:
-              value = value.split('=', 1)[1]
-          if is_numeric(value):
-            value = float(value)
-          elif value is None:
-            value = ''
-
-          key.append(_descending_value(value) if order == 'desc' else value)
-      return tuple(key)
-
     # Tree
-    elements = tree.get(main_index, {})
+    elements = tree.get(root_index, {})
 
     # Build rows
     all_rows = []
@@ -321,7 +347,7 @@ class MicroDB:
     for key, children in elements.items():
       row_meta = { 'sort_value': None }
       try:
-        results_for_key = walk(main_index, key, children, {}, row_meta)
+        results_for_key = walk(root_index, key, children, {}, row_meta)
         all_rows.extend(results_for_key)
       except MDBError as e:
         print(e, file=sys.stderr)
@@ -345,7 +371,7 @@ class MicroDB:
       return 1
 
     # Sorting and output
-    rows.sort(key=lambda row: sort_key(row, fields_data))
+    rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions))
 
     for row in rows:
       print(' | '.join(row['row']))
