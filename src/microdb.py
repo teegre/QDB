@@ -256,7 +256,8 @@ class MicroDB:
       tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
     except MDBError as e:
       print(f'HGET: {e}', file=sys.stderr)
-      # raise
+      if os.getenv('__MUDB_DEBUG__'):
+        raise
       return 1
 
     root_index = list(tree.keys())[0]

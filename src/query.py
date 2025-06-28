@@ -421,7 +421,6 @@ class Query:
       return data_tree, {}, False
 
     # Unique index query + aggregations
-    breakpoint()
     if agg_exprs and len(used_indexes) == 1:
       refs_map = {}
       for key in all_keys:
