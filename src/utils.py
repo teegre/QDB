@@ -13,12 +13,15 @@ def performance_measurement(_func=None, *, message: str='Executed'):
     @wraps(func)
     def wrapper(*args, **kwargs):
       t1 = time()
-      # try:
-      result = func(*args, **kwargs)
-      # except Exception as e:
-      #   if not isinstance(e, MDBError):
-      #     print(e)
-      #   return 1
+      if os.getenv('__MUDB_DEBUG__'):
+          result = func(*args, **kwargs)
+      else:
+        try:
+          result = func(*args, **kwargs)
+        except Exception as e:
+          if not isinstance(e, MDBError):
+            print(e)
+          return 1
       t2 = time()
       print(f'{message} in {(t2-t1):.4f}s.', file=sys.stderr)
       return result
