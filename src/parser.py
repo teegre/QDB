@@ -79,34 +79,34 @@ class Parser:
           'value': values
       }
 
-      match = re.match(
-          r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
-          r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
-          r'(?P<value>.+)?$', part
-      )
+    match = re.match(
+        r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
+        r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
+        r'(?P<value>.+)?$', part
+    )
 
-      if not match:
-        raise MDBParseError(f'Error: invalid expression: `{part}`')
+    if not match:
+      raise MDBParseError(f'Error: invalid expression: `{part}`')
 
-      groups = match.groupdict()
-      field = groups['field'].strip()
-      if field not in fields and not field.startswith('@['):
-        fields.append(field)
+    groups = match.groupdict()
+    field = groups['field'].strip()
+    if field not in fields and not field.startswith('@['):
+      fields.append(field)
 
-      if groups['sort']:
-        sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
+    if groups['sort']:
+      sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
 
-      if not groups['value'] and groups['op']:
-        raise MDBParseError(f'Error: missing value in condition: `{part}`')
+    if not groups['value'] and groups['op']:
+      raise MDBParseError(f'Error: missing value in condition: `{part}`')
 
-      if groups['op']:
-        return {
-            'field': field,
-            'op': OP[groups['op']],
-            'value': groups['value'].strip() if groups['value'] else ''
-        }
+    if groups['op']:
+      return {
+          'field': field,
+          'op': OP[groups['op']],
+          'value': groups['value'].strip() if groups['value'] else ''
+      }
 
-      return None
+    return None
 
   def parse(self, expr: str, index_hint: str=None) -> dict:
     q_p = r'''(["'])(?:(?=(\\?))\2.)*?\1'''
