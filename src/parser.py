@@ -10,6 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.exception import MDBParseError
 from src.ops import OP, SORTPREFIX, AGGFUNC
 from src.storage import Store
+from src.utils import coerce_number
 
 class Parser:
   def __init__(self, store: Store, main_index: str=None):
@@ -52,6 +53,32 @@ class Parser:
         )
 
   def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
+    # IN-style syntax: optional sort, field(value1[, ..., valueN])
+    in_match = re.match(
+        r'^(?P<sort>\+\+|--)?(?P<field>[^\s:!()]+)'
+        r'(?P<neg>!)?\((?P<values>[^\)]*)\)$', part
+    )
+
+    if in_match:
+      field = in_match.group('field').strip()
+
+      values_raw = in_match.group('values')
+      if not values_raw or not values_raw.strip():
+        raise MDBParseError(f'Error: missing values in: `{part}`')
+
+      values = [coerce_number(v.strip()) for v in in_match.group('values').split(',')]
+
+      if field not in fields:
+        fields.append(field)
+      if in_match.group('sort'):
+        sort.append({'order': SORTPREFIX[in_match.group('sort')], 'field': field})
+
+      return {
+          'field': field,
+          'op': 'ni' if in_match.group('neg') else 'in',
+          'value': values
+      }
+
       match = re.match(
           r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
           r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
@@ -86,6 +113,17 @@ class Parser:
     q_r = re.compile(q_p)
     q_v = {}
 
+    def validate_quoted_expr(expr: str):
+      stack = []
+      for i, c in enumerate(expr):
+        if c in ('"', "'"):
+          if stack and stack[-1] == c:
+            stack.pop()
+          else:
+            stack.append(c)
+      if stack:
+        raise MDBParseError(f'Error: unbalanced quotes in expression: `{expr}`.')
+
     def store_quoted(m):
       key = f'__Q{len(q_v)}__'
       quoted = m.group(0)[1:-1]
@@ -97,21 +135,32 @@ class Parser:
       parts = []
       cur = ''
       br_depth = 0
+      pr_depth = 0
       for c in s:
+        if c == '(':
+          pr_depth += 1
         if c == '[':
           br_depth += 1
+        elif c == ')':
+          pr_depth -= 1
         elif c == ']':
           br_depth -= 1
-        if c == ':' and br_depth == 0:
+        if c == ':' and br_depth == pr_depth == 0:
           parts.append(cur)
           cur = ''
         else:
           cur += c
+      if br_depth > 0:
+        raise MDBParseError(f'Error: mismatched brackets in expression: `{expr}`.')
+      if pr_depth > 0:
+        raise MDBParseError(f'Error: mismatched parentheses in expression; `{expr}`')
 
       if cur:
         parts.append(cur)
+
       return parts
 
+    validate_quoted_expr(expr)
     expr_safe = q_r.sub(store_quoted, expr)
 
     # How come?

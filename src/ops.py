@@ -18,6 +18,8 @@ OP = {
   '!$': 'nd', # not ends with
   '**': 'ct', # contains
   '!*': 'nc', # not contains
+  'in': 'in', # in
+  'ni': 'ni', # not in
 }
 
 BINOP = ('AND', 'OR')
@@ -44,4 +46,10 @@ SORTPREFIX = {
   '--': 'desc',
 }
 
-VIRTUAL = ('@autoid', '@id', '@hkey')
+VIRTUAL = (
+    '@autoid',
+    '@id',
+    '@hkey',
+    '@epoch',
+    '@epochreal',
+)

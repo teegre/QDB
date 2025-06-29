@@ -12,16 +12,17 @@ from src.exception import MDBParseError, MDBQueryError, MDBQueryNoData
 from src.ops import OPFUNC, BINOP
 from src.parser import Parser
 from src.storage import Store
-from src.utils import is_numeric, performance_measurement
+from src.utils import is_numeric, coerce_number, performance_measurement
 
 from src.utils import performance_measurement
 
 class Query:
-  def __init__(self, store: Store, cache: Cache):
+  def __init__(self, store: Store, cache: Cache, parent=None):
     self.store = store
     self.cache = cache
     self.parser = Parser(self.store)
     self._card_cache = {}
+    self.parent = parent
 
   def _dispatch_parse(self, root_index: str, exprs: list) -> list:
     parsed_exprs = []
@@ -65,10 +66,10 @@ class Query:
       cond_num  = float(condition_value)
       return OPFUNC[op](field_num, cond_num)
 
-    if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc'):
-      if is_numeric(field_value) and is_numeric(condition_value):
-        field_value = float(field_value)
-        condition_value = float(condition_value)
+    field_value = coerce_number(field_value)
+    condition_value = coerce_number(condition_value)
+
+    if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc', 'in', 'ni'):
       return OPFUNC[op](field_value, condition_value)
 
     match op:
@@ -84,10 +85,14 @@ class Query:
         return condition_value in field_value
       case 'nc':
         return condition_value not in field_value
+      case 'in':
+        return field_value in condition_value
+      case 'ni':
+        return field_value not in condition_value
     return False
 
   def _cardinality(self, A: str, B: str, sample_size: int=100) -> int:
-    ''' Estimate _cardinality between index A and B. '''
+    ''' Estimate cardinality between index A and B. '''
     if (A, B) in self._card_cache:
       return self._card_cache[(A, B)]
 
@@ -174,8 +179,7 @@ class Query:
               for agg in agg_exprs[idx]:
                 op, f = agg['op'], agg['field']
                 val = data.get(f.replace('*', '@id'))
-                if is_numeric(val):
-                  val = float(val) if not val.isdigit() else int(val)
+                val = coerce_number(val)
                 collected[f'{idx}:{op}:{f}'].append(val)
             results = { '@[aggregate]': self._reduce_aggs(collected) }
             if unique:
@@ -317,16 +321,15 @@ class Query:
     all_keys = None
 
     # Gather used indexes
-    used_indexes = {e['index'] for e in parsed_exprs}
-    if root_index not in used_indexes:
-      used_indexes.insert(0, root_index)
+    used_indexes = [e['index'] for e in parsed_exprs]
 
     # Fields
     fields = {}
 
     # Assuming '@hkey' when no fields are selected for the main index,
-    if root_index not in used_indexes and parsed_exprs:
+    if root_index not in used_indexes:
       fields = {root_index: {'fields': ['@hkey'], 'sort': None }}
+      used_indexes.append(root_index)
 
     for d in parsed_exprs:
       fields[d['index']] = {'fields': d['fields'], 'sort': d['sort']}
@@ -348,11 +351,22 @@ class Query:
         for expr in condition_exprs
     }
 
+    # Query is based on a particular hkey...
+    if self.store.has_index(index_or_key):
+      if root_index != prm_index:
+        all_keys = set(self.store.get_refs(index_or_key, prm_index))
+      else:
+        all_keys = { index_or_key }
+    # ... or an index
+    else:
+      all_keys = set(self.store.get_index_keys(prm_index))
+
     if condition_exprs:
       best_expr = select_best_filter(condition_exprs)
 
       # Primary condition
-      all_keys = resolve_to_primary(best_expr)
+      # Query may be based on a specific key, hence'&='
+      all_keys &= resolve_to_primary(best_expr)
 
       # Secondary conditions
       for expr in condition_exprs:
@@ -360,14 +374,6 @@ class Query:
           continue
         keys = resolve_to_primary(expr)
         all_keys &= keys
-
-    else:
-      # Query is based on a particular hkey...
-      if self.store.has_index(index_or_key):
-        all_keys = { index_or_key }
-      # ... or an index
-      else:
-        all_keys = set(self.store.get_index_keys(prm_index))
 
     # Stop here if nothing was found
     if not all_keys:
@@ -460,8 +466,24 @@ class Query:
               if any(set(self.store.get_refs(r, root_index)) & set(root_keys))
           }
           if not base_dataset:
-            if len(all_keys) == 1: # NO DATA
-              raise MDBQueryNoData(f'No data: `{self.store.get_index(key)} → {agg_index}`.')
+            if len(all_keys) == 1:
+              if len(root_keys) == 1:
+                raise MDBQueryNoData(f'No data: `{self.store.get_index(key)} → {agg_index}`.')
+              else:
+                aggs = ', '.join([o+':'+f for o, f in [tuple(a.values()) for a in agg_exprs[agg_index]]])
+                aggl = len(agg_exprs[agg_index])
+                candidates = [i for i in used_indexes if i not in (root_index, agg_exprs)]
+                msg = (
+                    f'Error: aggregate function{"s" if aggl > 1 else ""}: `{agg_index}:@[{aggs}]` '
+                    f'cannot be resolved from root index `{root_index}`.'
+                )
+                if candidates:
+                  msg += f'\nTry using one of the following as the root index: {", ".join(candidates)}.'
+                else:
+                  msg += '\nNo alternative root index could resolve the aggregate target. '
+                  if 'count' in aggs:
+                    msg += '\nHint: aggregations like `@[count:*]` require traversing a valid path from the root index.'
+                raise MDBQueryError(msg)
             # NO agg_index for key
             del refs_map[key]
             all_keys.remove(key)
@@ -501,17 +523,18 @@ class Query:
           refs = flat_refs[key][idx] or self.store.get_refs(key, idx)
           if idx in cond_indexes:
             refs = sorted(cond_matches[idx] & set(refs))
-          refs_map[key][idx].update(refs)
+          if refs:
+            refs_map[key][idx].update(refs)
           for ref in refs:
             if not self.cache.exists(ref):
               self.cache.write(ref, self.store.read_hash(ref))
 
     if not refs_map and not agg_exprs:
-      for k in sorted(all_keys):
+      for k in all_keys:
         if not self.cache.exists(k):
           self.cache.write(k, self.store.read_hash(k))
         refs_map.setdefault(k, defaultdict(set))
-        refs_map[k][prm_index].add(k)
+        refs_map[k][root_index].add(k)
 
     if not refs_map:
       raise MDBQueryNoData('No data.')
