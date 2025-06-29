@@ -20,7 +20,8 @@ class MicroDB:
   def __init__(self, name: str):
     self.store = Store(name)
     self.cache = Cache()
-    self.Q = Query(self.store, self.cache)
+    self.Q = Query(self.store, self.cache, parent=self)
+    self._perf_info = {}
 
     self.commands = {
         'COMPACT': self.compact,
@@ -213,12 +214,11 @@ class MicroDB:
       row = []
       data = self.cache.read(key)
       if index_fields:
-        for field in index_fields:
-          if not self._is_virtual_field(field):
-            val = data.get(field, '?NOFIELD?')
-            row.append(val)
-        if any(row[1:]):
-          rows.append({'row': row, 'sort_value': None})
+        for f in index_fields:
+          if not self._is_virtual_field(f):
+            v = data.get(f, '?NOFIELD?')
+            row.append(f'{f}={v}')
+        rows.append({'row': row, 'sort_value': None})
       else:
         for index, spec in fields_data.items():
           fields = spec['fields']
@@ -242,56 +242,28 @@ class MicroDB:
       rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions))
 
     for row in rows:
-      print(' | '.join(row['row']))
-    print(f'{len(rows)}', 'rows' if len(row) > 1 else 'row', 'found.', file=sys.stderr)
+      print(' | '.join(row['row']), flush=True)
+    print(len(rows), 'rows' if len(row) > 1 else 'row', 'found.', file=sys.stderr)
     return 0
 
-  @performance_measurement(message='Processed')
-  def hget(self, index_or_key: str, *exprs: str) -> int:
-    if not index_or_key:
-      print(f'HGET: missing index or hkey.', file=sys.stderr)
-      return 1
+  def _format_row(self, result_value: dict, fields_data: dict) -> list[str]:
+    row = []
+    for index, spec in fields_data.items():
+      for field in spec['fields']:
+        if field == '*':
+          star_fields = [k[1] for k in result_value.keys() if k[0] == index]
+          for star_field in star_fields:
+            row.append(f'{star_field}={result_value[(index, star_field)]}')
+        else:
+          row.append(result_value[(index, field)])
+    return row
 
-    try:
-      tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
-    except MDBError as e:
-      print(f'HGET: {e}', file=sys.stderr)
-      if os.getenv('__MUDB_DEBUG__'):
-        raise
-      return 1
-
-    root_index = list(tree.keys())[0]
-    index_fields: list = self.store.get_fields_from_index(root_index)
-
-    rows: list = []
-
-    pos = 0
-    field_positions = {}
-    for idx, fields in fields_data.items():
-      if fields['fields'] == ['*']:
-        all_fields = self.store.get_fields_from_index(idx)
-        star = True
-      else:
-        all_fields = fields['fields']
-        star = False
-      for f in all_fields:
-        if star and self._is_virtual_field(f):
-          continue
-        field_positions[f'{idx}:{f}'] = pos
-        pos += 1
-
-    if flat or not fields_data:
-      return self._hget_flat(tree, fields_data if fields_data else None, field_positions, root_index)
-
-
-    def walk(index: str, key: str, node: dict, values: dict, row_meta: dict):
+  def _walk_tree(self, tree: dict, root_index: str, fields_data: dict) -> list[dict]:
+    def walk(index: str, key, node: dict, values: dict, row_meta: dict):
       results = []
       data = self.cache.read(key, self.store.read_hash)
-
       current_values = dict(values)
-
       is_aggregation = False
-
       fields = fields_data[index]['fields']
       sort_data = fields_data[index]['sort']
 
@@ -304,19 +276,18 @@ class MicroDB:
           if not self._is_virtual_field(f):
             current_values[(index, f)] = v
       else:
-        for field in fields:
+        for f in fields:
           try:
-            current_values[(index, field)] = data[field]
+            current_values[(index, f)] = data[f]
           except (KeyError, TypeError):
-            print(current_values)
-            raise MDBError(f'HGET: an unexpected error involving `{field}` occured.')
-        if row_meta.get('sort_value') is None:
-          if sort_data:
-            for rule in sort_data:
-              for field in fields:
-                if rule['field'] == field:
-                  row_meta['sort_value'] = data[field]
-                  break
+            raise MDBError(f'an unexpected error involving `{index}:{f}` occured.')
+        if row_meta.get('sort_value') is None and sort_data:
+          for rule in sort_data:
+            for f in fields:
+              if rule['field'] == f:
+                row_meta['sort_value'] = data[f]
+                break
+
       if node and not is_aggregation:
         combined_results = []
         for child_idx, children in node.items():
@@ -334,51 +305,94 @@ class MicroDB:
           else:
             combined_results = temp_results
         results.extend(combined_results)
-      elif not node or is_aggregation:
+      else:
         results.append(current_values)
 
       return results
 
-    # Tree
+    rows = []
     elements = tree.get(root_index, {})
-
-    # Build rows
-    all_rows = []
 
     for key, children in elements.items():
       row_meta = { 'sort_value': None }
       try:
-        results_for_key = walk(root_index, key, children, {}, row_meta)
-        all_rows.extend(results_for_key)
+        results_values = walk(root_index, key, children, {}, row_meta)
+        for result_value in results_values:
+          rows.append({
+            'row': self._format_row(result_value, fields_data),
+            'sort_value': row_meta['sort_value']
+          })
       except MDBError as e:
-        print(e, file=sys.stderr)
-        return 1
+        raise(e)
 
-      rows = []
-      for results_values in all_rows:
-        row = []
-        for index, spec in fields_data.items():
-          for field in spec['fields']:
-            if field == '*':
-              star_fields = [k[1] for k in results_values.keys() if k[0] == index]
-              for star_field in star_fields:
-                row.append(f'{star_field}={results_values[(index, star_field)]}')
-            else:
-              row.append(results_values[(index, field)])
-        rows.append({'row': row, 'sort_value': row_meta['sort_value']})
+    return rows
 
-    if not rows:
+  def _build_fields_positions(self, fields_data: dict) -> dict:
+    pos = 0
+    fields_positions = {}
+    for idx, fields in fields_data.items():
+      if fields['fields'] == ['*']:
+        all_fields = self.store.get_fields_from_index(idx)
+        star = True
+      else:
+        all_fields = fields['fields']
+        star = False
+      for f in all_fields:
+        if star and self._is_virtual_field(f):
+          continue
+        fields_positions[f'{idx}:{f}'] = pos
+        pos += 1
+    return fields_positions
+
+  @performance_measurement(message='Processed')
+  def hget(self, index_or_key: str, *exprs: str) -> int:
+    if not index_or_key:
+      print(f'HGET: missing index or hkey.', file=sys.stderr)
+      return 1
+
+    try:
+      tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
+    except MDBError as e:
+      print(f'HGET: {e}', file=sys.stderr)
+      if os.getenv('__MUDB_DEBUG__'):
+        raise
+      return 1
+
+    root_index = next(iter(tree))
+    index_fields: list = self.store.get_fields_from_index(root_index)
+    fields_positions = self._build_fields_positions(fields_data)
+
+    rows: list = []
+
+    if flat or not fields_data:
+      res = self._hget_flat(tree, fields_data if fields_data else None, fields_positions, root_index)
+      if 'Fetched' in self._perf_info and res == 0:
+        print(f'Fetched in {self._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
+      return res
+
+    try:
+      all_rows = self._walk_tree(tree, root_index, fields_data)
+    except MDBError as e:
+      print(e, file=sys.stderr)
+      if os.getenv('__MUDB_DEBUG__'):
+        raise
+      return 1
+
+    if not all_rows:
       print(f'HGET: an unexpected error occured.', file=sys.stderr)
       return 1
 
     # Sorting and output
-    rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions))
+    all_rows.sort(key=lambda row: self._sort_key(row, fields_data, fields_positions))
 
-    for row in rows:
-      print(' | '.join(row['row']))
+    for row in all_rows:
+      print(' | '.join(row['row']), flush=True)
 
-    rows_found = len(rows)
-    print(f'{rows_found}', 'rows' if rows_found > 1 else 'row', 'found.', file=sys.stderr)
+    print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
+
+    if 'Fetched' in self._perf_info:
+      print(f'Fetched in {self._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
+
     return 0
 
   def hdel(self, index_or_key: str, *fields: str) -> int:
