@@ -1,8 +1,8 @@
 from faker import Faker
 from random import randint
 
-from src.microdb import MicroDB
-db = MicroDB('persons.db')
+from src.qdb import QDB
+qdb = QDB('persons.qdb')
 
 fake = Faker('en_US')
 
@@ -12,7 +12,7 @@ print('COUNTRIES:')
 for i in range(1, 11):
   ID = f'country:{str(i).zfill(2)}'
   data = fake.country()
-  if db.hset(ID, 'name', data) != 0:
+  if qdb.hset(ID, 'name', data) != 0:
     exit(1)
   print(int(100*i/10), end='%\r ' if i < 10 else '%\n', flush=True)
 
@@ -24,7 +24,7 @@ for i in range(1, 101):
   ID = f'city:{str(i).zfill(3)}'
   foreignID = f'country:{str(randint(1,10)).zfill(2)}'
   data = fake.city()
-  if db.hset(ID, 'name', data, 'country', foreignID) != 0:
+  if qdb.hset(ID, 'name', data, 'country', foreignID) != 0:
     exit(1)
   print(int(100*i/100), end='%\r ' if i < 100 else '%\n', flush=True)
 
@@ -35,7 +35,7 @@ for i in range(1, 5001):
   ID = f'address:{str(i).zfill(4)}'
   foreignID = f'city:{str(randint(1,100)).zfill(3)}'
   data = fake.street_address()
-  if db.hset(ID, 'street', data, 'city', foreignID) != 0:
+  if qdb.hset(ID, 'street', data, 'city', foreignID) != 0:
     exit(1)
   print(int(100*i/5000), end='%\r ' if i < 5000 else '%\n', flush=True)
 
@@ -46,14 +46,14 @@ for i in range(1, 10001):
   ID = f'person:{str(i).zfill(5)}'
   foreignID = f'address:{str(randint(1,5000)).zfill(4)}'
   data = fake.name()
-  if db.hset(ID, 'name', data, 'age', str(randint(21,100)) , 'address', foreignID) != 0:
+  if qdb.hset(ID, 'name', data, 'age', str(randint(21,100)) , 'address', foreignID) != 0:
     exit(1)
   print(int(100*i/10000), end='%\r ' if i < 10000 else '%\n', flush=True)
   
 print('ALRIGHT!')
 
-if db.store.compact() != 0:
+if qdb.store.compact() != 0:
   exit(1)
 
-del db
+del qdb
 exit(0)

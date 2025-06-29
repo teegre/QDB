@@ -10,8 +10,8 @@ from src.storage import Store
 
 @pytest.fixture
 def store():
-  db = Store('persons.db')
-  return db
+  qdb = Store('persons.qdb')
+  return qdb
 
 def test_direct_ref(store):
     """Direct relationship test: person -> country"""
