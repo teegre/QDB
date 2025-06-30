@@ -45,18 +45,18 @@ def populate_database():
     print(int(100*i/5000), end='%\r ' if i < 5000 else '%\n', flush=True)
 
   astro = {
-    'astro:01': { 'sign': 'aries' },
-    'astro:02': { 'sign': 'taurus' },
-    'astro:03': { 'sign': 'gemini' },
-    'astro:04': { 'sign': 'cancer' },
-    'astro:05': { 'sign': 'leo' },
-    'astro:06': { 'sign': 'virgo' },
-    'astro:07': { 'sign': 'libra' },
-    'astro:08': { 'sign': 'scorpio' },
-    'astro:09': { 'sign': 'sagittarius' },
-    'astro:10': { 'sign': 'capricorn' },
-    'astro:11': { 'sign': 'aquarius' },
-    'astro:12': { 'sign': 'pisces' },
+    'astro:01': 'aries',
+    'astro:02': 'taurus',
+    'astro:03': 'gemini',
+    'astro:04': 'cancer',
+    'astro:05': 'leo',
+    'astro:06': 'virgo',
+    'astro:07': 'libra',
+    'astro:08': 'scorpio',
+    'astro:09': 'sagittarius',
+    'astro:10': 'capricorn',
+    'astro:11': 'aquarius',
+    'astro:12': 'pisces',
   }
 
   # Astro x12
@@ -64,7 +64,7 @@ def populate_database():
 
   i = 1
   for k, v in astro.items():
-    if qdb.w(k, 'sign', v['sign']) != 0:
+    if qdb.w(k, 'sign', v) != 0:
       return 1
     print(int(100*i/12), end='%\r' if i < 12 else '%\n', flush=True)
     i += 1
