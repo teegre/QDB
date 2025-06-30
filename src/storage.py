@@ -61,6 +61,7 @@ class Store:
     self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
+    self.__paths__: Dict[tuple: list] = {}
     self.file = None
     self._file_id: int = self._max_id
     self._file_pos: int = 0
@@ -70,6 +71,7 @@ class Store:
     self.reconstruct()
     self.build_indexes_map()
     self.update_reverse_refs()
+    self.precompute_paths()
 
   def open(self) -> int:
     if not os.path.exists(self.database):
@@ -144,12 +146,12 @@ class Store:
           ts
       )
       self._file_pos = self.file.tell()
-      # TODO: Check hkey syntax → INDEX:ID
-      if ':' in key:
+      if not self.has_index(key):
         if self.create_index(key) != 0:
           return 1
       for ref in refs :
         self.create_ref(key, ref)
+        self.create_ref(key, ref, reverse=True)
 
       self.write_references()
 
@@ -583,35 +585,49 @@ class Store:
 
   def get_index_keys(self, index: str) -> list:
     ''' Get all the keys for a given index. '''
-    if self.is_index(index):
-      keys = self.indexes_map.get(index)
-      if keys:
-        return keys
-      return [k for k in self.keystore.keys() if k.startswith(index + ':')]
-    return []
+    keys = self.indexes_map.get(index)
+    if keys:
+      return keys
+    return [k for k in self.keystore.keys() if k.startswith(index + ':')]
 
-  def create_ref(self, hkey: str, ref: str) -> int:
+  def create_ref(self, hkey: str, ref: str, reverse: bool=False) -> int:
+    '''
+    Add a reference for a given key or
+    add a key for a given reference.
+    '''
+    if hkey == ref:
+      print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
+      return 1
+    if not self.exists(hkey) or not self.exists(ref):
+      return 1
+
+    refs = self.refs if not reverse else self.reverse_refs
+
+    kr = refs.get(hkey) if not reverse else refs.get(ref)
+    k1 = hkey if not reverse else ref
+    k2 = ref if not reverse else hkey
+
+    if kr is None and self.has_index(k1):
+      refs[k1] = { k2 }
+      return 0
+    if self.has_index(k1):
+      self.refs[k1].add(k2)
+      return 0
+    return 1
+
+  def create_rev_ref(self, ref: str, hkey: str) -> int:
     ''' Add a reference for a given key '''
     if hkey == ref:
       print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
       return 1
     if not self.exists(hkey):
       return 1
-    refs = self.refs.get(hkey)
-    rev_refs = self.refs.get(ref)
-    if refs is None and self.has_index(hkey):
-      self.refs[hkey] = set([ref])
-      if rev_refs is None:
-        self.reverse_refs[ref] = set([hkey])
-      else:
-        self.reverse_refs[ref].add(hkey)
+    revs = self.reverse_refs.get(ref)
+    if revs is None and self.has_index(ref):
+      self.reverse_refs[ref] = { hkey }
       return 0
-    if self.has_index(hkey):
-      self.refs[hkey].add(ref)
-      if rev_refs is None:
-        self.reverse_refs[ref] = set([hkey])
-      else:
-        self.reverse_refs[ref].add(hkey)
+    if self.has_index(ref):
+      self.refs[hkey].add(hkey)
       return 0
     return 1
 
@@ -620,6 +636,13 @@ class Store:
       self.indexes_map.setdefault(index, set())
       for key in self.get_index_keys(index):
         self.indexes_map[index].add(key)
+
+  def precompute_paths(self):
+    for x1 in self.indexes:
+      for x2 in self.indexes:
+        if x1 == x2:
+          continue
+        self.__paths__[(x1, x2)] = self.find_index_path(x1,x2)
 
   def get_all_ref_hkeys(self, index: str) -> list[str]:
     ''' Return all referenced hkeys'''
@@ -791,12 +814,15 @@ class Store:
             return new_path
           if use_index and self.get_index(neighbor) == self.get_index(k2):
               index_path = [self.get_index(k) for k in new_path]
+              self.__paths__[(k1, k2)] = index_path
               return index_path
 
     # No path found
     return []
 
   def find_index_path(self, idx1: str, idx2: str) -> list:
+    if (idx1, idx2) in self.__paths__:
+      return self.__paths__.get((idx1, idx2))
     return self.find_path(idx1, idx2, use_index=True)
 
   def delete_ref_of_key(self, hkey: str, ref: str) -> int:
