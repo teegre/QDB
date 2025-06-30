@@ -242,7 +242,10 @@ class QDB:
 
     for row in rows:
       print(' | '.join(row['row']), flush=True)
+
+    print(file=sys.stderr)
     print(len(rows), 'rows' if len(row) > 1 else 'row', 'found.', file=sys.stderr)
+
     return 0
 
   def _format_row(self, result_value: dict, fields_data: dict) -> list[str]:
