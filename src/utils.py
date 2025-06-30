@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -7,7 +8,8 @@ from functools import wraps
 from time import perf_counter
 from typing import Any
 
-from src.exception import MDBError
+from src.exception import QDBHkeyError
+from src.ops import VIRTUAL
 
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
@@ -15,7 +17,7 @@ def performance_measurement(_func=None, *, message: str='Executed'):
     def wrapper(*args, **kwargs):
       t1 = perf_counter()
       result = func(*args, **kwargs)
-      if not os.getenv('__MUDB_DEBUG__'):
+      if not os.getenv('__QDB_DEBUG__'):
         if result == 1:
           return result
       t2 = perf_counter()
@@ -23,7 +25,12 @@ def performance_measurement(_func=None, *, message: str='Executed'):
       if hasattr(args[0], 'parent') and hasattr(args[0].parent, '_perf_info'):
           args[0].parent._perf_info[message] = d
       else:
-        print(f'{message} in {d:.4f}s.', file=sys.stderr)
+        p = d - args[0]._perf_info['Fetched']
+        t = d
+        print(f'Fetched:   {args[0]._perf_info["Fetched"]:.4f}s.')
+        print(f'{message}: {p:.4f}s.', file=sys.stderr)
+        print(f'Total:     {d:.4f}s.', file=sys.stderr)
+
       return result
     return wrapper
   return decorator
@@ -44,4 +51,11 @@ def coerce_number(x: Any) -> Any:
     return float(x) if not x.isdigit() else int(x)
   return x
 
+def is_virtual(field: str) -> bool:
+  return field in VIRTUAL
+
+def validate_hkey(hkey: str) -> None:
+  HKEY_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z0-9]+$')
+  if not HKEY_RE.match(hkey):
+    raise QDBHkeyError('Error: malformed HKEY: {hkey}')
 
