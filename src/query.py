@@ -8,11 +8,11 @@ from collections import defaultdict
 from random import shuffle
 
 from src.datacache import Cache
-from src.exception import MDBParseError, MDBQueryError, MDBQueryNoData
+from src.exception import QDBParseError, QDBQueryError, QDBQueryNoData
 from src.ops import OPFUNC, BINOP
 from src.parser import Parser
 from src.storage import Store
-from src.utils import is_numeric, coerce_number, performance_measurement
+from src.utils import is_numeric, coerce_number, is_virtual, performance_measurement
 
 from src.utils import performance_measurement
 
@@ -47,17 +47,17 @@ class Query:
 
     if op == 'AND':
       return all(
-          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'])
+          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'], field=cond['field'])
           for cond in conditions
       )
 
     if op == 'OR':
       return any(
-          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'])
+          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'], field=cond['field'])
           for cond in conditions
       )
 
-  def _eval_cond(self, op: str, field_value: str, condition_value: str) -> bool:
+  def _eval_cond(self, op: str, field_value: str, condition_value: str, field: str) -> bool:
     if op in ('gt', 'ge', 'lt', 'le'):
       if not is_numeric(field_value) or not is_numeric(condition_value):
         return False
@@ -66,8 +66,8 @@ class Query:
       cond_num  = float(condition_value)
       return OPFUNC[op](field_num, cond_num)
 
-    field_value = coerce_number(field_value)
-    condition_value = coerce_number(condition_value)
+    field_value = coerce_number(field_value) if not is_virtual(field) else field_value
+    condition_value = coerce_number(condition_value) if not is_virtual(field) else condition_value
 
     if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc', 'in', 'ni'):
       return OPFUNC[op](field_value, condition_value)
@@ -179,7 +179,7 @@ class Query:
               for agg in agg_exprs[idx]:
                 op, f = agg['op'], agg['field']
                 val = data.get(f.replace('*', '@id'))
-                val = coerce_number(val)
+                val = coerce_number(val) if not is_virtual(agg['field']) else val
                 collected[f'{idx}:{op}:{f}'].append(val)
             results = { '@[aggregate]': self._reduce_aggs(collected) }
             if unique:
@@ -245,12 +245,12 @@ class Query:
         limit = int(limit)
         assert limit > 0
       except (ValueError, AssertionError):
-        raise MDBQueryError(f'invalid limit: `{limit if limit else ' '}`.')
+        raise QDBQueryError(f'invalid limit: `{limit if limit else ' '}`.')
 
     # Check index_or_key validity
     root_index = index_or_key if self.store.is_index(index_or_key) else self.store.get_index(index_or_key)
     if not root_index:
-      raise MDBQueryError(f'Error: `{index_or_key}`, no such index or hkey.')
+      raise QDBQueryError(f'Error: `{index_or_key}`, no such index or hkey.')
     
     def select_best_filter(exprs: list) -> dict:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
@@ -267,7 +267,7 @@ class Query:
             if self._eval_binop_cond(k, kv, op):
               valid_keys.add(k)
             continue
-          if self._eval_cond(op['op'], kv.get(op['field']), op['value']):
+          if self._eval_cond(op['op'], kv.get(op['field']), op['value'], field=op['field']):
             valid_keys.add(k)
       return valid_keys
 
@@ -377,7 +377,7 @@ class Query:
 
     # Stop here if nothing was found
     if not all_keys:
-      raise MDBQueryNoData(f'No data.')
+      raise QDBQueryNoData(f'No data.')
 
     root_keys = (
         {index_or_key} if self.store.has_index(index_or_key)
@@ -468,7 +468,7 @@ class Query:
           if not base_dataset:
             if len(all_keys) == 1:
               if len(root_keys) == 1:
-                raise MDBQueryNoData(f'No data: `{self.store.get_index(key)} → {agg_index}`.')
+                raise QDBQueryNoData(f'No data: `{self.store.get_index(key)} → {agg_index}`.')
               else:
                 aggs = ', '.join([o+':'+f for o, f in [tuple(a.values()) for a in agg_exprs[agg_index]]])
                 aggl = len(agg_exprs[agg_index])
@@ -483,7 +483,7 @@ class Query:
                   msg += '\nNo alternative root index could resolve the aggregate target. '
                   if 'count' in aggs:
                     msg += '\nHint: aggregations like `@[count:*]` require traversing a valid path from the root index.'
-                raise MDBQueryError(msg)
+                raise QDBQueryError(msg)
             # NO agg_index for key
             del refs_map[key]
             all_keys.remove(key)
@@ -537,7 +537,7 @@ class Query:
         refs_map[k][root_index].add(k)
 
     if not refs_map:
-      raise MDBQueryNoData('No data.')
+      raise QDBQueryNoData('No data.')
 
     flat = (
         not condition_exprs and
