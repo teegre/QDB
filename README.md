@@ -4,9 +4,13 @@ A key/value dynamic database manager.
 
 This is work in progress.
 
-## Example
+## Example query
 
-*SQL* Version
+```
+Q artist ++@id(1, 2):name album:title:++date song:@[count:*, avg:duration]
+```
+
+*SQL* equivalent
 
 ```sql
 SELECT
@@ -24,8 +28,3 @@ GROUP BY a.id, a.name, al.title, al.date
 ORDER BY a.id ASC, al.date ASC;
 ```
 
-*QDB* version
-
-```
-Q artist ++@id(1, 2):name album:title:++date song:@[count:*, avg:duration]
-```
