@@ -3,15 +3,23 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-class MDBError(Exception):
+class QDBError(Exception):
   pass
-class MDBParseError(MDBError):
+
+class QDBParseError(QDBError):
   pass
-class MDBQueryError(MDBError):
+
+class QDBQueryError(QDBError):
   pass
-class MDBQueryNoData(MDBError):
+
+class QDBQueryNoData(QDBError):
   pass
-class MDBWriteError(MDBError):
+
+class QDBHkeyError(QDBError):
   pass
-class MDBReadError(MDBError):
+
+class QDBWriteError(QDBError):
+  pass
+
+class QDBReadError(QDBError):
   pass
