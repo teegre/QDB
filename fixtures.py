@@ -17,7 +17,8 @@ def populate_database():
   for i in range(1, 11):
     ID = f'country:{str(i).zfill(2)}'
     data = fake.country()
-    if qdb.w(ID, 'name', data) != 0:
+    code = data[:2].upper()
+    if qdb.w(ID, 'name', data, 'code', code) != 0:
       return 1
     print(int(100*i/10), end='%\r ' if i < 10 else '%\n', flush=True)
 
