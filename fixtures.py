@@ -17,7 +17,7 @@ def populate_database():
   for i in range(1, 11):
     ID = f'country:{str(i).zfill(2)}'
     data = fake.country()
-    if qdb.hset(ID, 'name', data) != 0:
+    if qdb.w(ID, 'name', data) != 0:
       return 1
     print(int(100*i/10), end='%\r ' if i < 10 else '%\n', flush=True)
 
@@ -29,7 +29,7 @@ def populate_database():
     ID = f'city:{str(i).zfill(3)}'
     foreignID = f'country:{str(randint(1,10)).zfill(2)}'
     data = fake.city()
-    if qdb.hset(ID, 'name', data, 'country', foreignID) != 0:
+    if qdb.w(ID, 'name', data, 'country', foreignID) != 0:
       return 1
     print(int(100*i/100), end='%\r ' if i < 100 else '%\n', flush=True)
 
@@ -40,7 +40,7 @@ def populate_database():
     ID = f'address:{str(i).zfill(4)}'
     foreignID = f'city:{str(randint(1,100)).zfill(3)}'
     data = fake.street_address()
-    if qdb.hset(ID, 'street', data, 'city', foreignID) != 0:
+    if qdb.w(ID, 'street', data, 'city', foreignID) != 0:
       return 1
     print(int(100*i/5000), end='%\r ' if i < 5000 else '%\n', flush=True)
 
@@ -64,7 +64,7 @@ def populate_database():
 
   i = 1
   for k, v in astro.items():
-    if qdb.hset(k, 'sign', v['sign']) != 0:
+    if qdb.w(k, 'sign', v['sign']) != 0:
       return 1
     print(int(100*i/12), end='%\r' if i < 12 else '%\n', flush=True)
     i += 1
@@ -76,7 +76,7 @@ def populate_database():
     ID = f'person:{str(i).zfill(5)}'
     foreignID = f'address:{str(randint(1,5000)).zfill(4)}'
     data = fake.name()
-    if qdb.hset(ID, 'name', data, 'age', str(randint(1,100)), 'zodiac', choice(list(astro.keys()))  , 'address', foreignID) != 0:
+    if qdb.w(ID, 'name', data, 'age', str(randint(1,100)), 'zodiac', choice(list(astro.keys()))  , 'address', foreignID) != 0:
       return 1
     print(int(100*i/10000), end='%\r ' if i < 10000 else '%\n', flush=True)
 
