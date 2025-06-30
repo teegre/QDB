@@ -606,7 +606,7 @@ class Store:
     kr = refs.get(hkey) if not reverse else refs.get(ref)
     k1 = hkey if not reverse else ref
     k2 = ref if not reverse else hkey
-
+    
     if kr is None and self.has_index(k1):
       refs[k1] = { k2 }
       return 0

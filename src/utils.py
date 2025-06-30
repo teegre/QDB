@@ -30,7 +30,7 @@ def performance_measurement(_func=None, *, message: str='Executed'):
         print(f'Fetched:   {args[0]._perf_info["Fetched"]:.4f}s.')
         print(f'{message}: {p:.4f}s.', file=sys.stderr)
         print(f'Total:     {d:.4f}s.', file=sys.stderr)
-
+      
       return result
     return wrapper
   return decorator
