@@ -7,10 +7,10 @@ from typing import Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.exception import MDBParseError
+from src.exception import QDBParseError
 from src.ops import OP, SORTPREFIX, AGGFUNC
 from src.storage import Store
-from src.utils import coerce_number
+from src.utils import coerce_number, is_virtual
 
 class Parser:
   def __init__(self, store: Store, main_index: str=None):
@@ -26,30 +26,30 @@ class Parser:
       msg += '.' if not context else f' in `{context}`.'
 
       if suggestions:
-        raise MDBParseError(
+        raise QDBParseError(
             msg +
             f'\nDid you mean: {', '.join(suggestions)}?'
         )
       else:
-        raise MDBParseError(
+        raise QDBParseError(
             msg +
             f'\nAvailable fields: {', '.join(valid_fields)}'
         )
 
-  def validate_aggregation_func(self, index, func: str, field: str) -> None:
+  def validate_aggregate(self, index, func: str, field: str) -> None:
     if func not in AGGFUNC:
       suggestions = difflib.get_close_matches(func, AGGFUNC, n=3, cutoff=0.5)
-      msg = f'Error: `{func}` no such aggregation function in `{index}:@[{func}:{field}]`.'
+      msg = f'Error: `{func}` no such aggregate function in `{index}:@[{func}:{field}]`.'
 
       if suggestions:
-        raise MDBParseError(
+        raise QDBParseError(
             msg +
             f'\nDid you mean {', '.join(suggestions)}?'
         )
       else:
-        raise MDBParseError(
+        raise QDBParseError(
             msg +
-            f'\nAvailable aggregation functions: {', '.join(sorted(AGGFUNC))}'
+            f'\nAvailable aggregate functions: {', '.join(sorted(AGGFUNC))}'
         )
 
   def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
@@ -64,9 +64,16 @@ class Parser:
 
       values_raw = in_match.group('values')
       if not values_raw or not values_raw.strip():
-        raise MDBParseError(f'Error: missing values in: `{part}`')
+        raise QDBParseError(f'Error: missing values in: `{part}`')
 
-      values = [coerce_number(v.strip()) for v in in_match.group('values').split(',')]
+      values = [
+          coerce_number(v.strip()) if not is_virtual(field)
+          else v.strip()
+          for v in in_match.group('values').split(',')
+      ]
+
+      if not values:
+        raise QDBParseError(f'Error: missing values in: `{part}`')
 
       if field not in fields:
         fields.append(field)
@@ -86,7 +93,7 @@ class Parser:
     )
 
     if not match:
-      raise MDBParseError(f'Error: invalid expression: `{part}`')
+      raise QDBParseError(f'Error: invalid expression: `{part}`')
 
     groups = match.groupdict()
     field = groups['field'].strip()
@@ -97,7 +104,7 @@ class Parser:
       sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
 
     if not groups['value'] and groups['op']:
-      raise MDBParseError(f'Error: missing value in condition: `{part}`')
+      raise QDBParseError(f'Error: missing value in condition: `{part}`')
 
     if groups['op']:
       return {
@@ -122,7 +129,7 @@ class Parser:
           else:
             stack.append(c)
       if stack:
-        raise MDBParseError(f'Error: unbalanced quotes in expression: `{expr}`.')
+        raise QDBParseError(f'Error: unbalanced quotes in expression: `{expr}`.')
 
     def store_quoted(m):
       key = f'__Q{len(q_v)}__'
@@ -150,10 +157,10 @@ class Parser:
           cur = ''
         else:
           cur += c
-      if br_depth > 0:
-        raise MDBParseError(f'Error: mismatched brackets in expression: `{expr}`.')
-      if pr_depth > 0:
-        raise MDBParseError(f'Error: mismatched parentheses in expression; `{expr}`')
+      if br_depth != 0:
+        raise QDBParseError(f'Error: mismatched brackets in expression: `{expr}`.')
+      if pr_depth != 0:
+        raise QDBParseError(f'Error: mismatched parentheses in expression; `{expr}`')
 
       if cur:
         parts.append(cur)
@@ -165,7 +172,7 @@ class Parser:
 
     # How come?
     if not expr_safe.strip():
-      raise MDBParseError('Error: empty expression.')
+      raise QDBParseError('Error: empty expression.')
 
     parts = safe_split_colon(expr_safe)
 
@@ -176,7 +183,7 @@ class Parser:
       index = index_hint or self.main_index
 
     if expr == '*':
-      raise MDBParseError('Error: `*` only allowed after an index.')
+      raise QDBParseError('Error: `*` only allowed after an index.')
 
     if parts == ['*']:
       return {
@@ -188,7 +195,7 @@ class Parser:
       }
 
     if '*' in parts:
-      raise MDBParseError('Error: `*` only allowed after an index.')
+      raise QDBParseError('Error: `*` only allowed after an index.')
 
     fields = []
     sort_info = []
@@ -212,7 +219,7 @@ class Parser:
           sub_part = sub_part.strip()
           if not re.match(r'^[^=><!*^$]+', sub_part):
             if last_field is None:
-              raise MDBParseError(f'Error: missing field in `{sub_part}`.')
+              raise QDBParseError(f'Error: missing field in `{sub_part}`.')
             sub_part = f'{last_field}{sub_part}'
           else:
             m = re.match(r'^(?P<field>[^=><!*^$]+)', sub_part)
@@ -231,7 +238,7 @@ class Parser:
         aggs = agg_match.group('aggs')
 
         if not aggs:
-          raise MDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
+          raise QDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
 
         item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[\w|\*@]+)'
 
@@ -245,7 +252,7 @@ class Parser:
             op = m.group('op')
             f = m.group('field')
 
-            self.validate_aggregation_func(index, op, f)
+            self.validate_aggregate(index, op, f)
             self.validate_field(index, f, context=f'{index}:@[{item}]', excepted=['*'] if op == 'count' else [])
 
             aggregations.append({
@@ -259,7 +266,7 @@ class Parser:
               if agg_sort:
                 sort_info.append({'order': SORTPREFIX[agg_sort], 'field': composite_field})
           else:
-            raise MDBParseError(f'syntax error in: `@[{item}]`')
+            raise QDBParseError(f'syntax error in: `@[{item}]`')
 
     # Field validity check
     for field in fields:
