@@ -10,11 +10,10 @@ from typing import Any
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from src.datacache import Cache
-from src.exception import MDBError
-from src.ops import OPFUNC, VIRTUAL
+from src.exception import QDBError
 from src.query import Query
 from src.storage import Store
-from src.utils import performance_measurement, is_numeric
+from src.utils import performance_measurement, is_numeric, is_virtual, validate_hkey
 
 class QDB:
   def __init__(self, name: str):
@@ -32,7 +31,7 @@ class QDB:
         'HGETV':   self.hget_field,
         'HKEY':    self.hkey,
         'HLEN':    self.hlen,
-        'HSET':    self.hset,
+        'W':       self.w,
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEY':     self.keys,
@@ -108,19 +107,23 @@ class QDB:
         print(f'MDEL: key `{key}` not found.', file=sys.stderr)
     return err
 
-  @performance_measurement(message='Written')
-  def hset(self, hkey_or_index: str, *members: str) -> int:
+  # @performance_measurement(message='Written')
+  def w(self, hkey_or_index: str, *members: str) -> int:
     ''' 
-    Create/update multiple members to a hash
-    (a member is a field/value pair)
+    Create/update multiple members of a hash
     '''
     if len(members) % 2 != 0:
-      print(f'HSET: members mismatch. (missing field or value)', file=sys.stderr)
+      print(f'HSET: arguments mismatch. (missing field or value)', file=sys.stderr)
       return 1
 
     if self.store.is_index(hkey_or_index):
       keys = sorted(self.store.get_index_keys(hkey_or_index))
     else:
+      try:
+        validate_hkey(hkey_or_index)
+      except QDBError as e:
+        print(f'HSET: {e}')
+        return 1
       keys = [hkey_or_index]
 
     if not keys:
@@ -170,9 +173,6 @@ class QDB:
 
     return 1 if err > 0 else 0
 
-  def _is_virtual_field(self, field: str) -> bool:
-    return field in VIRTUAL
-
   def _sort_key(self, row: list, fields_info: dict, field_positions: dict) -> tuple:
     def _descending_value(val: str) -> float | str:
       if is_numeric(val):
@@ -205,8 +205,7 @@ class QDB:
         key.append(_descending_value(value) if order == 'desc' else value)
     return tuple(key)
 
-
-  def _hget_flat(self, tree: dict, fields_data: dict, field_positions: dict, root_index: str) -> int:
+  def _q_flat(self, tree: dict, fields_data: dict, field_positions: dict, root_index: str) -> int:
     rows = []
     elements = tree[root_index]
     index_fields = self.store.get_fields_from_index(root_index) if not fields_data else None
@@ -215,7 +214,7 @@ class QDB:
       data = self.cache.read(key)
       if index_fields:
         for f in index_fields:
-          if not self._is_virtual_field(f):
+          if not is_virtual(f):
             v = data.get(f, '?NOFIELD?')
             row.append(f'{f}={v}')
         rows.append({'row': row, 'sort_value': None})
@@ -224,7 +223,7 @@ class QDB:
           fields = spec['fields']
           if fields == ['*']:
             for f, v in data.items():
-              if not self._is_virtual_field(f):
+              if not is_virtual(f):
                 row.append(f'{f}={v}')
           else:
             for field in fields:
@@ -273,14 +272,14 @@ class QDB:
 
       if fields == ['*']:
         for f, v in data.items():
-          if not self._is_virtual_field(f):
+          if not is_virtual(f):
             current_values[(index, f)] = v
       else:
         for f in fields:
           try:
             current_values[(index, f)] = data[f]
           except (KeyError, TypeError):
-            raise MDBError(f'an unexpected error involving `{index}:{f}` occured.')
+            raise QDBError(f'an unexpected error involving `{index}:{f}` occured.')
         if row_meta.get('sort_value') is None and sort_data:
           for rule in sort_data:
             for f in fields:
@@ -322,7 +321,7 @@ class QDB:
             'row': self._format_row(result_value, fields_data),
             'sort_value': row_meta['sort_value']
           })
-      except MDBError as e:
+      except QDBError as e:
         raise(e)
 
     return rows
@@ -338,7 +337,7 @@ class QDB:
         all_fields = fields['fields']
         star = False
       for f in all_fields:
-        if star and self._is_virtual_field(f):
+        if star and is_virtual(f):
           continue
         fields_positions[f'{idx}:{f}'] = pos
         pos += 1
@@ -352,9 +351,9 @@ class QDB:
 
     try:
       tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
-    except MDBError as e:
+    except QDBError as e:
       print(f'HGET: {e}', file=sys.stderr)
-      if os.getenv('__MUDB_DEBUG__'):
+      if os.getenv('__QDB_DEBUG__'):
         raise
       return 1
 
@@ -365,16 +364,16 @@ class QDB:
     rows: list = []
 
     if flat or not fields_data:
-      res = self._hget_flat(tree, fields_data if fields_data else None, fields_positions, root_index)
-      if 'Fetched' in self._perf_info and res == 0:
-        print(f'Fetched in {self._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
+      res = self._q_flat(tree, fields_data if fields_data else None, fields_positions, root_index)
+      if res == 0:
+        exec_dur = 0
       return res
 
     try:
       all_rows = self._walk_tree(tree, root_index, fields_data)
-    except MDBError as e:
+    except QDBError as e:
       print(e, file=sys.stderr)
-      if os.getenv('__MUDB_DEBUG__'):
+      if os.getenv('__QDB_DEBUG__'):
         raise
       return 1
 
@@ -388,10 +387,8 @@ class QDB:
     for row in all_rows:
       print(' | '.join(row['row']), flush=True)
 
+    print(file=sys.stderr)
     print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
-
-    if 'Fetched' in self._perf_info:
-      print(f'Fetched in {self._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
 
     return 0
 
@@ -464,7 +461,7 @@ class QDB:
         if not kv:
           print(f'HKEY: `{k}` no such key or index.', file=sys.stderr)
           return 1
-        print(f'{k}: {" | ".join([f for f in kv.keys() if not self._is_virtual_field(f)])}')
+        print(f'{k}: {" | ".join([f for f in kv.keys() if not is_virtual(f)])}')
       return 0
     err = 0
     for k in sorted(self.store.keystore.keys()):
@@ -472,7 +469,7 @@ class QDB:
         continue
         err += self.hkey(k)
       kv = self.store.read_hash(k)
-      print(f'{k}: {" | ".join([f for f in kv.keys() if not self._is_virtual_field(f)])}')
+      print(f'{k}: {" | ".join([f for f in kv.keys() if not is_virtual(f)])}')
     return 0 if err == 0 else 1
 
   def idx(self) -> None:
@@ -482,7 +479,7 @@ class QDB:
   def idxf(self, index: str) -> None:
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
-      print(f'{index}: {' | '.join([f for f in fields if not self._is_virtual_field(f)])}')
+      print(f'{index}: {' | '.join([f for f in fields if not is_virtual(f)])}')
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
 
