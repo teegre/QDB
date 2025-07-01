@@ -504,8 +504,9 @@ class QDB:
   def compact(self):
     return self.store.compact()
 
-  def schema(self):
+  def schema(self) -> int:
     self.store.database_schema()
+    return 0
 
   def flush(self):
     return self.store.flush()
