@@ -341,7 +341,7 @@ class Query:
     all_keys = None
 
     # Gather used indexes
-    used_indexes = [e['index'] for e in parsed_exprs]
+    used_indexes = list(dict.fromkeys(e['index'] for e in parsed_exprs))
 
     # Fields
     fields = {}
@@ -402,34 +402,37 @@ class Query:
     if not all_keys:
       raise QDBQueryNoData(f'No data.')
 
-    root_keys = (
-        {index_or_key} if self.store.has_index(index_or_key)
-        else self.store.get_index_keys(root_index)
-    )
+    if root_index != prm_index:
+      root_keys = (
+          {index_or_key} if self.store.has_index(index_or_key)
+          else self.store.get_index_keys(root_index)
+      )
 
-    if root_index != prm_index and agg_exprs:
-      # Get all root keys from store
-      if root_index in cond_matches:
-        root_keys &= cond_matches[root_index]
+      if root_index != prm_index and agg_exprs:
+        # Get all root keys from store
+        if root_index in cond_matches:
+          root_keys &= cond_matches[root_index]
 
-      if random:
-        root_keys = list(root_keys)
-        shuffle(root_keys)
-      if limit:
-        root_keys = root_keys[:limit] if random else sorted(root_keys)[:limit]
+        if random:
+          root_keys = list(root_keys)
+          shuffle(root_keys)
+        if limit:
+          root_keys = root_keys[:limit] if random else sorted(root_keys)[:limit]
 
-      derived_keys = set()
-      for rkey in root_keys:
-        refs = self.store.get_refs(rkey, prm_index)
-        if not refs:
-          continue
-        for ref in refs:
-          if not self.cache.exists(ref):
-            self.cache.write(ref, self.store.read_hash(ref))
-        derived_keys.update(refs)
+        derived_keys = set()
+        for rkey in root_keys:
+          refs = self.store.get_refs(rkey, prm_index)
+          if not refs:
+            continue
+          for ref in refs:
+            if not self.cache.exists(ref):
+              self.cache.write(ref, self.store.read_hash(ref))
+          derived_keys.update(refs)
 
-      # Restrict all_keys
-      all_keys &= derived_keys
+        # Restrict all_keys
+        all_keys &= derived_keys
+    else:
+      root_keys = all_keys
 
     # Apply random/limit modifiers
     if not agg_exprs or root_index == prm_index:
@@ -486,10 +489,14 @@ class Query:
         refs_map.setdefault(key, defaultdict(dict))
         for agg_index in agg_indexes:
           base_dataset = set(self.store.get_refs(key, agg_index))
-          base_dataset &= {
-              r for r in base_dataset
-              if any(set(self.store.get_refs(r, root_index)) & set(root_keys))
-          }
+          if agg_index in cond_indexes:
+            base_dataset &= cond_matches.get(agg_index)
+
+          if root_index != prm_index:
+            base_dataset &= {
+                r for r in base_dataset
+                if any(set(self.store.get_refs(r, root_index)) & set(root_keys))
+            }
           if not base_dataset:
             if len(all_keys) == 1:
               if len(root_keys) == 1:
