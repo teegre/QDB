@@ -280,6 +280,18 @@ class Query:
           result.update(self.store.get_refs(match_key, prm_index))
       return result
 
+    def remove_agg_filters():
+      for entry in condition_exprs:
+        index = entry['index']
+        if index in agg_indexes:
+          for cond in entry['conditions']:
+            if cond is not None:
+              f = cond['field']
+              try:
+                fields[index]['fields'].remove(f)
+              except ValueError:
+                pass
+
     def build_ref_tree(node: dict, rmap: dict|set, unique: bool=False, flat: bool=False):
       ''' Build a hierarchical references tree from a references map. '''
       if isinstance(rmap, set):
@@ -428,6 +440,8 @@ class Query:
 
     # Unique index query + aggregations
     if agg_exprs and len(used_indexes) == 1:
+      # remove filter fields
+      remove_agg_filters()
       refs_map = {}
       for key in all_keys:
         refs_map[key] = {}
@@ -552,6 +566,8 @@ class Query:
       build_ref_tree(node, refs_map[key], flat)
 
     if agg_exprs:
+      # remove filter fields
+      remove_agg_filters()
       data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes)
 
     return data_tree, fields, flat
