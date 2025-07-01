@@ -255,17 +255,25 @@ class Query:
     def select_best_filter(exprs: list) -> dict:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
 
-    def filter_keys(expr: dict) -> set:
+    def filter_keys(expr: dict, limit: int=None) -> set:
       index = expr.get('index') or root_index
       valid_keys = set()
+
       for k in self.store.get_index_keys(index):
-        kv = self.store.read_hash(k)
+        if limit and len(valid_keys) == limit:
+          break
+        if not self.cache.exists(k):
+          kv = self.store.read_hash(k)
+          self.cache.write(k, kv)
+        else:
+          kv = self.cache.read(k)
         for op in expr['conditions']:
           if op is None:
             continue
           if op['op'] in BINOP:
             if self._eval_binop_cond(k, kv, op):
               valid_keys.add(k)
+              break
             continue
           if self._eval_cond(op['op'], kv.get(op['field']), op['value'], field=op['field']):
             valid_keys.add(k)
@@ -359,7 +367,10 @@ class Query:
 
     # Precompute matched keys
     cond_matches = {
-        expr['index']: filter_keys(expr)
+        expr['index']: filter_keys(
+          expr,
+          limit=limit if limit and expr['index'] == root_index else None
+          )
         for expr in condition_exprs
     }
 
