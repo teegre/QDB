@@ -52,7 +52,7 @@ class Parser:
             f'\nAvailable aggregate functions: {', '.join(sorted(AGGFUNC))}'
         )
 
-  def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
+  def _parse_condition(self, part: str, fields: list, sort: list, aggregate: bool=False) -> Optional[dict]:
     # IN-style syntax: optional sort, field(value1[, ..., valueN])
     in_match = re.match(
         r'^(?P<sort>\+\+|--)?(?P<field>[^\s:!()]+)'
@@ -113,6 +113,8 @@ class Parser:
           'value': groups['value'].strip() if groups['value'] else ''
       }
 
+    if aggregate:
+      raise QDBParseError(f'Error: unwanted extra field `{field}` in aggregate index.')
     return None
 
   def parse(self, expr: str, index_hint: str=None) -> dict:
@@ -204,6 +206,7 @@ class Parser:
     agg_fields = []
     fields_to_check = []
     index_fields = self.store.get_fields_from_index(index)
+    has_aggregate = False
 
     for part in parts:
       for k, v in q_v.items():
@@ -226,12 +229,12 @@ class Parser:
             if m:
               last_field = m.group('field').strip()
           cond_group['conditions'].append(
-              self._parse_condition(sub_part, fields, sort_info)
+              self._parse_condition(sub_part, fields, sort_info, has_aggregate)
           )
         conditions.append(cond_group)
         continue
 
-      conditions.append(self._parse_condition(part, fields, sort_info))
+      conditions.append(self._parse_condition(part, fields, sort_info, has_aggregate))
 
       agg_match = re.match(r'^@\[(?P<aggs>[^\]]+)\]$', part)
       if agg_match:
@@ -265,12 +268,20 @@ class Parser:
               agg_fields.append(composite_field)
               if agg_sort:
                 sort_info.append({'order': SORTPREFIX[agg_sort], 'field': composite_field})
+            has_aggregate = True
           else:
             raise QDBParseError(f'syntax error in: `@[{item}]`')
+
+    # Check for non conditional fields if index has aggregations
+    if has_aggregate and len(conditions) > 1 and conditions.count(None) > 1:
+      raise QDBParseError(f'Error: unwanted extra field in aggregate index: `{expr}`.')
 
     # Field validity check
     for field in fields:
       self.validate_field(index, field, excepted=agg_fields)
+      # check for fields without condition
+      if field in agg_fields:
+        continue
 
     return {
         'index': index,
