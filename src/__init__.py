@@ -4,4 +4,4 @@ __author__  = 'Stéphane MEYER (Teegre)'
 
 from os import environ
 
-environ['__QDB_DEBUG__'] = '1'
+# environ['__QDB_DEBUG__'] = '1'
