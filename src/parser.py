@@ -113,8 +113,6 @@ class Parser:
           'value': groups['value'].strip() if groups['value'] else ''
       }
 
-    if aggregate:
-      raise QDBParseError(f'Error: unwanted extra field `{field}` in aggregate index.')
     return None
 
   def parse(self, expr: str, index_hint: str=None) -> dict:
@@ -271,10 +269,6 @@ class Parser:
             has_aggregate = True
           else:
             raise QDBParseError(f'syntax error in: `@[{item}]`')
-
-    # Check for non conditional fields if index has aggregations
-    if has_aggregate and len(conditions) > 1 and conditions.count(None) > 1:
-      raise QDBParseError(f'Error: unwanted extra field in aggregate index: `{expr}`.')
 
     # Field validity check
     for field in fields:

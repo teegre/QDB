@@ -28,7 +28,7 @@ class QDB:
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'Q':       self.q,
-        'HGETV':   self.hget_field,
+        'GETF':   self.get_field,
         'HKEY':    self.hkey,
         'HLEN':    self.hlen,
         'W':       self.w,
@@ -233,7 +233,7 @@ class QDB:
         rows.append({'row': row, 'sort_value': sort_data})
 
     if not rows:
-      print(f'HGET: an unexpected error occured.', file=sys.stderr)
+      print(f'Q: an unexpected error occured.', file=sys.stderr)
       return 1
 
     # Sorting and output
@@ -261,17 +261,36 @@ class QDB:
     return row
 
   def _walk_tree(self, tree: dict, root_index: str, fields_data: dict) -> list[dict]:
-    def walk(index: str, key, node: dict, values: dict, row_meta: dict):
+    def _combine_results(node: dict, values: dict, row_meta: dict):
+      combined = []
+      for i, ch in node.items():
+        r  = []
+        for k, n in ch.items():
+          r.extend(walk(i, k, n, dict(values), dict(row_meta)))
+        if combined:
+          combined = [
+              {**a, **b}
+              for a in combined
+              for b in r
+          ]
+        else:
+          combined = r
+      return combined
+    def walk(index: str, key, node: dict, values: dict, row_meta: dict, group: bool=False):
       results = []
-      data = self.cache.read(key, self.store.read_hash)
-      current_values = dict(values)
       is_aggregation = False
-      fields = fields_data[index]['fields']
+      current_values = dict(values)
+      if group:
+        fields = [f for f in fields_data[index]['fields'] if (index, f) not in current_values]
+      else:
+        fields = fields_data[index]['fields']
       sort_data = fields_data[index]['sort']
 
       if key == '@[aggregate]':
         data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
         is_aggregation = True
+      else:
+        data = self.cache.read(key, self.store.read_hash)
 
       if fields == ['*']:
         for f, v in data.items():
@@ -291,22 +310,7 @@ class QDB:
                 break
 
       if node and not is_aggregation:
-        combined_results = []
-        for child_idx, children in node.items():
-          temp_results = []
-          for child_key, child_node in children.items():
-            for result in walk(child_idx, child_key, child_node, dict(current_values), dict(row_meta)):
-              temp_results.append(result)
-
-          if combined_results:
-            combined_results = [
-                {**a, **b}
-                for a in combined_results
-                for b in temp_results
-            ]
-          else:
-            combined_results = temp_results
-        results.extend(combined_results)
+        results.extend(_combine_results(node, dict(current_values), dict(row_meta)))
       else:
         results.append(current_values)
 
@@ -317,15 +321,36 @@ class QDB:
 
     for key, children in elements.items():
       row_meta = { 'sort_value': None }
-      try:
-        results_values = walk(root_index, key, children, {}, row_meta)
-        for result_value in results_values:
-          rows.append({
-            'row': self._format_row(result_value, fields_data),
-            'sort_value': row_meta['sort_value']
-          })
-      except QDBError as e:
-        raise(e)
+
+      if isinstance(key, tuple): # Group
+        f = key[0]
+        for g_val, g_node in children.items():
+          results = []
+          temp = {}
+          temp[(root_index, f)] = g_val
+          if '@[aggregate]' in g_node:
+            k = '@[aggregate]'
+            results.extend(walk(root_index, k, g_node[k], dict(temp), dict(row_meta), group=True))
+          else:
+            combined_results = _combine_results(g_node, temp, row_meta)
+            if combined_results:
+              results.extend(combined_results)
+
+          for r in results:
+            rows.append({
+              'row': self._format_row(r, fields_data),
+              'sort_value': row_meta['sort_value']
+            })
+      else:
+        try:
+          results_values = walk(root_index, key, children, {}, row_meta)
+          for result_value in results_values:
+            rows.append({
+              'row': self._format_row(result_value, fields_data),
+              'sort_value': row_meta['sort_value']
+            })
+        except QDBError as e:
+          raise(e)
 
     return rows
 
@@ -349,13 +374,13 @@ class QDB:
   @performance_measurement(message='Processed')
   def q(self, index_or_key: str, *exprs: str) -> int:
     if not index_or_key:
-      print(f'HGET: missing index or hkey.', file=sys.stderr)
+      print(f'Q: missing index or hkey.', file=sys.stderr)
       return 1
 
     try:
       tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
     except QDBError as e:
-      print(f'HGET: {e}', file=sys.stderr)
+      print(f'Q: {e}', file=sys.stderr)
       if os.getenv('__QDB_DEBUG__'):
         raise
       return 1
@@ -381,7 +406,7 @@ class QDB:
       return 1
 
     if not all_rows:
-      print(f'HGET: an unexpected error occured.', file=sys.stderr)
+      print(f'Q: an unexpected error occured.', file=sys.stderr)
       return 1
 
     # Sorting and output
@@ -428,19 +453,19 @@ class QDB:
         err += self.store.write(data, key, vsz, ts)
     return 1 if err > 0 else 0
 
-  def hget_field(self, hkey: str, field: str) -> int:
+  def get_field(self, hkey: str, field: str) -> int:
     ''' Return the value of a field in a hash. '''
     if self.store.exists(hkey):
       value = self.store.read_hash_field(hkey, field)
       if value == '?NOFIELD?':
-        print(f'HGETV: Error: `{field}`, no such field in `{hkey}`.', file=sys.stderr)
+        print(f'GETF: Error: `{field}`, no such field in `{hkey}`.', file=sys.stderr)
         return 1
       if value:
         print(value)
         return 0
-      print(f'HGETV: {hkey}: no data.', file=sys.stderr)
+      print(f'GETF: {hkey}: no data.', file=sys.stderr)
       return 0
-    print(f'HGETV: Error: `{hkey}`, no such hkey.', file=sys.stderr)
+    print(f'GETF: Error: `{hkey}`, no such hkey.', file=sys.stderr)
     return 1
 
   def hkey(self, key: str=None) -> int:

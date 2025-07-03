@@ -41,6 +41,52 @@ class Query:
 
     return parsed_exprs
 
+  def validate_fields_and_group(self, parsed_exprs: dict, agg_exprs: dict, fields: dict) -> dict:
+    def is_grouped(index: str):
+      return any(
+          v['op'] == 'count' and v['field'] == '*'
+          for v in agg_exprs.get(index, [])
+      )
+
+    grouped = {}
+
+    condition_fields = [
+        (e['index'], v['field'])
+        for e in parsed_exprs
+        for v in e['conditions']
+        if v is not None
+    ]
+
+    agg_fields = [
+        (i, f'{i}:{v["op"]}{":"+v["field"] if v["field"] != "*" else ""}')
+        for i, e in agg_exprs.items()
+        for v in e
+        # if v['field'] != '*'
+    ]
+
+    explicit_fields = [
+        (e['index'], f)
+        for e in parsed_exprs
+        for f in e['fields']
+        if (e['index'], f) not in agg_fields and (e['index'], f) not in condition_fields
+    ]
+
+    for i, f in explicit_fields:
+      if is_grouped(i):
+        if i in grouped:
+          grouped[i].append(f)
+        else:
+          grouped[i] = [f]
+      if is_grouped(i) and f not in fields.get(i, []):
+        continue
+      if f not in fields.get(i, []):
+        raise QDBQueryError(
+            f'Error: field `{i}:{f}` is not used in any condition or aggregation.\n'
+            f'Consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
+        )
+
+    return grouped
+
   def _eval_binop_cond(self, key: str, record: dict, expr: dict) -> bool:
     op = expr['op']
     conditions = expr['conditions']
@@ -167,21 +213,44 @@ class Query:
         return self._cardinality(A, B) != 0
     return False
 
-  def _apply_aggregations(self, tree: dict, agg_exprs: list, agg_indexes: list, unique:bool=False) -> dict:
+  def _apply_aggregations(
+      self,
+      tree: dict,
+      agg_exprs: list,
+      agg_indexes: list,
+      group: dict=None,
+      unique: bool=False
+    ) -> dict:
+
     def walk(node: dict, idx: str) -> dict:
       if idx in agg_indexes:
         results = {}
         for key, child_node in node.items():
           if key == '@[aggregate]':
-            collected = defaultdict(list)
+            group_fields = group.get(idx) if group else []
+            grouped = defaultdict(lambda: defaultdict(list))
+
             for ref in child_node.keys():
               data = self.cache.read(ref)
+              group_key = tuple(data.get(f) for f in group_fields) if group else ('__all__',)
+
               for agg in agg_exprs[idx]:
                 op, f = agg['op'], agg['field']
                 val = data.get(f.replace('*', '@id'))
-                val = coerce_number(val) if not is_virtual(agg['field']) else val
-                collected[f'{idx}:{op}:{f}'].append(val)
-            results = { '@[aggregate]': self._reduce_aggs(collected) }
+                val = coerce_number(val) if not is_virtual(f) else val
+                grouped[group_key][f'{idx}:{op}:{f}'].append(val)
+
+            for group_key, agg_vals in grouped.items():
+              pointer = results
+              if group_key == ('__all__',):
+                pointer['@[aggregate]'] = self._reduce_aggs(agg_vals)
+                continue
+
+              for i, field_value in enumerate(group_key):
+                field_name = group_fields[i]
+                pointer = pointer.setdefault((field_name,), {}).setdefault(field_value, {})
+              pointer['@[aggregate]'] = self._reduce_aggs(agg_vals)
+
             if unique:
               return results
           else:
@@ -221,7 +290,10 @@ class Query:
         case 'max':
           reduced[f'{idx}:{op}:{f}'] = { str(max(clean_values)): {} }
         case 'count':
-          reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(len(clean_values)): {} }
+          count_value = (
+              len(set(clean_values)) if f != '*' else len(clean_values)
+          )
+          reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(count_value): {} }
 
     return reduced
 
@@ -295,8 +367,10 @@ class Query:
           for cond in entry['conditions']:
             if cond is not None:
               f = cond['field']
+              if f in group_fields:
+                continue
               try:
-                fields[index]['fields'].remove(f)
+                selected_fields[index]['fields'].remove(f)
               except ValueError:
                 pass
 
@@ -337,31 +411,47 @@ class Query:
     condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
     agg_exprs = { e['index']: e['aggregations'] for e in parsed_exprs if e['aggregations'] }
     agg_indexes = list(agg_exprs.keys()) if agg_exprs else []
+
     data_tree = {root_index: {}}
     all_keys = None
 
     # Gather used indexes
-    used_indexes = list(dict.fromkeys(e['index'] for e in parsed_exprs))
+    selected_indexes = list(dict.fromkeys(e['index'] for e in parsed_exprs))
 
     # Fields
-    fields = {}
+    selected_fields = {}
 
     # Assuming '@hkey' when no fields are selected for the main index,
-    if root_index not in used_indexes:
-      fields = {root_index: {'fields': ['@hkey'], 'sort': None }}
-      used_indexes.append(root_index)
+    if root_index not in selected_indexes:
+      selected_fields = {root_index: {'fields': ['@hkey'], 'sort': None }}
+      selected_indexes.append(root_index)
 
     for d in parsed_exprs:
-      fields[d['index']] = {'fields': d['fields'], 'sort': d['sort']}
+      i = d['index']
+      if i not in selected_fields:
+        selected_fields[i] = {'fields': [], 'sort': d['sort']}
+      for f in d['fields']:
+        if f not in selected_fields[i]['fields']:
+          selected_fields[i]['fields'].append(f)
+
+    # Check for any unused fields
+    group_fields = self.validate_fields_and_group(
+        parsed_exprs,
+        agg_exprs,
+        {
+          i: self.store.get_fields_from_index(i)
+          for i in selected_indexes
+        }
+    )
 
     # Determining query's primary index
     if exprs and agg_exprs:
       if root_index in agg_exprs or self._query_looks_grouped(root_index, agg_exprs, parsed_exprs):
         prm_index = root_index
       else:
-        prm_index = self._find_prm_index2(used_indexes)
+        prm_index = self._find_prm_index2(selected_indexes)
     elif exprs:
-      prm_index = self._find_prm_index(used_indexes)
+      prm_index = self._find_prm_index(selected_indexes)
     else:
       prm_index = root_index
 
@@ -373,6 +463,8 @@ class Query:
           )
         for expr in condition_exprs
     }
+
+
 
     # Query is based on a particular hkey...
     if self.store.has_index(index_or_key):
@@ -444,8 +536,8 @@ class Query:
       if limit:
         all_keys = all_keys[:limit] if random else sorted(all_keys)[:limit]
 
-    # Unique index query, no expressions: build tree an return it
-    if not parsed_exprs and len(used_indexes) == 1:
+    # Unique index query, no expressions: build tree and return it
+    if not parsed_exprs and len(selected_indexes) == 1:
       for key in sorted(all_keys) if not random else all_keys:
         if not self.cache.exists(key):
           self.cache.write(key, self.store.read_hash(key))
@@ -453,7 +545,7 @@ class Query:
       return data_tree, {}, False
 
     # Unique index query + aggregations
-    if agg_exprs and len(used_indexes) == 1:
+    if agg_exprs and len(selected_indexes) == 1:
       # remove filter fields
       remove_agg_filters()
       refs_map = {}
@@ -463,8 +555,8 @@ class Query:
           self.cache.write(key, self.store.read_hash(key))
       node = data_tree[root_index] = {}
       build_ref_tree(node, refs_map, unique=True)
-      data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes, unique=True)
-      return data_tree, fields, False
+      data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes, group=group_fields, unique=True)
+      return data_tree, selected_fields, False
 
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
@@ -500,11 +592,9 @@ class Query:
           if not base_dataset:
             if len(all_keys) == 1:
               if len(root_keys) == 1:
-                raise QDBQueryNoData(f'No data: `{self.store.get_index(key)} → {agg_index}`.')
-              else:
                 aggs = ', '.join([o+':'+f for o, f in [tuple(a.values()) for a in agg_exprs[agg_index]]])
                 aggl = len(agg_exprs[agg_index])
-                candidates = [i for i in used_indexes if i not in (root_index, agg_exprs)]
+                candidates = [i for i in selected_indexes if i not in (root_index, agg_exprs)]
                 msg = (
                     f'Error: aggregate function{"s" if aggl > 1 else ""}: `{agg_index}:@[{aggs}]` '
                     f'cannot be resolved from root index `{root_index}`.'
@@ -521,7 +611,7 @@ class Query:
             all_keys.remove(key)
             break
 
-          other_indexes = [i for i in used_indexes if i not in (prm_index, agg_index)]
+          other_indexes = [i for i in selected_indexes if i not in (prm_index, agg_index)]
           if not other_indexes:
             # Simple case: only aggregate index
             for ref in base_dataset:
@@ -546,10 +636,10 @@ class Query:
                     self.cache.write(r, self.store.read_hash(r))
       all_keys = list(set(all_keys).difference(empty_keys))
 
-    elif set(used_indexes) - cond_indexes - {root_index} or not refs_map:
+    elif set(selected_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in all_keys:
-        for idx in used_indexes:
+        for idx in selected_indexes:
           if idx == prm_index:
             continue
           refs = flat_refs[key][idx] or self.store.get_refs(key, idx)
@@ -574,18 +664,18 @@ class Query:
     flat = (
         not condition_exprs and
         not agg_exprs and
-        len(used_indexes) == 1
+        len(selected_indexes) == 1
     )
 
     # Build tree
     data_tree = { prm_index: {} }
     for key in sorted(all_keys):
       node = data_tree[prm_index][key] = {}
-      build_ref_tree(node, refs_map[key], flat)
+      build_ref_tree(node, refs_map[key], flat=flat)
 
     if agg_exprs:
       # remove filter fields
       remove_agg_filters()
-      data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes)
+      data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes, group=group_fields, unique=len(selected_indexes) == 1)
 
-    return data_tree, fields, flat
+    return data_tree, selected_fields, flat

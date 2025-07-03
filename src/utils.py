@@ -57,5 +57,9 @@ def is_virtual(field: str) -> bool:
 def validate_hkey(hkey: str) -> None:
   HKEY_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z0-9]+$')
   if not HKEY_RE.match(hkey):
-    raise QDBHkeyError('Error: malformed HKEY: {hkey}')
+    raise QDBHkeyError('Error: malformed HKEY: `{hkey}`.')
 
+def validate_field_name(field: str) -> None:
+  FIELD_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9]*$')
+  if not FIELD_RE.match(field):
+    raise QDBError('Error: malformed field name: `{field}`.')
