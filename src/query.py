@@ -351,6 +351,14 @@ class Query:
             valid_keys.add(k)
       return valid_keys
 
+    def filter_dataset(dataset: set, index: str, key: str, condition_matches: dict) -> set:
+      for i, m in condition_matches.items():
+        if i == index or self.store.is_index_of(key, i):
+          continue
+        for k in m:
+          dataset &= set(self.store.get_refs(k, index))
+      return dataset
+
     def resolve_to_primary(expr: dict) -> set:
       result = set()
       for match_key in cond_matches.get(expr.get('index'), []):
@@ -434,7 +442,7 @@ class Query:
         if f not in selected_fields[i]['fields']:
           selected_fields[i]['fields'].append(f)
 
-    # Check for any unused fields
+    # Check for any unused fields and get grouped fields
     group_fields = self.validate_fields_and_group(
         parsed_exprs,
         agg_exprs,
@@ -463,8 +471,6 @@ class Query:
           )
         for expr in condition_exprs
     }
-
-
 
     # Query is based on a particular hkey...
     if self.store.has_index(index_or_key):
@@ -591,7 +597,9 @@ class Query:
             }
           if not base_dataset:
             if len(all_keys) == 1:
-              if len(root_keys) == 1:
+              if self.store.find_index_path(self.store.get_index(key), agg_index):
+                raise QDBQueryNoData(f'No `{agg_index}` data found.')
+              if prm_index == root_index:
                 aggs = ', '.join([o+':'+f for o, f in [tuple(a.values()) for a in agg_exprs[agg_index]]])
                 aggl = len(agg_exprs[agg_index])
                 candidates = [i for i in selected_indexes if i not in (root_index, agg_exprs)]
