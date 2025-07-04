@@ -284,7 +284,7 @@ class QDB:
               ))
         else:
           for k, n in ch.items():
-            r = walk(root_index, k, n, dict(values), dict(row_meta))
+            r = walk(i, k, n, dict(values), dict(row_meta))
  
         if combined:
           combined = [
