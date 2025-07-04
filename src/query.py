@@ -327,11 +327,10 @@ class Query:
     def select_best_filter(exprs: list) -> dict:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
 
-    def filter_keys(expr: dict, limit: int=None) -> set:
-      index = expr.get('index') or root_index
+    def filter_keys(index: str, expr: dict, base: set=None, limit: int=None) -> set:
       valid_keys = set()
-
-      for k in self.store.get_index_keys(index):
+      keys = self.store.get_index_keys(index) if base is None else base
+      for k in keys:
         if limit and len(valid_keys) == limit:
           break
         if not self.cache.exists(k):
@@ -339,24 +338,35 @@ class Query:
           self.cache.write(k, kv)
         else:
           kv = self.cache.read(k)
-        for op in expr['conditions']:
-          if op is None:
-            continue
-          if op['op'] in BINOP:
-            if self._eval_binop_cond(k, kv, op):
-              valid_keys.add(k)
-              break
-            continue
-          if self._eval_cond(op['op'], kv.get(op['field']), op['value'], field=op['field']):
+        if expr['op'] in BINOP:
+          if self._eval_binop_cond(k, kv, op):
             valid_keys.add(k)
+            break
+          continue
+        if self._eval_cond(expr['op'], kv.get(expr['field']), expr['value'], field=expr['field']):
+          valid_keys.add(k)
       return valid_keys
+
+    def get_condition_matches(exprs: dict, limit: int=None) -> dict[set]:
+      matches = {}
+      for expr in exprs:
+        index = expr['index']
+        for cond in expr['conditions']:
+          if cond is None:
+            continue
+          base = matches.get(index, None)
+          valid_keys = filter_keys(index, cond, base=base, limit=limit if index == root_index else None)
+          if index in matches:
+            matches[index] &= valid_keys
+          else:
+            matches[index] = valid_keys
+      return matches
 
     def filter_dataset(dataset: set, index: str, key: str, condition_matches: dict) -> set:
       for i, m in condition_matches.items():
-        if i == index or self.store.is_index_of(key, i):
+        if self.store.is_index_of(key, i):
           continue
-        for k in m:
-          dataset &= set(self.store.get_refs(k, index))
+        dataset &= m
       return dataset
 
     def resolve_to_primary(expr: dict) -> set:
@@ -464,13 +474,7 @@ class Query:
       prm_index = root_index
 
     # Precompute matched keys
-    cond_matches = {
-        expr['index']: filter_keys(
-          expr,
-          limit=limit if limit and expr['index'] == root_index else None
-          )
-        for expr in condition_exprs
-    }
+    cond_matches = get_condition_matches(condition_exprs)
 
     # Query is based on a particular hkey...
     if self.store.has_index(index_or_key):
@@ -606,10 +610,9 @@ class Query:
                 raise QDBQueryNoData(f'No `{agg_index}` data found.')
               if prm_index == root_index:
                 aggs = ', '.join([o+':'+f for o, f in [tuple(a.values()) for a in agg_exprs[agg_index]]])
-                aggl = len(agg_exprs[agg_index])
                 candidates = [i for i in selected_indexes if i not in (root_index, agg_exprs)]
                 msg = (
-                    f'Error: aggregate function{"s" if aggl > 1 else ""}: `{agg_index}:@[{aggs}]` '
+                    f'Error: `{agg_index}:@[{aggs}]` '
                     f'cannot be resolved from root index `{root_index}`.'
                 )
                 if candidates:
