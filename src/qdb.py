@@ -263,23 +263,45 @@ class QDB:
   def _walk_tree(self, tree: dict, root_index: str, fields_data: dict) -> list[dict]:
     def _combine_results(node: dict, values: dict, row_meta: dict):
       combined = []
+      current_index = root_index
+
       for i, ch in node.items():
-        r  = []
-        for k, n in ch.items():
-          r.extend(walk(i, k, n, dict(values), dict(row_meta)))
+        r = []
+
+        if isinstance(i, tuple): # Grouped field
+          g_field = i[0]
+          for v, cn in ch.items():
+            temp_values = dict(values)
+            temp_values[(root_index, g_field)] = v
+            for k, n in cn.items():
+              r.extend(walk(
+                root_index,
+                k,
+                n,
+                temp_values,
+                dict(row_meta),
+                group=True
+              ))
+        else:
+          for k, n in ch.items():
+            r = walk(root_index, k, n, dict(values), dict(row_meta))
+ 
         if combined:
           combined = [
-              {**a, **b}
-              for a in combined
-              for b in r
+            {**a, **b}
+            for a in combined
+            for b in r
           ]
         else:
           combined = r
+
       return combined
+
     def walk(index: str, key, node: dict, values: dict, row_meta: dict, group: bool=False):
       results = []
       is_aggregation = False
       current_values = dict(values)
+
       if group:
         fields = [f for f in fields_data[index]['fields'] if (index, f) not in current_values]
       else:
