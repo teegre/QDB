@@ -530,7 +530,7 @@ class Query:
         # Restrict all_keys
         all_keys &= derived_keys
     else:
-      root_keys = all_keys
+      root_keys = None
 
     # Apply random/limit modifiers
     if not agg_exprs or root_index == prm_index:
@@ -580,13 +580,18 @@ class Query:
     cond_indexes = set(cond_matches.keys())
 
     if agg_exprs:
-      empty_keys = set()
       for key in all_keys.copy():
         if not self.cache.exists(key):
           self.cache.write(key, self.store.read_hash(key))
         refs_map.setdefault(key, defaultdict(dict))
         for agg_index in agg_indexes:
-          base_dataset = set(self.store.get_refs(key, agg_index))
+          base_dataset = filter_dataset(
+              set(self.store.get_refs(key, agg_index)),
+              agg_index,
+              key,
+              cond_matches
+          )
+
           if agg_index in cond_indexes:
             base_dataset &= cond_matches.get(agg_index)
 
@@ -614,6 +619,7 @@ class Query:
                   if 'count' in aggs:
                     msg += '\nHint: aggregations like `@[count:*]` require traversing a valid path from the root index.'
                 raise QDBQueryError(msg)
+
             # NO agg_index for key
             del refs_map[key]
             all_keys.remove(key)
@@ -642,7 +648,6 @@ class Query:
                 for r in dataset:
                   if not self.cache.exists(r):
                     self.cache.write(r, self.store.read_hash(r))
-      all_keys = list(set(all_keys).difference(empty_keys))
 
     elif set(selected_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
