@@ -29,12 +29,9 @@ class Cache:
     entry = self.__cache.get(key)
     return entry.timestamp if entry else 0
 
-  def delete(self, key: str) -> int:
-    try:
+  def delete(self, key: str) -> None:
+    if key in self.__cache:
       del self.__cache[key]
-      return 0
-    except KeyError:
-      return 1
 
   def purge(self) -> int:
     self.__cache.clear()

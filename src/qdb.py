@@ -1,3 +1,4 @@
+import atexit
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ from src.utils import performance_measurement, is_numeric, is_virtual, validate_
 class QDB:
   def __init__(self, name: str):
     self.store = Store(name)
+    atexit.register(self.store.deinitialize)
     self.Q = Query(self.store, parent=self)
     self._perf_info = {}
 
@@ -27,7 +29,7 @@ class QDB:
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'Q':       self.q,
-        'GETF':   self.get_field,
+        'GETF':    self.get_field,
         'HKEY':    self.hkey,
         'HLEN':    self.hlen,
         'W':       self.w,
@@ -548,7 +550,7 @@ class QDB:
     return 0
 
   def compact(self):
-    return self.store.compact()
+    return self.store.compact(force=True)
 
   def schema(self) -> int:
     self.store.database_schema()

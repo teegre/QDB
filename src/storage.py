@@ -60,14 +60,16 @@ class Store:
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
     self.refs: Dict[str: set[str]] = {}
-    self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
+    self._refs_cache: Dict[tuple[str, str]: set[str]] = {} # FIXME: CACHE UPDATES!!!
+    self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
-    self.__paths__: Dict[tuple: list] = {}
+    self.__paths__: Dict[tuple: list] = {} # FIXME: UPDATES!!!
     self.datacache = Cache()
-    self.file = None
+    self.file = None # file object
     self._file_id: int = self._max_id
     self._file_pos: int = 0
+    self.has_changed = False
     self.initialize()
 
   def initialize(self):
@@ -75,6 +77,13 @@ class Store:
     self.build_indexes_map()
     self.update_reverse_refs()
     self.precompute_paths()
+    if not self.keystore:
+      print(f'QDB: `{self.database}` is empty.', file=sys.stderr)
+
+  def deinitialize(self):
+    self.write_references()
+    self.compact()
+    # TODO: self.compress()
 
   def open(self) -> int:
     if not os.path.exists(self.database):
@@ -154,9 +163,6 @@ class Store:
           return 1
       for ref in refs :
         self.create_ref(key, ref)
-        self.create_ref(key, ref, reverse=True)
-
-      self.write_references() # FIXME: PLEASE !!!
 
       return 0
     except Exception as e:
@@ -165,41 +171,50 @@ class Store:
     finally:
       fcntl.flock(self.file, fcntl.LOCK_UN)
       self.update_reverse_refs()
+      self.has_changed = True
 
   def write_references(self, ref_file: str=None) -> int:
-    if ref_file is not None:
-      rf = ref_file
+    if not ref_file and not self._refs_ops:
+      return 0
+
+    rf = self.active_refs if ref_file is None else ref_file
+    if ref_file:
+      refs = {hkey: sorted(keys) for hkey, keys in self.refs.items()}
+      data = json.dumps(refs).encode()
     else:
-      rf = self.active_refs
-    if self.refs:
-      refs = {ref: sorted(list(keys)) for ref, keys in self.refs.items()}
-      data = json.dumps(refs)
-      rsz = len(data)
-      with open(rf,'wb') as f:
-        rec = struct.pack(f'<4sI{rsz}s', 'REFS'.encode(), rsz, data.encode())
-        bytes_written = f.write(rec)
-        if bytes_written != len(rec):
-          print('Error writing references: incomplete write {bytes_written}/{len(rec)} bytes.', file=stderr)
-          return 1
+      data = json.dumps(self._refs_ops, sort_keys=True).encode()
+
+    rec = struct.pack(f'<4sI{len(data)}s', b'REFS', len(data), data)
+
+    with open(rf,'wb') as f:
+      bytes_written = f.write(rec)
+      if bytes_written != len(rec):
+        print('Error writing references: incomplete write {bytes_written}/{len(rec)} bytes.', file=stderr)
+        return 1
+
+    self._refs_ops.clear()
     return 0
 
-  def load_references(self, ref_file: str=None) -> int:
-    if ref_file is not None:
-      rf = ref_file
-    else:
-      rf = self.active_refs
-
-    if os.path.exists(rf):
+  def load_references(self: str=None) -> int:
+    for rf in sorted(glob(os.path.join(self.database, '*.ref'))):
       with open(rf, 'rb') as f:
         header = f.read(8)
         tag, rsz = struct.unpack('<4sI', header)
-        if tag.decode() != 'REFS':
+        if tag != b'REFS':
           print(f'Error: invalid reference file.', file=stderr)
           return 1
-        data = f.read(rsz)
-        refs = json.loads(data.decode())
-        for ref, keys in refs.items():
-          self.refs[ref] = set(keys)
+        data = json.loads(f.read(rsz).decode())
+        for hkey, ops in data.items():
+          if isinstance(ops, list): # Compacted version
+            self.refs.setdefault(hkey, set()).update(ops)
+            continue
+          if 'add' in ops:
+            self.refs.setdefault(hkey, set()).update(ops['add'])
+          if 'del' in ops:
+            if ops['del'] == '__all__':
+              self.refs.pop(hkey, None)
+            else:
+              self.refs.pop(hkey)
     return 0
 
   def read(self, key: str) -> str:
@@ -318,13 +333,15 @@ class Store:
       crc = crc32(rec)
       data = struct.pack('<L', crc) + rec
       self.write(data, key, vsz, ts)
-      if self.is_ref(key):
-        self.delete_ref(key)
+      if self.is_refd(key):
+        self.delete_refd_key(key)
       index = self.get_index(key)
-      self.keystore.pop(key, None)
+      self.keystore.pop(key)
       if self.is_index_empty(index):
         self.delete_index(index)
-      self.write_references()
+        self.indexes_map.pop(index)
+
+      self.datacache.delete(key)
       return 0
     return 1
 
@@ -354,7 +371,6 @@ class Store:
     err = 0
     for file in files:
       hint_file = file.replace('.log', '.hint')
-      ref_file = file.replace('.log', '.ref')
       # remove empty files...
       if os.path.getsize(file) == 0:
         os.remove(file)
@@ -365,14 +381,13 @@ class Store:
         continue
       if os.path.exists(hint_file):
         err += self.reconstruct_from_hint(hint_file)
-        err += self.load_references(ref_file)
         continue
       err += self.reconstruct_keystore(file)
-      err += self.load_references(ref_file)
     # delete empty indexes if any:
     for index in self.indexes.copy():
       if self.is_index_empty(index):
         self.delete_index(index)
+    err += self.load_references()
     return err
 
   def reconstruct_keystore(self, file: str) -> int:
@@ -453,18 +468,22 @@ class Store:
         fpos = h.tell()
     return self.load_references()
         
-  def compact(self) -> int:
+  def compact(self, force: bool=False) -> int:
     ''' Compact files and clean database directory '''
+    if not self.has_changed and not force:
+      return 0
+
     if self.file is not None:
       if self.flush() != 0:
         return
-      print('Flushed and closed active file', file=stderr)
+      print('QDB: Flushed and closed active file', file=sys.stderr)
 
     files = [f for f in sorted(glob(os.path.join(self.database, '*.log')))
              if f != self.active_file]
     if not files:
-      print('Nothing to do.', file=stderr)
       return 0
+
+    print(f'QDB: Compacting `{self.database}` database...', file=sys.stderr)
 
     name = strftime('%Y%m%d_%H%M%S')
     newfile = os.path.join(self.database, f'{name}.log')
@@ -552,9 +571,10 @@ class Store:
         print(f'Error removing file {file}: {e}', file=stderr)
         return 1
 
-      self.write_references(newrefs)
+    self.write_references(newrefs)
+    self.has_changed = False
 
-    print('Success!', file=stderr)
+    print('Done.', file=stderr)
     return warnings
 
   def create_index(self, hkey: str) -> int:
@@ -604,10 +624,10 @@ class Store:
       return keys
     return [k for k in self.keystore.keys() if k.startswith(index + ':')]
 
-  def create_ref(self, hkey: str, ref: str, reverse: bool=False) -> int:
+  def create_ref(self, hkey: str, ref: str) -> int:
     '''
-    Add a reference for a given key or
-    add a key for a given reference.
+    Add a reference for a given hkey and
+    add a hkey for a given reference.
     '''
     if hkey == ref:
       print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
@@ -615,35 +635,11 @@ class Store:
     if not self.exists(hkey) or not self.exists(ref):
       return 1
 
-    refs = self.refs if not reverse else self.reverse_refs
+    self.refs.setdefault(hkey, set()).add(ref)
+    self.reverse_refs.setdefault(ref, set()).add(hkey)
+    self._refs_ops.setdefault(hkey, {}).setdefault('add', []).append(ref)
 
-    kr = refs.get(hkey) if not reverse else refs.get(ref)
-    k1 = hkey if not reverse else ref
-    k2 = ref if not reverse else hkey
-
-    if (kr is None or k1 not in refs) and self.has_index(k1):
-      refs[k1] = { k2 }
-      return 0
-    if self.has_index(k1):
-      refs[k1].add(k2)
-      return 0
-    return 1
-
-  def create_rev_ref(self, ref: str, hkey: str) -> int:
-    ''' Add a reference for a given key '''
-    if hkey == ref:
-      print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
-      return 1
-    if not self.exists(hkey):
-      return 1
-    revs = self.reverse_refs.get(ref)
-    if revs is None and self.has_index(ref):
-      self.reverse_refs[ref] = { hkey }
-      return 0
-    if self.has_index(ref):
-      self.refs[hkey].add(hkey)
-      return 0
-    return 1
+    return 0
 
   def build_indexes_map(self):
     for index in self.indexes:
@@ -849,10 +845,23 @@ class Store:
     if refs is None:
       return 1
     self.refs[hkey].discard(ref)
-    if len(self.refs[hkey]) == 0:
+    try:
+      self._refs_ops.setdefault(hkey, {}).setdefault('del', []).append(ref)
+    except AttributeError:
+      self._refs_ops.setdefault(hkey, {})
+      self._refs_ops[hkey].update({ 'del', [ref] })
+    if not self.refs[hkey]:
       del self.refs[hkey]
+      self._refs_ops[hkey] = {'del': '__all__'}
+
     self.update_reverse_refs()
     return 0
+
+  def delete_refd_key(self, hkey: str) -> int:
+    err = 0
+    for ref in self.refs.copy().get(hkey, []).copy():
+      err += self.delete_ref_of_key(hkey, ref)
+    return 1 if err else 0
 
   def delete_ref(self, ref: str) -> None:
     '''
@@ -917,10 +926,6 @@ class Store:
       return len(self.get_index_keys(index)) == 0
     return False
 
-  def is_ref(self, hkey: str) -> bool:
-    ''' Return True is hkey is a reference '''
-    return hkey in self.keystore and hkey in self.reverse_refs
-
   def is_refd_by(self, key: str, ref: str) -> bool:
     ''' Return True if `key` references `ref`. '''
     return ref in self.refs.get(key, set())
@@ -937,9 +942,13 @@ class Store:
     ''' Return True if ref is a reference of key '''
     return ref in self.refs.get(key, set())
 
+  def is_refd(self, hkey: str) -> bool:
+    ''' Return True is hkey is a reference '''
+    return hkey in self.keystore and hkey in self.refs
+
   def has_ref(self, key: str) -> bool:
     ''' Return True if key has references '''
-    return key in self.keystore and key in self.refs
+    return key in self.keystore and key in self.reverse_refs
 
   def exists(self, key: str) -> bool:
     ''' Return True if `key` exists in the keystore. '''
