@@ -7,7 +7,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from collections import defaultdict
 from random import shuffle
 
-from src.datacache import Cache
 from src.exception import QDBParseError, QDBQueryError, QDBQueryNoData
 from src.ops import OPFUNC, BINOP
 from src.parser import Parser
@@ -17,9 +16,8 @@ from src.utils import is_numeric, coerce_number, is_virtual, performance_measure
 from src.utils import performance_measurement
 
 class Query:
-  def __init__(self, store: Store, cache: Cache, parent=None):
+  def __init__(self, store: Store, parent=None):
     self.store = store
-    self.cache = cache
     self.parser = Parser(self.store)
     self._card_cache = {}
     self.parent = parent
@@ -231,7 +229,7 @@ class Query:
             grouped = defaultdict(lambda: defaultdict(list))
 
             for ref in child_node.keys():
-              data = self.cache.read(ref)
+              data = self.store.read_hash(ref)
               group_key = tuple(data.get(f) for f in group_fields) if group else ('__all__',)
 
               for agg in agg_exprs[idx]:
@@ -333,11 +331,7 @@ class Query:
       for k in keys:
         if limit and len(valid_keys) == limit:
           break
-        if not self.cache.exists(k):
-          kv = self.store.read_hash(k)
-          self.cache.write(k, kv)
-        else:
-          kv = self.cache.read(k)
+        kv = self.store.read_hash(k)
         if expr['op'] in BINOP:
           if self._eval_binop_cond(k, kv, op):
             valid_keys.add(k)
@@ -526,9 +520,6 @@ class Query:
           refs = self.store.get_refs(rkey, prm_index)
           if not refs:
             continue
-          for ref in refs:
-            if not self.cache.exists(ref):
-              self.cache.write(ref, self.store.read_hash(ref))
           derived_keys.update(refs)
 
         # Restrict all_keys
@@ -549,8 +540,6 @@ class Query:
     # Unique index query, no expressions: build tree and return it
     if not parsed_exprs and len(selected_indexes) == 1:
       for key in sorted(all_keys) if not random else all_keys:
-        if not self.cache.exists(key):
-          self.cache.write(key, self.store.read_hash(key))
         data_tree[root_index][key] = {}
       return data_tree, {}, False
 
@@ -561,8 +550,6 @@ class Query:
       refs_map = {}
       for key in all_keys:
         refs_map[key] = {}
-        if not self.cache.exists(key):
-          self.cache.write(key, self.store.read_hash(key))
       node = data_tree[root_index] = {}
       build_ref_tree(node, refs_map, unique=True)
       data_tree = self._apply_aggregations(data_tree, agg_exprs, agg_indexes, group=group_fields, unique=True)
@@ -577,16 +564,12 @@ class Query:
         refs = candidates & set(all_keys)
         for ref in refs:
           for key in self.store.get_transitive_backrefs(ref, root_index):
-            if not self.cache.exists(key):
-              self.cache.write(ref, self.store.read_hash(ref))
             refs_map[key][idx].add(ref)
 
     cond_indexes = set(cond_matches.keys())
 
     if agg_exprs:
       for key in all_keys.copy():
-        if not self.cache.exists(key):
-          self.cache.write(key, self.store.read_hash(key))
         refs_map.setdefault(key, defaultdict(dict))
         for agg_index in agg_indexes:
           base_dataset = filter_dataset(
@@ -634,8 +617,6 @@ class Query:
             for ref in base_dataset:
               refs_map.setdefault(key, defaultdict(dict))
               refs_map[key][agg_index].setdefault(ref, {})
-              if not self.cache.exists(ref):
-                self.cache.write(ref, self.store.read_hash(ref))
             continue
 
           # Complex case: aggregate + other indexes
@@ -648,9 +629,6 @@ class Query:
                 node = refs_map.setdefault(key, defaultdict(dict))
                 node.setdefault(index, defaultdict(dict))
                 node[index][ref][agg_index] = dataset
-                for r in dataset:
-                  if not self.cache.exists(r):
-                    self.cache.write(r, self.store.read_hash(r))
 
     elif set(selected_indexes) - cond_indexes - {root_index} or not refs_map:
       flat_refs = self.store.build_hkeys_flat_refs(all_keys)
@@ -663,14 +641,9 @@ class Query:
             refs = sorted(cond_matches[idx] & set(refs))
           if refs:
             refs_map[key][idx].update(refs)
-          for ref in refs:
-            if not self.cache.exists(ref):
-              self.cache.write(ref, self.store.read_hash(ref))
 
     if not refs_map and not agg_exprs:
       for k in all_keys:
-        if not self.cache.exists(k):
-          self.cache.write(k, self.store.read_hash(k))
         refs_map.setdefault(k, defaultdict(set))
         refs_map[k][root_index].add(k)
 

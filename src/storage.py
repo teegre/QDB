@@ -14,6 +14,8 @@ from sys import stdin, stdout, stderr
 from time import time, strftime
 from zlib import crc32
 
+from src.datacache import Cache
+
 # Record format on disk:
 # CRC TS VT KSZ VSZ K V
 #     <----- CRC ----->
@@ -62,6 +64,7 @@ class Store:
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
     self.__paths__: Dict[tuple: list] = {}
+    self.datacache = Cache()
     self.file = None
     self._file_id: int = self._max_id
     self._file_pos: int = 0
@@ -153,7 +156,7 @@ class Store:
         self.create_ref(key, ref)
         self.create_ref(key, ref, reverse=True)
 
-      self.write_references()
+      self.write_references() # FIXME: PLEASE !!!
 
       return 0
     except Exception as e:
@@ -233,17 +236,20 @@ class Store:
 
     return val.decode()
 
-  def read_hash(self, key: str, dump: bool=False) -> dict:
-    ''' Return the hash associated to the given key '''
-    if key in self.keystore:
-      entry: KeyStoreEntry = self.keystore.get(key)
+  def read_hash(self, hkey: str, dump: bool=False) -> dict:
+    ''' Return the hash associated to the given hkey '''
+    if hkey in self.keystore:
+      entry: KeyStoreEntry = self.keystore.get(hkey)
+
+      if entry.timestamp < self.datacache.get_key_timestamp(hkey):
+        return self.datacache.read(hkey)
 
       fn = entry.filename
       vsz = entry.value_size
       pos = entry.position
       ts = entry.timestamp
 
-      ksz = len(key)
+      ksz = len(hkey)
 
       if fn == self.active_file and self.file is not None:
         f = self.file
@@ -251,7 +257,7 @@ class Store:
         try:
           f = open(fn, 'rb')
         except FileNotFoundError:
-          print(f'Error: data file not found for `{key}` key.', file=stderr)
+          print(f'Error: data file not found for `{hkey}` hkey.', file=stderr)
           return None
 
       f.seek(pos)
@@ -261,7 +267,7 @@ class Store:
       if vt.decode() != '+':
         if fn != self.active_file:
           f.close()
-        print(f'Error: {key} is not a hash.', file=stderr)
+        print(f'Error: {hkey} is not a hash.', file=stderr)
         return None
 
       f.seek(pos + HEADER_SIZE + ksz)
@@ -273,9 +279,11 @@ class Store:
       data = json.loads(val.decode())
 
       if not dump:
-        ID = key.split(':')[1]
+        ID = hkey.split(':')[1]
         data['@id'] = ID
-        data['@hkey'] = key
+        data['@hkey'] = hkey
+
+      self.datacache.write(hkey, data)
 
       return data
 
@@ -319,6 +327,12 @@ class Store:
       self.write_references()
       return 0
     return 1
+
+  def get_hkey_timestamp(self, hkey: str) -> int:
+    entry = self.keystore.get(hkey)
+    if entry:
+      return entry.timestamp
+    return None
 
   def dump(self) -> None:
     ''' Dump current database in json format '''

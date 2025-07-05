@@ -3,28 +3,31 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from collections.abc import Callable
+from dataclasses import dataclass
+from time import time
 
-from src.storage import Store
+@dataclass
+class CacheEntry:
+  data: dict|str
+  timestamp: int
 
 class Cache:
   __cache: dict = {}
   def write(self, key: str, data: dict[str]):
-    cdata = self.__cache.get(key)
-    if cdata and cdata == data:
+    entry = self.__cache.get(key)
+    if entry and entry.data == data:
       return
-    self.__cache[key] = data
+    self.__cache[key] = CacheEntry(data, int(time()))
 
-  def read(self, key: str, defaultreadhash: Callable[[str], None]=None) -> dict[str] | str:
-    data = self.__cache.get(key)
-    if data is None and defaultreadhash is not None:
-      try:
-        fname = getattr(defaultreadhash, '__name__')
-        if fname == 'read_hash' and hasattr(Store, fname):
-          data =  defaultreadhash(key)
-      except (AttributeError, TypeError):
-        return None
-    return data
+  def read(self, key: str) -> dict[str] | str | None:
+    entry = self.__cache.get(key)
+    if entry:
+      return entry.data
+    return None
+
+  def get_key_timestamp(self, key: str) -> int:
+    entry = self.__cache.get(key)
+    return entry.timestamp if entry else 0
 
   def delete(self, key: str) -> int:
     try:

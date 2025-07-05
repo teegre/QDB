@@ -18,8 +18,7 @@ from src.utils import performance_measurement, is_numeric, is_virtual, validate_
 class QDB:
   def __init__(self, name: str):
     self.store = Store(name)
-    self.cache = Cache()
-    self.Q = Query(self.store, self.cache, parent=self)
+    self.Q = Query(self.store, parent=self)
     self._perf_info = {}
 
     self.commands = {
@@ -169,7 +168,7 @@ class QDB:
         print(f'HSET: Error: failed to update `{key}` hkey.', file=sys.stderr)
         err += 1
       else:
-        self.cache.write(key, kv)
+        self.store.datacache.write(key, kv)
 
     return 1 if err > 0 else 0
 
@@ -211,7 +210,7 @@ class QDB:
     index_fields = self.store.get_fields_from_index(root_index) if not fields_data else None
     for key in elements:
       row = []
-      data = self.cache.read(key)
+      data = self.store.read_hash(key)
       if index_fields:
         for f in index_fields:
           if not is_virtual(f):
@@ -312,7 +311,7 @@ class QDB:
         data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
         is_aggregation = True
       else:
-        data = self.cache.read(key, self.store.read_hash)
+        data = self.store.read_hash(key)
 
       if fields == ['*']:
         for f, v in data.items():
