@@ -121,7 +121,7 @@ class Store:
     rec = struct.pack(
         f'<Q1sII{ksz}s{vsz}s',
         ts,
-        '-'.encode() if string else '+'.encode(),
+        b'-' if string else b'+',
         ksz, vsz, key.encode(),
         val.encode()
     )
@@ -182,7 +182,7 @@ class Store:
     else:
       data = json.dumps(self._refs_ops, sort_keys=True).encode()
 
-    rec = struct.pack(f'<4sI{len(data)}s', b'REFS', len(data), data)
+    rec = struct.pack(f'<12sI{len(data)}s', b'__QDB_REFS__', len(data), data)
 
     with open(rf,'wb') as f:
       bytes_written = f.write(rec)
@@ -196,9 +196,9 @@ class Store:
   def load_references(self: str=None) -> int:
     for rf in sorted(glob(os.path.join(self.database_path, '*.ref'))):
       with open(rf, 'rb') as f:
-        header = f.read(8)
-        tag, rsz = struct.unpack('<4sI', header)
-        if tag != b'REFS':
+        header = f.read(16)
+        tag, rsz = struct.unpack('<12sI', header)
+        if tag != b'__QDB_REFS__':
           print(f'Error: invalid reference file.', file=stderr)
           return 1
         data = json.loads(f.read(rsz).decode())
@@ -323,7 +323,7 @@ class Store:
       rec = struct.pack(
           f'<Q1sII{ksz}s',
           ts,
-          '+'.encode() if self.has_index(key) else '-'.encode(),
+          b'+' if self.has_index(key) else b'-',
           ksz,
           vsz,
           key.encode()
