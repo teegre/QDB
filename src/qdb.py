@@ -1,6 +1,7 @@
 import atexit
 import json
 import os
+import re
 import sys
 import traceback
 
@@ -108,14 +109,35 @@ class QDB:
         print(f'MDEL: key `{key}` not found.', file=sys.stderr)
     return err
 
+  def _autoid(self, expr: str) -> str:
+    '''
+    Return @autoid or 'expr' otherwise.
+    '''
+    AUTOID_RE = re.compile(r'^@autoid\((?P<index>[a-zA-Z_]+)\)$')
+    m = AUTOID_RE.match(expr.lower())
+
+    if not m:
+      if expr.lower().startswith('@autoid'):
+        raise QDBError(
+            f'Error: invalid @autoid expression: `{expr}`.\n'
+            f'Syntax: @autoid(index)'
+        )
+      else:
+        return expr
+
+    index = m.groupdict()['index']
+    return f'{index}:{self.store.autoid(index)}'
+
   # @performance_measurement(message='Written')
   def w(self, hkey_or_index: str, *members: str) -> int:
     ''' 
     Create/update multiple members of a hash
     '''
     if len(members) % 2 != 0:
-      print(f'HSET: arguments mismatch. (missing field or value)', file=sys.stderr)
+      print(f'W: arguments mismatch. (missing field or value)', file=sys.stderr)
       return 1
+
+    hkey_or_index = self._autoid(hkey_or_index)
 
     if self.store.is_index(hkey_or_index):
       keys = sorted(self.store.get_index_keys(hkey_or_index))
@@ -123,54 +145,41 @@ class QDB:
       try:
         validate_hkey(hkey_or_index)
       except QDBError as e:
-        print(f'HSET: {e}')
+        print(f'W: {e}')
         return 1
       keys = [hkey_or_index]
 
     if not keys:
-      print(f'HSET: `{hkey_or_index}` no such key or index.', file=sys.stderr)
+      print(f'W: `{hkey_or_index}` no such key or index.', file=sys.stderr)
       return 1
 
     err = 0
 
     for key in keys:
       # Original hash
-      kv = self.store.read_hash(key)
+      kv = self.store.read_hash(key) or {}
       subkv = {k: v for k, v in zip(members[::2], members[1::2])}
-      if kv is None: # New hash
-        kv = subkv.copy()
-      refs: list(str) = []
+      refs: list[str] = []
 
-      # Get fields for index or new fields
-      if self.store.has_index(key):
-        fields = self.store.get_fields_from_index(key.split(':')[0])
-      else:
-        fields = list(subkv.keys())
+      for field, new_value in subkv.items():
+        old_value = kv.get(field)
+        if new_value == old_value: # and not is_new:
+          continue
 
-      # Update fields
-      for field in fields:
-        v = subkv.get(field)
-        if field in subkv:
-          if self.store.is_refd_by(key, v):
-            # delete former key in reference.
-            self.store.delete_ref_of_key(key, kv.get(field))
-            refs.append(v)
-          kv[field] = v
-          subkv.pop(field, None)
+        if self.store.is_refd_by(key, old_value):
+          # delete old referenced key.
+          self.store.delete_ref_of_key(key, old_value)
 
-      for k, v in subkv.items():
-        kv[k] = v
-        # Reference?
-        if self.store.exists(v):
-          refs.append(v)
+        kv[field] = new_value
+
+        if self.store.exists(new_value):
+          refs.append(new_value)
 
       # Serialize and write on disk
       data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
       if self.store.write(data, key, vsz, ts, refs) != 0:
-        print(f'HSET: Error: failed to update `{key}` hkey.', file=sys.stderr)
+        print(f'W: Error: failed to update `{key}` hkey.', file=sys.stderr)
         err += 1
-      else:
-        self.store.datacache.write(key, kv)
 
     return 1 if err > 0 else 0
 
@@ -214,6 +223,7 @@ class QDB:
       row = []
       data = self.store.read_hash(key)
       if index_fields:
+        row.append(key)
         for f in index_fields:
           if not is_virtual(f):
             v = data.get(f, '?NOFIELD?')
@@ -245,7 +255,7 @@ class QDB:
       print(' | '.join(row['row']), flush=True)
 
     print(file=sys.stderr)
-    print(len(rows), 'rows' if len(row) > 1 else 'row', 'found.', file=sys.stderr)
+    print(len(rows), 'rows' if len(rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
 

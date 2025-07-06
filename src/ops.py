@@ -47,9 +47,12 @@ SORTPREFIX = {
 }
 
 VIRTUAL = (
-    '@autoid',
     '@id',
     '@hkey',
+)
+
+OTHER = (
+    '@autoid',
     '@epoch',
     '@epochreal',
 )
