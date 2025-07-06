@@ -170,7 +170,6 @@ class Store:
       return 1
     finally:
       fcntl.flock(self.file, fcntl.LOCK_UN)
-      self.update_reverse_refs()
       self.has_changed = True
 
   def write_references(self, ref_file: str=None) -> int:
@@ -844,7 +843,13 @@ class Store:
     refs = self.refs.get(hkey)
     if refs is None:
       return 1
+
     self.refs[hkey].discard(ref)
+    self.reverse_refs[ref].discard(hkey)
+
+    if not self.reverse_refs[ref]:
+      del self.reverse_refs[ref]
+
     try:
       self._refs_ops.setdefault(hkey, {}).setdefault('del', []).append(ref)
     except AttributeError:
@@ -854,7 +859,6 @@ class Store:
       del self.refs[hkey]
       self._refs_ops[hkey] = {'del': '__all__'}
 
-    self.update_reverse_refs()
     return 0
 
   def delete_refd_key(self, hkey: str) -> int:
@@ -906,8 +910,7 @@ class Store:
 
   def has_index(self, key: str) -> bool:
     ''' Return True if a given key exists and has an index, False otherwise. '''
-    index = key.split(':')[0]
-    return index in self.indexes and key in self.keystore
+    return self.get_index(key) and key in self.keystore
 
   def is_index(self, index: str) -> bool:
     ''' Return True if index exists. '''
