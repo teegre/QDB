@@ -328,16 +328,34 @@ class Query:
     def filter_keys(index: str, expr: dict, base: set=None, limit: int=None) -> set:
       valid_keys = set()
       keys = self.store.get_index_keys(index) if base is None else base
+
+      f, op, val = expr['field'], expr['op'], expr['value']
+
       for k in keys:
         if limit and len(valid_keys) == limit:
           break
+        if is_virtual(f):
+          if isinstance(val, list):
+            values = val
+          else:
+            values = [val]
+          for value in values:
+            match f:
+              case '@id':
+                hkey = f'{index}:{value}'
+              case '@hkey':
+                hkey = value
+            if self.store.exists(hkey):
+              valid_keys.add(hkey)
+          break
+
         kv = self.store.read_hash(k)
-        if expr['op'] in BINOP:
+        if op in BINOP:
           if self._eval_binop_cond(k, kv, op):
             valid_keys.add(k)
             break
           continue
-        if self._eval_cond(expr['op'], kv.get(expr['field']), expr['value'], field=expr['field']):
+        if self._eval_cond(op, kv.get(f), val, f):
           valid_keys.add(k)
       return valid_keys
 
@@ -461,9 +479,9 @@ class Query:
       if root_index in agg_exprs or self._query_looks_grouped(root_index, agg_exprs, parsed_exprs):
         prm_index = root_index
       else:
-        prm_index = self._find_prm_index2(selected_indexes)
+        prm_index = self._find_prm_index2(selected_indexes) or root_index
     elif exprs:
-      prm_index = self._find_prm_index(selected_indexes)
+      prm_index = self._find_prm_index(selected_indexes) or root_index
     else:
       prm_index = root_index
 
