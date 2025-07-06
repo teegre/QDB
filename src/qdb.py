@@ -556,5 +556,8 @@ class QDB:
     self.store.database_schema()
     return 0
 
+  def is_db_empty(self) -> bool:
+    return self.store.is_db_empty
+
   def flush(self):
     return self.store.flush()

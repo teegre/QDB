@@ -78,8 +78,6 @@ class Store:
     self.build_indexes_map()
     self.update_reverse_refs()
     self.precompute_paths()
-    if not self.keystore:
-      print(f'QDB: `{self.database_name}` is empty.', file=sys.stderr)
 
   def deinitialize(self):
     self.write_references()
@@ -1036,3 +1034,7 @@ class Store:
   def active_refs(self) -> str:
     name = f'data{str(self._file_id).zfill(4)}.ref'
     return os.path.join(self.database_path, name)
+
+  @property
+  def is_db_empty(self) -> bool:
+    return len(self.keystore) == 0
