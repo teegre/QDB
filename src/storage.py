@@ -37,6 +37,7 @@ from src.datacache import Cache
 #             CRC TS  VT  KSZ VSZ
 HEADER_SIZE = 4 + 8 + 1 + 4 + 4
 HINT_HEADER_SIZE = HEADER_SIZE - 1
+REFS_HEADER_SIZE = HEADER_SIZE - 5
 
 # Terminology:
 # key: a key in simple key/value pair
@@ -196,7 +197,7 @@ class Store:
   def load_references(self: str=None) -> int:
     for rf in sorted(glob(os.path.join(self.database_path, '*.ref'))):
       with open(rf, 'rb') as f:
-        header = f.read(16)
+        header = f.read(REFS_HEADER_SIZE)
         tag, rsz = struct.unpack('<12sI', header)
         if tag != b'__QDB_REFS__':
           print(f'Error: invalid reference file.', file=stderr)
