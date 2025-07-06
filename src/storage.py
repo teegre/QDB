@@ -628,6 +628,9 @@ class Store:
     Add a reference for a given hkey and
     add a hkey for a given reference.
     '''
+    if self.is_refd_by(hkey, ref):
+      return 0
+
     if hkey == ref:
       print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
       return 1
@@ -929,9 +932,9 @@ class Store:
       return len(self.get_index_keys(index)) == 0
     return False
 
-  def is_refd_by(self, key: str, ref: str) -> bool:
+  def is_refd_by(self, hkey: str, ref: str) -> bool:
     ''' Return True if `key` references `ref`. '''
-    return ref in self.refs.get(key, set())
+    return ref in self.refs.get(hkey, set())
 
   def is_refd_by_index(self, key: str, index: str) -> bool:
     ''' Return True if key exists and at least one reference of key belongs to index. '''
@@ -940,10 +943,6 @@ class Store:
       if self.is_index_of(key, index):
         return True and key in self.keystore
     return False
-
-  def is_ref_of(self, ref: str, key: str) -> bool:
-    ''' Return True if ref is a reference of key '''
-    return ref in self.refs.get(key, set())
 
   def is_refd(self, hkey: str) -> bool:
     ''' Return True is hkey is a reference '''
