@@ -92,5 +92,16 @@ t1 = perf_counter()
 rs = populate_database()
 t2 = perf_counter()
 
-print(f'{"Build" if rs == 0 else "Failed"} in {(t2-t1):.4f}s.', file=sys.stderr)
+print(f'{"Built" if rs == 0 else "Failed"} in {(t2-t1):.4f}s.', file=sys.stderr)
+print()
+
+print('database schema:')
+qdb.schema()
+print(len(qdb.store.reverse_refs), 'references.')
+print(len(qdb.store.refs), 'referenced hkeys.')
+print()
+print('Query: what is the number of person per astrological sign?')
+print('Q astro ++@id:sign person:@[count:*]')
+qdb.q('astro', '++@id:sign', 'person:@[count:*]')
+
 exit(rs)
