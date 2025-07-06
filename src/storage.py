@@ -54,8 +54,9 @@ class KeyStoreEntry:
   timestamp: int
 
 class Store:
-  def __init__(self, name: str) :
-    self.database: str = name
+  def __init__(self, db_path: str) :
+    self.database_path: str = db_path
+    self.database_name: str = os.path.splitext(os.path.basename(db_path))[0]
     self.keystore: Dict[str, KeyStoreEntry] = {}
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
@@ -78,7 +79,7 @@ class Store:
     self.update_reverse_refs()
     self.precompute_paths()
     if not self.keystore:
-      print(f'QDB: `{self.database}` is empty.', file=sys.stderr)
+      print(f'QDB: `{self.database_name}` is empty.', file=sys.stderr)
 
   def deinitialize(self):
     self.write_references()
@@ -86,8 +87,8 @@ class Store:
     # TODO: self.compress()
 
   def open(self) -> int:
-    if not os.path.exists(self.database):
-      os.mkdir(self.database)
+    if not os.path.exists(self.database_path):
+      os.mkdir(self.database_path)
     self._file_id = self._max_id
     try:
       self.file = open(self.active_file, 'ab+')
@@ -195,7 +196,7 @@ class Store:
     return 0
 
   def load_references(self: str=None) -> int:
-    for rf in sorted(glob(os.path.join(self.database, '*.ref'))):
+    for rf in sorted(glob(os.path.join(self.database_path, '*.ref'))):
       with open(rf, 'rb') as f:
         header = f.read(8)
         tag, rsz = struct.unpack('<4sI', header)
@@ -366,7 +367,7 @@ class Store:
 
   def reconstruct(self) -> int:
     ''' Reconstruct keystore from data files '''
-    files = sorted(glob(os.path.join(self.database, "*.log")))
+    files = sorted(glob(os.path.join(self.database_path, "*.log")))
     err = 0
     for file in files:
       hint_file = file.replace('.log', '.hint')
@@ -477,15 +478,15 @@ class Store:
         return
       print('QDB: Flushed and closed active file', file=sys.stderr)
 
-    files = [f for f in sorted(glob(os.path.join(self.database, '*.log')))
+    files = [f for f in sorted(glob(os.path.join(self.database_path, '*.log')))
              if f != self.active_file]
     if not files:
       return 0
 
-    print(f'QDB: Compacting `{self.database}` database...', file=sys.stderr)
+    print(f'QDB: Compacting `{self.database_name}` database...', file=sys.stderr)
 
-    name = strftime('%Y%m%d_%H%M%S')
-    newfile = os.path.join(self.database, f'{name}.log')
+    name = f'{self.database_name}_{strftime("%Y%m%d_%H%M%S")}'
+    newfile = os.path.join(self.database_path, f'{name}.log')
     newhint = newfile.replace('.log', '.hint')
     newrefs = newfile.replace('.log', '.ref')
     tmpfile = newfile + '.tmp'
@@ -573,7 +574,7 @@ class Store:
     self.write_references(newrefs)
     self.has_changed = False
 
-    print('Done.', file=stderr)
+    print('QDB: Done.', file=stderr)
     return warnings
 
   def create_index(self, hkey: str) -> int:
@@ -1022,16 +1023,16 @@ class Store:
   @property
   def _max_id(self) -> int:
     try:
-      return sum([1 for _ in glob(os.path.join(self.database, 'data*.log'))])
+      return sum([1 for _ in glob(os.path.join(self.database_path, 'data*.log'))])
     except:
       return 0
 
   @property
   def active_file(self) -> str:
     name = f'data{str(self._file_id).zfill(4)}.log'
-    return os.path.join(self.database, name)
+    return os.path.join(self.database_path, name)
 
   @property
   def active_refs(self) -> str:
     name = f'data{str(self._file_id).zfill(4)}.ref'
-    return os.path.join(self.database, name)
+    return os.path.join(self.database_path, name)
