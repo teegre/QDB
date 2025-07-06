@@ -151,7 +151,7 @@ class QDB:
       for field in fields:
         v = subkv.get(field)
         if field in subkv:
-          if self.store.has_index(v): # ref
+          if self.store.is_refd_by(key, v):
             # delete former key in reference.
             self.store.delete_ref_of_key(key, kv.get(field))
             refs.append(v)
