@@ -6,7 +6,12 @@ from time import perf_counter
 from src.qdb import QDB
 from src.utils import performance_measurement
 
-qdb = QDB('persons2.qdb')
+qdb = QDB('persons.qdb')
+
+if not qdb.is_db_empty():
+  print(f'`{qdb.store.database_name}` already exists.', file=sys.stderr)
+  exit(0)
+
 fake = Faker('en_US')
 
 def populate_database():
@@ -93,6 +98,7 @@ rs = populate_database()
 t2 = perf_counter()
 
 print(f'{"Built" if rs == 0 else "Failed"} in {(t2-t1):.4f}s.', file=sys.stderr)
+
 if rs:
   exit(rs)
 
