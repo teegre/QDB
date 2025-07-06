@@ -349,6 +349,15 @@ class Query:
               valid_keys.add(hkey)
           break
 
+        if isinstance(val, list):
+          for v in val:
+            if self.store.exists(v):
+              valid_keys |= set(self.store.get_refs(v, index))
+          break
+        elif self.store.exists(val):
+          valid_keys.update(self.store.get_refs(val, index))
+          break
+
         kv = self.store.read_hash(k)
         if op in BINOP:
           if self._eval_binop_cond(k, kv, op):
