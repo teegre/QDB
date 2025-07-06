@@ -93,6 +93,9 @@ rs = populate_database()
 t2 = perf_counter()
 
 print(f'{"Built" if rs == 0 else "Failed"} in {(t2-t1):.4f}s.', file=sys.stderr)
+if rs:
+  exit(rs)
+
 print()
 
 print('database schema:')
