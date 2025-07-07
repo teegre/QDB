@@ -163,6 +163,8 @@ class Store:
           return 1
       for ref in refs :
         self.create_ref(key, ref)
+      # add new hkey to the indexes map
+      self.indexes_map.setdefault(self.get_index(key), set()).add(key)
 
       return 0
     except Exception as e:
