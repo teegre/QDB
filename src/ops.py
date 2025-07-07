@@ -6,20 +6,25 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import operator
 
 OP = {
-  '=': 'eq',  # equal
+  '=':  'eq', # equal
   '!=': 'ne', # not equal
-  '>': 'gt',  # greater than
+  '>':  'gt', # greater than
   '>=': 'ge', # greater or equal
-  '<': 'lt',  # less than
+  '<':  'lt', # less than
   '<=': 'le', # less than or equal
-  '^': 'sw',  # starts with
+  '^':  'sw', # starts with
   '!^': 'ns', # not starts with
-  '$': 'dw',  # ends with
+  '$':  'dw', # ends with
   '!$': 'nd', # not ends with
   '**': 'ct', # contains
   '!*': 'nc', # not contains
   'in': 'in', # in
   'ni': 'ni', # not in
+}
+
+REVOP = { # for error display
+  sop: op
+  for op, sop in OP.items()
 }
 
 BINOP = ('AND', 'OR')

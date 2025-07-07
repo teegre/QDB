@@ -8,7 +8,7 @@ from collections import defaultdict
 from random import shuffle
 
 from src.exception import QDBParseError, QDBQueryError, QDBQueryNoData
-from src.ops import OPFUNC, BINOP
+from src.ops import OPFUNC, AGGFUNC, BINOP, REVOP
 from src.parser import Parser
 from src.storage import Store
 from src.utils import is_numeric, coerce_number, is_virtual, performance_measurement
@@ -39,27 +39,35 @@ class Query:
 
     return parsed_exprs
 
+  def _get_condition_fields(self, conditions: list):
+    for cond in conditions:
+      if cond is None:
+        continue
+      if cond['op'] in BINOP:
+          yield self._get_condition_fields(cond['conditions'])
+      else:
+        yield cond['field']
+
   def validate_fields_and_group(self, parsed_exprs: dict, agg_exprs: dict, fields: dict) -> dict:
     def is_grouped(index: str):
       return any(
-          v['op'] == 'count' and v['field'] == '*'
+          v['op'] in AGGFUNC or (v['op'] == 'count' and v['field'] == '*')
           for v in agg_exprs.get(index, [])
       )
 
     grouped = {}
 
-    condition_fields = [
-        (e['index'], v['field'])
+    condition_fields = {
+        (e['index'], v)
         for e in parsed_exprs
-        for v in e['conditions']
+        for v in self._get_condition_fields(e['conditions'])
         if v is not None
-    ]
+    }
 
     agg_fields = [
         (i, f'{i}:{v["op"]}{":"+v["field"] if v["field"] != "*" else ""}')
         for i, e in agg_exprs.items()
         for v in e
-        # if v['field'] != '*'
     ]
 
     explicit_fields = [
@@ -327,45 +335,47 @@ class Query:
 
     def filter_keys(index: str, expr: dict, base: set=None, limit: int=None) -> set:
       valid_keys = set()
-      keys = self.store.get_index_keys(index) if base is None else base
+      keys = base if base else self.store.get_index_keys(index)
 
-      f, op, val = expr['field'], expr['op'], expr['value']
+      f, op, val = expr.get('field'), expr['op'], expr.get('value')
+
+      if is_virtual(f):
+        values = val if isinstance(val, list) else [val]
+        hkeys = set()
+
+        for v in values:
+          match f:
+            case '@id':
+              hkey = f'{index}:{v}'
+            case '@hkey':
+              hkey = v
+          if not self.store.exists(hkey):
+            raise QDBQueryError(f'Error: `{hkey}`, no such hkey.')
+          hkeys.add(hkey)
+
+        match op:
+          case 'in' | 'eq':
+            return hkeys
+          case 'ni' | 'ne':
+            return keys ^ hkeys
+          case _:
+            raise QDBQueryError(f'Error: `{REVOP[op]}` not supported for virtual field `{f}` .')
 
       for k in keys:
-        if limit and len(valid_keys) == limit:
-          break
-        if is_virtual(f):
-          if isinstance(val, list):
-            values = val
-          else:
-            values = [val]
-          for value in values:
-            match f:
-              case '@id':
-                hkey = f'{index}:{value}'
-              case '@hkey':
-                hkey = value
-            if self.store.exists(hkey):
-              valid_keys.add(hkey)
-          break
-
-        if isinstance(val, list):
-          for v in val:
-            if self.store.exists(v):
-              valid_keys |= set(self.store.get_refs(v, index))
-          break
-        elif self.store.exists(val):
-          valid_keys.update(self.store.get_refs(val, index))
+        if limit and len(valid_keys) >= limit:
           break
 
         kv = self.store.read_hash(k)
+        if kv is None:
+          continue
+
         if op in BINOP:
-          if self._eval_binop_cond(k, kv, op):
+          if self._eval_binop_cond(k, kv, expr):
             valid_keys.add(k)
-            break
           continue
         if self._eval_cond(op, kv.get(f), val, f):
           valid_keys.add(k)
+
       return valid_keys
 
     def get_condition_matches(exprs: dict, limit: int=None) -> dict[set]:
