@@ -93,22 +93,6 @@ class Query:
 
     return grouped
 
-  def _eval_binop_cond(self, key: str, record: dict, expr: dict) -> bool:
-    op = expr['op']
-    conditions = expr['conditions']
-
-    if op == 'AND':
-      return all(
-          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'], field=cond['field'])
-          for cond in conditions
-      )
-
-    if op == 'OR':
-      return any(
-          self._eval_cond(cond['op'], record.get(cond['field']), cond['value'], field=cond['field'])
-          for cond in conditions
-      )
-
   def _eval_cond(self, op: str, field_value: str, condition_value: str, field: str) -> bool:
     if op in ('gt', 'ge', 'lt', 'le'):
       if not is_numeric(field_value) or not is_numeric(condition_value):
@@ -334,9 +318,7 @@ class Query:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
 
     def filter_keys(index: str, expr: dict, base: set=None, limit: int=None) -> set:
-      valid_keys = set()
       keys = base if base else self.store.get_index_keys(index)
-
       f, op, val = expr.get('field'), expr['op'], expr.get('value')
 
       if is_virtual(f):
@@ -361,6 +343,8 @@ class Query:
           case _:
             raise QDBQueryError(f'Error: `{REVOP[op]}` not supported for virtual field `{f}` .')
 
+      valid_keys = set()
+
       for k in keys:
         if limit and len(valid_keys) >= limit:
           break
@@ -369,10 +353,6 @@ class Query:
         if kv is None:
           continue
 
-        if op in BINOP:
-          if self._eval_binop_cond(k, kv, expr):
-            valid_keys.add(k)
-          continue
         if self._eval_cond(op, kv.get(f), val, f):
           valid_keys.add(k)
 
