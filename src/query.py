@@ -85,7 +85,7 @@ class Query:
           grouped[i] = [f]
       if is_grouped(i) and f not in fields.get(i, []):
         continue
-      if f not in fields.get(i, []):
+      if f not in fields.get(i, []) and f != '*':
         raise QDBQueryError(
             f'Error: field `{i}:{f}` is not used in any condition or aggregation.\n'
             f'Consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
