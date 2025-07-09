@@ -2,38 +2,6 @@
 
 **QDB** is a lightweight, schema-aware, graph-based **database engine** with a **compact custom query language** for fast and expressive data modeling, querying, and traversal. It is designed for structured yet flexible data storage where relationships matter (or not).
 
-## Installation
-
-Ensure **python** (version 3.13 or greater), **python-setuptools** and  **pipx** are installed on your system.
-
-```
-$ python --version
-Python 3.13.5
-$ which pipx
-/usr/bin/pipx
-```
-
-Clone this repository :
-
-```
-$ git clone https://github.com/teegre/QDB
-```
-
-Build:
-
-```
-$ cd QDB
-$ python -m build
-```
-
-Then install **QDB** with the following command:
-
-```
-$ pipx install dist/qdb-0.0.1.tar.gz
-```
-
-*version number may differ*
-
 ## ✨ Features
 
 - Lightweight
@@ -136,6 +104,46 @@ QDB uses a few core concepts to represent and relate data:
 W @autoid(song) title "Montreal" artist artist:1 album album:10
 ```
 
+## Install
+
+Ensure **python** (version 3.13 or greater), **python-setuptools** and  **pipx** are installed on your system.
+
+```
+$ python --version
+Python 3.13.5
+$ which pipx
+/usr/bin/pipx
+```
+
+Clone this repository :
+
+```
+$ git clone https://github.com/teegre/QDB
+```
+
+Build:
+
+```
+$ cd QDB
+$ python -m build
+```
+
+Then install **QDB** with the following command:
+
+```
+$ pipx install dist/qdb-0.0.1.tar.gz
+```
+
+*version number may differ*
+
+## Uninstall
+
+Are you sure you want to uninstall **QDB**?
+
+```
+$ pipx uninstall qdb
+```
+
 ## 🧪 Status
 
-**QDB** is an experimental project. It is under active development and suited for use cases requiring embedded graph-style querying with simple dependencies. Feedback and contributions are welcome!
+**QDB** is an experimental project. It is under active development. Feedback and contributions are welcome!
