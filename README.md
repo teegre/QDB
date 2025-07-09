@@ -1,6 +1,6 @@
 # QDB
 
-**QDB** is a lightweight, schema-aware, graph-based database engine with a compact custom query language for fast and expressive data modeling, querying, and traversal. It is designed for structured yet flexible data storage where relationships matter.
+**QDB** is a lightweight, schema-aware, graph-based **database engine** with a **compact custom query language** for fast and expressive data modeling, querying, and traversal. It is designed for structured yet flexible data storage where relationships matter (or not).
 
 ## Installation
 
@@ -34,17 +34,6 @@ $ pipx install dist/qdb-0.0.1.tar.gz
 
 *version number may differ*
 
-## 📚 Terminology
-
-| Term              | Description                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| **Index**         | Represents a type of entity (like a table): e.g., `artist`, `album`, `song`.                 |
-| **HKEY**          | A unique hash key identifying an entity. Often in the form `index:id`, e.g., `artist:42`.    |
-| **Field**         | A key-value attribute of an entity (e.g., `name`, `title`, `duration`).                      |
-| **Reference**     | A relation between two entities (like a foreign key), e.g., a `song` referencing an `album`. |
-| **Virtual Field** | Special fields like `@id` (entity ID) and `@hkey` (full key) used in filters.                |
-| **Auto ID**       | If not provided, QDB can assign unique IDs with `@autoid(index)` or `W @autoid(...)`.        |
-
 ## ✨ Features
 
 - Lightweight
@@ -60,19 +49,6 @@ $ pipx install dist/qdb-0.0.1.tar.gz
 - Simple CLI for scripting and data pipelines
 
 - REPL
-
-## 📚 Terminology
-
-QDB uses a few core concepts to represent and relate data:
-
-| Term              | Description                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| **Index**         | Represents a type of entity (like a table): e.g., `artist`, `album`, `song`.                 |
-| **HKEY**          | A unique hash key identifying an entity. Often in the form `index:id`, e.g., `artist:42`.    |
-| **Field**         | A key-value attribute of an entity (e.g., `name`, `title`, `duration`).                      |
-| **Reference**     | A relation between two entities (like a foreign key), e.g., a `song` referencing an `album`. |
-| **Virtual Field** | Special fields like `@id` (entity ID) and `@hkey` (full key) used in filters.                |
-| **Auto ID**       | If not provided, QDB can assign unique IDs with `@autoid(index)` or `W @autoid(...)`.        |
 
 ## 🔄 Dynamic Schema
 
@@ -138,6 +114,19 @@ Query all albums by a specific artist (sorted by date of release):
 ```
 $ qdb music.qdb 'Q artist name=Autechre album:++date:title'
 ```
+
+## 📚 Terminology
+
+QDB uses a few core concepts to represent and relate data:
+
+| Term              | Description                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------- |
+| **Index**         | Represents a type of entity (like a table): e.g., `artist`, `album`, `song`.                 |
+| **HKEY**          | A unique hash key identifying an entity. Often in the form `index:id`, e.g., `artist:42`.    |
+| **Field**         | A key-value attribute of an entity (e.g., `name`, `title`, `duration`).                      |
+| **Reference**     | A relation between two entities (like a foreign key), e.g., a `song` referencing an `album`. |
+| **Virtual Field** | Special fields like `@id` (entity ID) and `@hkey` (full key) used in filters.                |
+| **Auto ID**       | If not provided, QDB can assign unique IDs with `@autoid(index)` or `W @autoid(...)`.        |
 
 ## 🧠 HKEYs and Auto IDs
 
