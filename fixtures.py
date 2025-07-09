@@ -3,8 +3,8 @@ from random import choice, randint
 import sys
 from time import perf_counter
 
-from src.qdb import QDB
-from src.utils import performance_measurement
+from qdb.lib.qdb import QDB
+from qdb.lib.utils import performance_measurement
 
 qdb = QDB('persons.qdb')
 
