@@ -79,8 +79,10 @@ class Client:
       except EOFError:
         print()
         readline.write_history_file(self.history_file)
-        print('Bye!')
         break
+      except Exception as e:
+        print(f'Error: {e}.', file=sys.stderr)
+
         
   def process_commands(self, command: str=None, pipe: bool=False):
     if pipe:
@@ -93,9 +95,14 @@ class Client:
 def main() -> int:
   parser = argparse.ArgumentParser(description='QDB CLI')
   parser.add_argument('db_path', help='Path to the QDB database directory')
-  parser.add_argument('--pipe', help='Reads from stdin', action='store_true')
+  parser.add_argument('-p', '--pipe', help='Reads from stdin', action='store_true')
+  parser.add_argument('-q', '--quiet', help='Do not show performance time', action='store_true')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
+
+  if args.quiet:
+    from os import environ
+    environ['__QDB_QUIET__'] = '1'
 
   client = Client(args.db_path)
   return client.process_commands(args.command, args.pipe)
