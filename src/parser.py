@@ -160,7 +160,7 @@ class Parser:
       if br_depth != 0:
         raise QDBParseError(f'Error: mismatched brackets in expression: `{expr}`.')
       if pr_depth != 0:
-        raise QDBParseError(f'Error: mismatched parentheses in expression; `{expr}`')
+        raise QDBParseError(f'Error: mismatched parentheses in expression: `{expr}`')
 
       if cur:
         parts.append(cur)
