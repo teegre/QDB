@@ -108,23 +108,25 @@ class Query:
     if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc', 'in', 'ni'):
       return OPFUNC[op](field_value, condition_value)
 
+    strval = str(field_value)
+
     match op:
       case 'sw':
-        return field_value.startswith(condition_value)
+        return strval.startswith(condition_value)
       case 'ns':
-        return not field_value.startswith(condition_value)
+        return not strval.startswith(condition_value)
       case 'dw':
-        return field_value.endswith(condition_value)
+        return strval.endswith(condition_value)
       case 'nd':
-        return not field_value.endswith(condition_value)
+        return not strval.endswith(condition_value)
       case 'ct':
-        return condition_value in field_value
+        return condition_value in strval
       case 'nc':
-        return condition_value not in field_value
+        return condition_value not in strval
       case 'in':
-        return field_value in condition_value
+        return strval in condition_value
       case 'ni':
-        return field_value not in condition_value
+        return strval not in condition_value
     return False
 
   def _cardinality(self, A: str, B: str, sample_size: int=100) -> int:
