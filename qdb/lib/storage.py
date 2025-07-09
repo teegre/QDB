@@ -14,7 +14,7 @@ from sys import stdin, stdout, stderr
 from time import time, strftime
 from zlib import crc32
 
-from src.datacache import Cache
+from qdb.lib.datacache import Cache
 
 # Record format on disk:
 # CRC TS VT KSZ VSZ K V

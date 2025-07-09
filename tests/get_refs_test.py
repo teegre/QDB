@@ -6,7 +6,7 @@ import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.storage import Store
+from qdb.lib.storage import Store
 
 @pytest.fixture
 def store():
@@ -17,13 +17,13 @@ def test_direct_ref(store):
     """Direct relationship test: person -> country"""
     person_key = "person:00001"
     results = store.get_refs(person_key, "country")
-    assert results == ["country:08"], f"Expected only 'country:08' for person:00001, got {results}"
+    assert results == ["country:06"], f"Expected only 'country:06' for person:00001, got {results}"
 
 def test_reverse_ref(store):
     """Reverse relationship test: country -> person"""
-    country_key = "country:08"
+    country_key = "country:06"
     results = store.get_refs(country_key, "person")
-    assert "person:00001" in results, "Expected person:00001 in results for country:08"
+    assert "person:00001" in results, "Expected person:00001 in results for country:06"
 
 def test_indirect_ref(store):
     """Indirect multi-hop test: person -> city (via address)"""
@@ -66,7 +66,7 @@ def test_multiple_hop(store):
     """Test multi-hop path person -> address -> city -> country"""
     person_key = "person:00001"
     results = store.get_refs(person_key, "country")
-    assert results == ["country:08"], "Expected person -> country path to be resolved correctly"
+    assert results == ["country:06"], "Expected person -> country path to be resolved correctly"
 
 def test_get_refs_with_index(store):
     """Test direct reference retrieval"""

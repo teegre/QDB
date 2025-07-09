@@ -7,13 +7,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from collections import defaultdict
 from random import shuffle
 
-from src.exception import QDBParseError, QDBQueryError, QDBQueryNoData
-from src.ops import OPFUNC, AGGFUNC, BINOP, REVOP
-from src.parser import Parser
-from src.storage import Store
-from src.utils import is_numeric, coerce_number, is_virtual, performance_measurement
-
-from src.utils import performance_measurement
+from qdb.lib.exception import QDBParseError, QDBQueryError, QDBQueryNoData
+from qdb.lib.ops import OPFUNC, AGGFUNC, BINOP, REVOP
+from qdb.lib.parser import Parser
+from qdb.lib.storage import Store
+from qdb.lib.utils import is_numeric, coerce_number, is_virtual, performance_measurement
 
 class Query:
   def __init__(self, store: Store, parent=None):

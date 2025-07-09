@@ -11,11 +11,11 @@ from typing import Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.datacache import Cache
-from src.exception import QDBError
-from src.query import Query
-from src.storage import Store
-from src.utils import performance_measurement, is_numeric, is_virtual, validate_hkey
+from qdb.lib.datacache import Cache
+from qdb.lib.exception import QDBError
+from qdb.lib.query import Query
+from qdb.lib.storage import Store
+from qdb.lib.utils import performance_measurement, is_numeric, is_virtual, validate_hkey
 
 class QDB:
   def __init__(self, name: str):

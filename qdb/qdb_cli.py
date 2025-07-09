@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src import __version__
-from src.qdb import QDB
+from qdb import __version__
+from qdb.lib.qdb import QDB
 
 class Client:
   def __init__(self, name: str):

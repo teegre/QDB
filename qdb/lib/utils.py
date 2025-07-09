@@ -8,8 +8,8 @@ from functools import wraps
 from time import perf_counter
 from typing import Any
 
-from src.exception import QDBHkeyError
-from src.ops import VIRTUAL
+from qdb.lib.exception import QDBHkeyError
+from qdb.lib.ops import VIRTUAL
 
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
