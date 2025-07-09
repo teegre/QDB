@@ -145,7 +145,7 @@ class QDB:
       try:
         validate_hkey(hkey_or_index)
       except QDBError as e:
-        print(f'W: {e}')
+        print(f'W: {e}', file=sys.stderr)
         return 1
       keys = [hkey_or_index]
 
@@ -259,8 +259,9 @@ class QDB:
     for row in rows:
       print(' | '.join(row['row']), flush=True)
 
-    print(file=sys.stderr)
-    print(len(rows), 'rows' if len(rows) > 1 else 'row', 'found.', file=sys.stderr)
+    if not os.getenv('__QDB_QUIET__'):
+      print(file=sys.stderr)
+      print(len(rows), 'rows' if len(rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
 
@@ -457,8 +458,9 @@ class QDB:
     for row in all_rows:
       print(' | '.join(row['row']), flush=True)
 
-    print(file=sys.stderr)
-    print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
+    if not os.getenv('__QDB_QUIET__'):
+      print(' ', file=sys.stderr)
+      print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
 
@@ -485,7 +487,7 @@ class QDB:
         try:
           v = kv.pop(field)
           if self.store.is_refd_by(key, v):
-            print(f'HDEL: deleting {v} referenced by {key}...')
+            # print(f'HDEL: deleting {v} referenced by {key}...')
             self.store.delete_ref_of_key(ref=v, hkey=key)
         except KeyError:
           print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)

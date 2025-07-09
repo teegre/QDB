@@ -16,6 +16,8 @@ def performance_measurement(_func=None, *, message: str='Executed'):
     @wraps(func)
     def wrapper(*args, **kwargs):
       t1 = perf_counter()
+      if os.getenv('__QDB_QUIET__'):
+        return func(*args, **kwargs)
       result = func(*args, **kwargs)
       if not os.getenv('__QDB_DEBUG__'):
         if result == 1:
@@ -27,7 +29,7 @@ def performance_measurement(_func=None, *, message: str='Executed'):
       else:
         p = d - args[0]._perf_info['Fetched']
         t = d
-        print(f'Fetched:   {args[0]._perf_info["Fetched"]:.4f}s.')
+        print(f'Fetched:   {args[0]._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
         print(f'{message}: {p:.4f}s.', file=sys.stderr)
         print(f'Total:     {d:.4f}s.', file=sys.stderr)
       
