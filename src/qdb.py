@@ -183,12 +183,13 @@ class QDB:
 
     return 1 if err > 0 else 0
 
-  def _sort_key(self, row: list, fields_info: dict, field_positions: dict) -> tuple:
+  def _sort_key(self, row: list, fields_info: dict, field_positions: dict, force_t_type: bool=False) -> tuple:
     def _descending_value(val: str) -> float | str:
-      if is_numeric(val):
-        val = float(val)
-      if isinstance(val, float):
-        return -val
+      if not force_t_type:
+        if is_numeric(val):
+          val = float(val)
+        if isinstance(val, float):
+          return -val
       return ''.join(chr(255 - ord(c)) for c in val)
 
     key = []
@@ -202,14 +203,15 @@ class QDB:
         full_field = f'{index}:{field}'
         pos = field_positions.get(full_field)
         if pos is None:
-          value = row.get('sort_value')
+          value = ''
         else:
           value = row['row'][pos]
           if '=' in value:
             value = value.split('=', 1)[1]
-        if is_numeric(value):
-          value = float(value)
-        elif value is None:
+        if not force_t_type:
+          if is_numeric(value):
+            value = float(value)
+        if value is None:
           value = ''
 
         key.append(_descending_value(value) if order == 'desc' else value)
@@ -249,7 +251,10 @@ class QDB:
 
     # Sorting and output
     if index_fields is None:
-      rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions))
+      try:
+        rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions))
+      except TypeError:
+        rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions, force_t_type=True))
 
     for row in rows:
       print(' | '.join(row['row']), flush=True)
@@ -443,7 +448,11 @@ class QDB:
       return 1
 
     # Sorting and output
-    all_rows.sort(key=lambda row: self._sort_key(row, fields_data, fields_positions))
+    try:
+      all_rows.sort(key=lambda row: self._sort_key(row, fields_data, fields_positions))
+    except TypeError:
+      all_rows.sort(key=lambda row: self._sort_key(row, fields_data, fields_positions, force_t_type=True))
+
 
     for row in all_rows:
       print(' | '.join(row['row']), flush=True)
