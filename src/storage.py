@@ -197,6 +197,7 @@ class Store:
     return 0
 
   def load_references(self: str=None) -> int:
+    empty_refs = set()
     for rf in sorted(glob(os.path.join(self.database_path, '*.ref'))):
       with open(rf, 'rb') as f:
         header = f.read(REFS_HEADER_SIZE)
@@ -205,6 +206,9 @@ class Store:
           print(f'Error: invalid reference file.', file=stderr)
           return 1
         data = json.loads(f.read(rsz).decode())
+        if not data:
+          empty_refs.add(rf)
+          continue
         for hkey, ops in data.items():
           if isinstance(ops, list): # Compacted version
             self.refs.setdefault(hkey, set()).update(ops)
@@ -216,6 +220,8 @@ class Store:
               self.refs.pop(hkey, None)
             else:
               self.refs.pop(hkey)
+    for rf in empty_refs:
+      os.remove(rf)
     return 0
 
   def read(self, key: str) -> str:
@@ -377,8 +383,6 @@ class Store:
         os.remove(file)
         if os.path.exists(hint_file):
           os.remove(hint_file)
-        if os.path.exists(ref_file):
-          os.remove(ref_file)
         continue
       if os.path.exists(hint_file):
         err += self.reconstruct_from_hint(hint_file)
