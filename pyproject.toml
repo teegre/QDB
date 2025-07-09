@@ -1,0 +1,29 @@
+[build-system]
+build-backend = 'setuptools.build_meta'
+requires = ['setuptools', 'wheel']
+
+[project]
+name = 'qdb'
+dynamic = ['version']
+authors = [
+  { name = 'Stéphane MEYER (teegre)' },
+]
+description = 'QDB is lightweight, embeddable, schema-aware graph-oriented database engine with a custom query language designed for fast and flexible data traversal.'
+readme = 'README.md'
+license = 'MIT'
+classifiers = [
+  'Database Engine :: Python :: 3.13',
+]
+
+requires-python = '>=3.10'
+
+[tool.setuptools.dynamic]
+version = { attr = 'qdb.__version__' }
+
+[project.scripts]
+qdb = 'qdb.qdb_cli:main'
+
+[project.urls]
+Home = 'https://github.com/teegre/QDB'
+
+Tracker = 'https://github.com/teegre/QDB/issues'
