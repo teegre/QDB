@@ -56,10 +56,14 @@ def coerce_number(x: Any) -> Any:
 def is_virtual(field: str) -> bool:
   return field in VIRTUAL
 
-def validate_hkey(hkey: str) -> None:
+def validate_hkey(hkey: str, confirm: bool=False) -> bool | None:
   HKEY_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z0-9-_]+$')
   if not HKEY_RE.match(hkey):
+    if confirm:
+      return False
     raise QDBHkeyError(f'Error: malformed HKEY: `{hkey}`.')
+  if confirm:
+    return True
 
 def validate_field_name(field: str) -> None:
   FIELD_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9]*$')

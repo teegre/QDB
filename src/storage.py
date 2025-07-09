@@ -141,6 +141,7 @@ class Store:
     ''' Write data to file, update keystore, indexes and refs '''
     if not self.file:
       self.open()
+    # TODO use custom exceptions
     try:
       fcntl.flock(self.file, fcntl.LOCK_EX)
       self.file.seek(self._file_pos)
@@ -640,8 +641,8 @@ class Store:
     if hkey == ref:
       print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
       return 1
-    if not self.exists(hkey) or not self.exists(ref):
-      return 1
+    # if not self.exists(hkey) or not self.exists(ref):
+    #   return 1
 
     self.refs.setdefault(hkey, set()).add(ref)
     self.reverse_refs.setdefault(ref, set()).add(hkey)

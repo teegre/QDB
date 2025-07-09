@@ -172,11 +172,14 @@ class QDB:
 
         kv[field] = new_value
 
-        if self.store.exists(new_value):
+        # if self.store.exists(new_value):
+        # NOTE: if it looks like a valid hkey then create a reference
+        if validate_hkey(new_value, confirm=True):
           refs.append(new_value)
 
       # Serialize and write on disk
       data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
+      # TODO catch exception
       if self.store.write(data, key, vsz, ts, refs) != 0:
         print(f'W: Error: failed to update `{key}` hkey.', file=sys.stderr)
         err += 1
