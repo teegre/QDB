@@ -841,7 +841,10 @@ class Store:
   def find_index_path(self, idx1: str, idx2: str) -> list:
     if (idx1, idx2) in self.__paths__:
       return self.__paths__.get((idx1, idx2))
-    return self.find_path(idx1, idx2, use_index=True)
+    _path = self.find_path(idx1, idx2, use_index=True)
+    if _path:
+      self.__paths__[(idx1, idx2)] = _path
+    return _path
 
   def delete_ref_of_key(self, hkey: str, ref: str) -> int:
     '''
