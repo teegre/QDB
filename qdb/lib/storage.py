@@ -62,11 +62,11 @@ class Store:
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
     self.refs: Dict[str: set[str]] = {}
-    self._refs_cache: Dict[tuple[str, str]: set[str]] = {} # FIXME: CACHE UPDATES!!!
+    self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
     self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
-    self.__paths__: Dict[tuple: list] = {} # FIXME: UPDATES!!!
+    self.__paths__: Dict[tuple: list] = {}
     self.datacache = Cache()
     self.file = None # file object
     self._file_id: int = self._max_id
@@ -661,7 +661,7 @@ class Store:
       for x2 in self.indexes:
         if x1 == x2:
           continue
-        self.__paths__[(x1, x2)] = self.find_index_path(x1,x2)
+        self.__paths__[(x1, x2)] = self.find_index_path(x1, x2)
 
   def get_all_ref_hkeys(self, index: str) -> list[str]:
     ''' Return all referenced hkeys'''
@@ -718,12 +718,12 @@ class Store:
     if not self.exists(key) or not self.is_index(index):
       return results
 
-    for ref in self.refs.get(key, []):
+    for ref in sorted(self.refs.get(key, [])):
       if self.is_index_of(ref, index):
         results.add(ref)
 
     if not results:
-      for ref in self.reverse_refs.get(key, []):
+      for ref in sorted(self.reverse_refs.get(key, [])):
         if self.is_index_of(ref, index):
           results.add(ref)
 
@@ -734,6 +734,7 @@ class Store:
     Return all forward or reverse refs related to index
     '''
     if not self.has_index(key) or not self.is_index(index):
+      self._refs_cache.pop((key, index), None)
       return []
 
     if self.get_index(key) == index:
@@ -794,57 +795,99 @@ class Store:
     self.transitive_reverse_refs[index][ref] = result
     return result
 
-  def find_path(self, k1: str, k2: str, use_index: bool=False) -> list[str]:
+  def find_index_path(self, idx1: str, idx2: str) -> list:
     '''
-    Returns the keys that form a path from k1 to k2 (or k2 to k1), if any.
-    Considers forward references from self.refs and reverse references.
-    Also works with indexes.
+    Returns the indexes that form a path from idx1 to idx2,
+    including idx1 and idx2, if any.
+    A, C → [A, B, C]
+    D, E → [D, E]
     '''
-    if not use_index and (not self.has_index(k1) or not self.has_index(k2)):
+
+    if idx1 == idx2:
       return []
 
-    if use_index and (not self.is_index(k1) or not self.is_index(k2)):
+    if not self.is_index(idx1) or not self.is_index(idx2):
+      # Remove from cache
+      self.__paths__.pop((idx1, idx2), None)
+      self.__paths__.pop((idx2, idx1), None)
       return []
 
-    if k1 == k2:
+    if (idx1, idx2) in self.__paths__:
+      return self.__paths__[(idx1, idx2)]
+
+    max_depth = len(self.indexes)
+
+    def is_valid_path(path: list[str]) -> bool:
+      return len(set(path)) == len(path)
+
+    valid_paths = []
+
+    def dfs(hkey: str, path: list):
+      nonlocal result, valid_paths
+      if len(path) > max_depth:
+        return
+      if self.is_index_of(hkey, idx2):
+        new_path = [self.get_index(k) for k in path]
+        if is_valid_path(new_path):
+          valid_paths.append(new_path)
+        return
+
+      ngbs = self.refs.get(hkey, set()) | self.reverse_refs.get(hkey, set())
+      for ngb in ngbs:
+        if ngb not in path:
+          dfs(ngb, path + [ngb])
+
+    hk1 = sorted(self.get_index_keys(idx1))[0]
+    dfs(hk1, [hk1])
+
+    result = min(valid_paths, key=len)
+
+    if result:
+      # Add to cache
+      self.__paths__[(idx1, idx2)] = result
+      self.__paths__[(idx2, idx1)] = list(reversed(result))
+
+    return result
+
+  def find_index_path2(self, idx1: str, idx2: str) -> list[str]:
+    if idx1 == idx2:
       return []
 
-    if use_index:
-      k1 = next(iter(self.get_index_keys(k1)), None)
-      k2 = next(iter(self.get_index_keys(k2)), None)
+    if not self.is_index(idx1) or not self.is_index(idx2):
+      self.__paths__.pop((idx1, idx2), None)
+      self.__paths__.pop((idx2, idx1), None)
+      return []
 
-    queue = deque([(k1, [k1])])
-    visited = {k1}
+    if (idx1, idx2) in self.__paths__:
+      return self.__paths__[(idx1, idx2)]
+
+    hk1 = sorted(self.get_index_keys(idx1))[0]
+    hk2 = sorted(self.get_index_keys(idx2))[0]
+
+    queue = deque([(hk1, [hk1])])
+    visited = {hk1}
 
     while queue:
-      current_key, path = queue.popleft()
+      hkey, path = queue.popleft()
 
-      forward_neighbors = self.refs.get(current_key, set())
-      reverse_neighbors = self.reverse_refs.get(current_key, set())
-      neighbors = forward_neighbors | reverse_neighbors
+      fwd_ngbs = self.refs.get(hkey, set())
+      rev_ngbs = self.reverse_refs.get(hkey, set())
+      ngbs = fwd_ngbs | rev_ngbs
 
-      for neighbor in neighbors:
-        if neighbor not in visited:
-          visited.add(neighbor)
-          new_path = path + [neighbor]
-          queue.append((neighbor, new_path))
+      for ngb in sorted(ngbs):
+        if ngb in visited:
+          continue
 
-          if not use_index and neighbor == k2:
-            return new_path
-          if use_index and self.get_index(neighbor) == self.get_index(k2):
-              index_path = [self.get_index(k) for k in new_path]
-              return index_path
+        visited.add(ngb)
+        new_path = path + [ngb]
+        queue.append((ngb, new_path))
 
-    # No path found
+        if self.is_index_of(ngb, self.get_index(hk2)):
+          index_path = [self.get_index(k) for k in new_path]
+          self.__paths__[(idx1, idx2)] = index_path
+          return index_path
+
     return []
-
-  def find_index_path(self, idx1: str, idx2: str) -> list:
-    if (idx1, idx2) in self.__paths__:
-      return self.__paths__.get((idx1, idx2))
-    _path = self.find_path(idx1, idx2, use_index=True)
-    if _path:
-      self.__paths__[(idx1, idx2)] = _path
-    return _path
 
   def delete_ref_of_key(self, hkey: str, ref: str) -> int:
     '''
