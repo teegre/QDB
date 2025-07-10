@@ -576,7 +576,7 @@ class Query:
     refs_map = defaultdict(lambda: defaultdict(set))
 
     # Populate based on condition matches
-    if cond_matches and not agg_exprs:
+    if cond_matches and not agg_exprs and root_index == prm_index:
       for idx, candidates in cond_matches.items():
         refs = candidates & set(all_keys)
         for ref in refs:
@@ -648,14 +648,12 @@ class Query:
                 node[index][ref][agg_index] = dataset
 
     elif set(selected_indexes) - cond_indexes - {root_index} or not refs_map:
-      flat_refs = self.store.build_hkeys_flat_refs(all_keys)
       for key in all_keys:
         for idx in selected_indexes:
           if idx == prm_index:
             continue
-          refs = flat_refs[key][idx] or self.store.get_refs(key, idx)
-          if idx in cond_indexes:
-            refs = sorted(cond_matches[idx] & set(refs))
+          # In get_refs we trust!
+          refs = self.store.get_refs(key, idx)
           if refs:
             refs_map[key][idx].update(refs)
 
