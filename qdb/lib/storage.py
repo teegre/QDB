@@ -833,7 +833,6 @@ class Store:
             return new_path
           if use_index and self.get_index(neighbor) == self.get_index(k2):
               index_path = [self.get_index(k) for k in new_path]
-              self.__paths__[(k1, k2)] = index_path
               return index_path
 
     # No path found
