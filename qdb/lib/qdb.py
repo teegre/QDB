@@ -303,8 +303,9 @@ class QDB:
                 group=True
               ))
         else:
+          r = []
           for k, n in ch.items():
-            r = walk(i, k, n, dict(values), dict(row_meta))
+            r.extend(walk(i, k, n, dict(values), dict(row_meta)))
  
         if combined:
           combined = [
@@ -374,7 +375,7 @@ class QDB:
             k = '@[aggregate]'
             results.extend(walk(root_index, k, g_node[k], dict(temp), dict(row_meta), group=True))
           else:
-            combined_results = _combine_results(g_node, temp, row_meta)
+            combined_results = _combine_results(g_node, temp, dict(row_meta))
             if combined_results:
               results.extend(combined_results)
 
