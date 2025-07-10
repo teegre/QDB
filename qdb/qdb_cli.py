@@ -52,9 +52,9 @@ class Client:
       return ret
 
   def set_prompt(self):
-    indicator = '-' if self.qdb.store.is_db_empty else '*'
+    indicator = '-' if self.qdb.store.is_db_empty else '+'
     indicator = '!' if self.qdb.store.has_changed else indicator
-    prompt = f'[{self.qdb.store.database_name}({indicator})]>> '
+    prompt = f'{indicator} > '
     return prompt
 
   def run_repl(self):
@@ -64,6 +64,11 @@ class Client:
     print()
     print('(c) 2025 Stéphane MEYER (Teegre)')
     print()
+    if not self.qdb.store.is_db_empty:
+      print(f'-- {len(self.qdb.store.keystore.keys())} hkeys.')
+      print(f'-- {len(self.qdb.store.reverse_refs.keys())} references.')
+      print(f'-- {len(self.qdb.store.refs.keys())} referenced hkeys.')
+      print()
     try:
       readline.read_history_file(self.history_file)
     except FileNotFoundError:
@@ -72,7 +77,7 @@ class Client:
     while True:
       try:
         command = input(self.set_prompt())
-        self.execute(command)
+        ret = self.execute(command)
       except KeyboardInterrupt:
         print()
         continue
