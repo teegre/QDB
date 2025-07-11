@@ -41,8 +41,8 @@ REFS_HEADER_SIZE = HEADER_SIZE - 5
 
 # Terminology:
 # key: a key in simple key/value pair
-# hash: a multiple field/value pair
 # hkey : a key in a key/hash pair
+# hash: a multiple field/value pair
 # field : a key in a hash
 # index: kind of like a table
 # reference: a hkey used as a value in a field
@@ -140,7 +140,7 @@ class Store:
     ''' Write data to file, update keystore, indexes and refs '''
     if not self.file:
       self.open()
-    # TODO use custom exceptions
+    # TODO USE CUSTOM EXCEPTIONS + MEANINGFUL ERROR MESSAGE
     try:
       fcntl.flock(self.file, fcntl.LOCK_EX)
       self.file.seek(self._file_pos)
@@ -820,7 +820,7 @@ class Store:
     hk1 = sorted(self.get_index_keys(idx1))[0]
     dfs(hk1, [hk1])
 
-    result = min(valid_paths, key=len)
+    result = min(valid_paths, key=len, default=[])
 
     if result:
       # Add to cache
@@ -999,22 +999,18 @@ class Store:
     all_children = set()
     unrelated = set()
 
-    indexes = sorted(self.indexes)
-    for i1 in indexes:
-      for i2 in indexes:
-        if i1 == i2:
-          continue
-        path = self.find_index_path(i1, i2)
-        if path:
-          for a, b in zip(path, path[1:]):
-            graph[a].add(b)
-            all_children.add(b)
-        else:
-          unrelated.update((i1, i2))
+    # indexes = sorted(self.indexes, key=lambda idx: len(self.get_index_keys(idx)), reverse=True)
+    for indexes, path in self.__paths__.items():
+      if not path:
+        unrelated.update(indexes)
+        continue
+      for a, b in zip(path, path[1:]):
+        graph[a].add(b)
+        all_children.add(b)
 
     unrelated -= all_children
-    roots = sorted(self.indexes - unrelated)
-    starting_points = roots or sorted(self.indexes)
+    roots = sorted(self.indexes - unrelated, key=lambda idx: len(self.get_index_keys(idx)), reverse=True)
+    starting_points = roots or indexes
 
     visited = set()
 
@@ -1033,7 +1029,7 @@ class Store:
 
       visited.add(node)
 
-      children = sorted(graph.get(node, []))
+      children = graph.get(node, [])
       for i, child in enumerate(children):
         next_is_last = i == len(children) - 1
         next_prefix = prefix + ('   ' if is_last else '│  ')
@@ -1049,6 +1045,7 @@ class Store:
 
   def autoid(self, index: str) -> str:
     ''' Return current greatest ID + 1 in index '''
+    # TODO: MAKE IT SMARTER
     return str(self.index_len(index) + 1)
 
   @property
