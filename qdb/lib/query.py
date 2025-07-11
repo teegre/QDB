@@ -646,8 +646,9 @@ class Query:
             continue
           # In get_refs we trust!
           refs = self.store.get_refs(key, idx)
-          if refs:
-            refs_map[key][idx].update(refs)
+          if not refs:
+            raise QDBQueryError(f'Error: no references: `{prm_index}` → `{idx}`.')
+          refs_map[key][idx].update(refs)
 
     if not refs_map and not agg_exprs:
       for k in all_keys:
