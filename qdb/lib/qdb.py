@@ -31,7 +31,7 @@ class QDB:
         'HDEL':   self.hdel,
         'Q':      self.q,
         'QF':     self.get_field,
-        'HKEY':   self.hkey,
+        # 'HKEYS':  self.hkey,
         'HLEN':   self.hlen,
         'W':      self.w,
         'IDX' :   self.idx,
