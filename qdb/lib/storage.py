@@ -115,7 +115,7 @@ class Store:
       print(f'Error: flush did not work: {e}.', file=stderr)
       return 1
 
-  def serialize(self, key: str, val: str, string: bool = True) -> (int, int, int):
+  def serialize(self, key: str, val: str, string: bool=True) -> (int, int, int):
     ts = int(time())
     ksz = len(key)
     vsz = len(val)
@@ -137,7 +137,7 @@ class Store:
     xcrc = crc32(struct.pack(f'<Q1sII{ksz}s{vsz}s', ts, vt, ksz, vsz, key, val))
     return crc == xcrc
 
-  def write(self, data: bytes, key: str, vsz: int, ts: int, refs: list[str]=[]) -> int:
+  def write(self, data: bytes, key: str, vsz: int, ts: int, is_hash: bool=True, refs: list[str]=[]) -> int:
     ''' Write data to file, update keystore, indexes and refs '''
     if not self.file:
       self.open()
@@ -159,13 +159,14 @@ class Store:
           ts
       )
       self._file_pos = self.file.tell()
-      if not self.has_index(key):
-        if self.create_index(key) != 0:
-          return 1
-      for ref in refs :
-        self.create_ref(key, ref)
-      # add new hkey to the indexes map
-      self.indexes_map.setdefault(self.get_index(key), set()).add(key)
+      if is_hash:
+        if not self.has_index(key):
+          if self.create_index(key) != 0:
+            return 1
+        for ref in refs :
+          self.create_ref(key, ref)
+        # add new hkey to the indexes map
+        self.indexes_map.setdefault(self.get_index(key), set()).add(key)
 
       return 0
     except Exception as e:
@@ -340,14 +341,17 @@ class Store:
       )
       crc = crc32(rec)
       data = struct.pack('<L', crc) + rec
-      self.write(data, key, vsz, ts)
-      if self.is_refd(key):
-        self.delete_refd_key(key)
-      index = self.get_index(key)
-      self.keystore.pop(key)
-      if self.is_index_empty(index):
-        self.delete_index(index)
+      self.write(data, key, vsz, ts, is_hash=self.has_index(key))
+      if self.has_index(key):
+        if self.is_refd(key):
+          self.delete_refd_key(key)
+        index = self.get_index(key)
+        self.keystore.pop(key, None)
+        if self.is_index_empty(index):
+          self.delete_index(index)
         self.indexes_map.pop(index)
+      else:
+        self.keystore.pop(key, None)
 
       self.datacache.delete(key)
       return 0

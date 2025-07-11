@@ -54,7 +54,7 @@ class QDB:
   def set(self, key: str, val: str) -> int:
     ''' Set a single value '''
     data, vsz, ts = self.store.serialize(key, val)
-    return self.store.write(data, key, vsz, ts)
+    return self.store.write(data, key, vsz, ts, is_hash=False)
 
   def get(self, key: str) -> int:
     ''' Get a value '''
