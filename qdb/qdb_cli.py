@@ -54,7 +54,7 @@ class Client:
   def set_prompt(self):
     indicator = '-' if self.qdb.store.is_db_empty else '+'
     indicator = '!' if self.qdb.store.has_changed else indicator
-    prompt = f'{indicator} > '
+    prompt = f' {indicator} > '
     return prompt
 
   def run_repl(self):
