@@ -575,14 +575,6 @@ class Query:
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
 
-    # Populate based on condition matches
-    if cond_matches and not agg_exprs and root_index == prm_index:
-      for idx, candidates in cond_matches.items():
-        refs = candidates & set(all_keys)
-        for ref in refs:
-          for key in self.store.get_transitive_backrefs(ref, root_index):
-            refs_map[key][idx].add(ref)
-
     cond_indexes = set(cond_matches.keys())
 
     if agg_exprs:

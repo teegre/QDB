@@ -65,7 +65,6 @@ class Store:
     self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
     self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
-    self.transitive_reverse_refs = defaultdict(lambda: defaultdict(set))
     self.__paths__: Dict[tuple: list] = {}
     self.datacache = Cache()
     self.file = None # file object
@@ -775,29 +774,6 @@ class Store:
   def are_related(self, k1: str, k2: str) -> bool:
     ''' Return True if k1 and k2 are directly related '''
     return k1 in self.refs.get(k2, []) or k2 in self.refs.get(k1, [])
-
-  def get_transitive_backrefs(self, ref: str, index: str) -> set:
-    if ref in self.transitive_reverse_refs[index]:
-      return self.transitive_reverse_refs[index][ref]
-
-    visited = set()
-    result = set()
-
-    def dfs(ref):
-      if ref in visited:
-        return
-      visited.add(ref)
-
-      for backref in self.reverse_refs.get(ref, set()):
-        if self.is_index_of(backref, index):
-          result.add(backref)
-        else:
-          dfs(backref)
-
-    dfs(ref)
-
-    self.transitive_reverse_refs[index][ref] = result
-    return result
 
   def find_index_path(self, idx1: str, idx2: str) -> list:
     '''
