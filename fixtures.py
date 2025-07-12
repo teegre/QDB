@@ -1,12 +1,16 @@
+import os
+import sys
+
 from faker import Faker
 from random import choice, randint
-import sys
 from time import perf_counter
 
 from qdb.lib.qdb import QDB
 from qdb.lib.utils import performance_measurement
 
 qdb = QDB('persons.qdb')
+
+os.environ['__QDB_QUIET__'] = '1'
 
 if not qdb.is_db_empty():
   print(f'`{qdb.store.database_name}` already exists.', file=sys.stderr)
@@ -102,10 +106,14 @@ print(f'{"Built" if rs == 0 else "Failed"} in {(t2-t1):.4f}s.', file=sys.stderr)
 if rs:
   exit(rs)
 
+qdb.store.precompute_paths()
+
 print()
 
 print('database schema:')
 qdb.schema()
+
+print()
 print(len(qdb.store.reverse_refs), 'references.')
 print(len(qdb.store.refs), 'referenced hkeys.')
 print()
