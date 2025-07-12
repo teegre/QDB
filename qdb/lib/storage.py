@@ -136,7 +136,7 @@ class Store:
     xcrc = crc32(struct.pack(f'<Q1sII{ksz}s{vsz}s', ts, vt, ksz, vsz, key, val))
     return crc == xcrc
 
-  def write(self, data: bytes, key: str, vsz: int, ts: int, is_hash: bool=True, refs: list[str]=[]) -> int:
+  def write(self, data: bytes, key: str, vsz: int, ts: int, refs: list[str]=[], is_hash: bool=True) -> int:
     ''' Write data to file, update keystore, indexes and refs '''
     if not self.file:
       self.open()
