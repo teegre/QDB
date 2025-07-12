@@ -38,8 +38,9 @@ def populate_database():
   for i in range(1, 101):
     ID = f'city:{str(i).zfill(3)}'
     foreignID = f'country:{str(randint(1,10)).zfill(2)}'
-    data = fake.city()
-    if qdb.w(ID, 'name', data, 'country', foreignID) != 0:
+    name = fake.city()
+    postcode = fake.postalcode()
+    if qdb.w(ID, 'name', data, 'postcode', postcode,'country', foreignID) != 0:
       return 1
     print(int(100*i/100), end='%\r ' if i < 100 else '%\n', flush=True)
 
