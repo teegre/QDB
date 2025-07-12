@@ -11,6 +11,23 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.qdb import QDB
 
+class QDBCompleter:
+  def __init__(self, qdb: QDB):
+    self.qdb = qdb
+    self.commands = sorted(self.qdb.commands.keys())
+
+  def complete(self, text, state):
+    line = shlex.split(readline.get_line_buffer())
+
+    if text:
+      self.matches = [c for c in self.commands if c.startswith(text)]
+    else:
+      self.matches = []
+    try:
+      return self.matches[state]
+    except IndexError:
+      return None
+
 class Client:
   def __init__(self, name: str):
     self.qdb = QDB(name)
@@ -52,10 +69,11 @@ class Client:
       return ret
 
   def set_prompt(self):
-    indicator = '-' if self.qdb.store.is_db_empty else '+'
-    indicator = '!' if self.qdb.store.has_changed else indicator
-    prompt = f' {indicator} > '
+    indicator = '[-]' if self.qdb.store.is_db_empty else '[+]'
+    indicator = '[!]' if self.qdb.store.has_changed else indicator
+    prompt = f'{indicator} > '
     return prompt
+
 
   def run_repl(self):
     print(f'QDB version {__version__}')
@@ -74,6 +92,10 @@ class Client:
     except FileNotFoundError:
       Path(self.history_file).touch(mode=0o600)
 
+    readline.set_completer(QDBCompleter(self.qdb).complete)
+    readline.set_completer_delims(' \t\n(@[:')
+    readline.parse_and_bind('tab: complete')
+
     while True:
       try:
         command = input(self.set_prompt())
@@ -88,7 +110,6 @@ class Client:
       except Exception as e:
         print(f'Error: {e}.', file=sys.stderr)
 
-        
   def process_commands(self, command: str=None, pipe: bool=False):
     if pipe:
       return self.pipe_commands()
@@ -117,4 +138,5 @@ def main() -> int:
   return client.process_commands(args.command, args.pipe)
 
 if __name__ == "__main__":
+    os.environ['__QDB_REPL__'] = '1'
     sys.exit(main())

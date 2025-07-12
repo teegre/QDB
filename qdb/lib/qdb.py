@@ -25,13 +25,11 @@ class QDB:
     self._perf_info = {}
 
     self.commands = {
-        # 'COMPACT':  self.compact,
         'DEL' :   self.delete,
         'GET' :   self.get,
         'HDEL':   self.hdel,
         'Q':      self.q,
         'QF':     self.get_field,
-        # 'HKEYS':  self.hkey,
         'HLEN':   self.hlen,
         'W':      self.w,
         'IDX' :   self.idx,
