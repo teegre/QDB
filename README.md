@@ -45,7 +45,7 @@ An **index** is a unique identifier that holds similar hashmaps, e.g.:
 
 At its core, **QDB** is a *key/value* and *key/hashmap* store, with a twist: relations can be established between entities (indexes).
 
-- When a field is assigned a **HKEY**, a **reference** is aded (e.g., `song:1258` -> `album:133`). Thus a relation is created and becomes part of the schema.
+- When a field is assigned a **HKEY**, a **reference** is added (e.g., `song:1258` -> `album:133`). Thus a relation is created and becomes part of the schema.
 
 - References are bidirectional and define the traversal path during queries.
 

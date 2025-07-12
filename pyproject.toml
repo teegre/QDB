@@ -8,7 +8,7 @@ dynamic = ['version']
 authors = [
   { name = 'Stéphane MEYER (teegre)' },
 ]
-description = 'QDB is lightweight, embeddable, schema-aware graph-oriented database engine with a custom query language designed for fast and flexible data traversal.'
+description = 'QDB is a lightweight, schema-aware graph-oriented database engine with a custom query language designed for fast and flexible data traversal.'
 readme = 'README.md'
 license = 'MIT'
 classifiers = [
