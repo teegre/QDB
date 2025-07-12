@@ -6,7 +6,6 @@ from random import choice, randint
 from time import perf_counter
 
 from qdb.lib.qdb import QDB
-from qdb.lib.utils import performance_measurement
 
 qdb = QDB('persons.qdb')
 
