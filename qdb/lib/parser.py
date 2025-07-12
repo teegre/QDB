@@ -210,28 +210,6 @@ class Parser:
       for k, v in q_v.items():
         part = part.replace(k, v)
 
-      # # Logical operators
-      # if '&&' in part or '||' in part:
-      #   binop = '&&' if '&&' in part else '||'
-      #   sub_parts = part.split(binop)
-      #   cond_group = {'op': 'AND' if binop == '&&' else 'OR', 'conditions': []}
-      #   last_field = None
-      #   for sub_part in sub_parts:
-      #     sub_part = sub_part.strip()
-      #     if not re.match(r'^[^=><!*^$]+', sub_part):
-      #       if last_field is None:
-      #         raise QDBParseError(f'Error: missing field in `{sub_part}`.')
-      #       sub_part = f'{last_field}{sub_part}'
-      #     else:
-      #       m = re.match(r'^(?P<field>[^=><!*^$]+)', sub_part)
-      #       if m:
-      #         last_field = m.group('field').strip()
-      #     cond_group['conditions'].append(
-      #         self._parse_condition(sub_part, fields, sort_info, has_aggregate)
-      #     )
-      #   conditions.append(cond_group)
-      #   continue
-
       conditions.append(self._parse_condition(part, fields, sort_info, has_aggregate))
 
       agg_match = re.match(r'^@\[(?P<aggs>[^\]]+)\]$', part)
