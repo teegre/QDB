@@ -9,14 +9,13 @@ from random import shuffle
 
 from qdb.lib.exception import QDBParseError, QDBQueryError, QDBQueryNoData
 from qdb.lib.ops import OPFUNC, AGGFUNC, BINOP, REVOP
-from qdb.lib.parser import Parser
-from qdb.lib.storage import Store
+from qdb.lib.parser import QDBParser
+from qdb.lib.storage import QDBStore
 from qdb.lib.utils import is_numeric, coerce_number, is_virtual, performance_measurement
 
-class Query:
-  def __init__(self, store: Store, parent=None):
+class QDBQuery:
+  def __init__(self, store: QDBStore, parent=None):
     self.store = store
-    self.parser = Parser(self.store)
     self._card_cache = {}
     self.parent = parent
 
@@ -435,7 +434,7 @@ class Query:
             build_ref_tree(node[idx][k], submap)
 
     # Parse expressions
-    self.parser = Parser(self.store, root_index)
+    self.parser = QDBParser(self.store, root_index)
     parsed_exprs = self._dispatch_parse(root_index, exprs)
     condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
     agg_exprs = { e['index']: e['aggregations'] for e in parsed_exprs if e['aggregations'] }
