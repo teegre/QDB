@@ -139,9 +139,9 @@ def main() -> int:
       epilog='If no command is provided, starts an interactive shell.'
   )
   parser.add_argument('db_path', help='Path to the QDB database')
-  parser.add_argument('--dump', '-d', help='Dump database as JSON', action='store_true')
-  parser.add_argument('--pipe', '-p', help='Reads commands from stdin', action='store_true')
-  parser.add_argument('--quiet', '-q', help='Do not show performance time', action='store_true')
+  parser.add_argument('-d', '--dump', help='Dump database as JSON', action='store_true')
+  parser.add_argument('-p', '--pipe', help='Reads commands from stdin', action='store_true')
+  parser.add_argument('-q', '--quiet', help='Do not show performance time', action='store_true')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
 
