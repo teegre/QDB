@@ -484,7 +484,7 @@ class QDBIO:
     if not os.getenv('__QDB_QUIET__'):
       print('QDB: Done.', file=sys.stderr)
 
-    if self._archive:
+    if self._archive and not os.getenv('__QDB_REPL__'):
       self._archive.close()
 
     self._has_changed = False
