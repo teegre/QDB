@@ -9,11 +9,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb.lib.exception import QDBParseError
 from qdb.lib.ops import OP, SORTPREFIX, AGGFUNC
-from qdb.lib.storage import Store
+from qdb.lib.storage import QDBStore
 from qdb.lib.utils import coerce_number, is_virtual
 
-class Parser:
-  def __init__(self, store: Store, main_index: str=None):
+class QDBParser:
+  def __init__(self, store: QDBStore, main_index: str=None):
     self.store = store
     self.main_index = main_index
 
