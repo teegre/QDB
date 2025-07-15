@@ -60,6 +60,7 @@ Unlike traditional databases, **QDB** does not require a schema to be declared. 
 | `DEL`   | `DEL <KEY>`              | Delete a key and its associated value  |
 | `MDEL`  | `MDEL <KEY1> <KEY2> ...` | Delete multiple keys                   |
 | `KEYS`  | `KEYS`                   | List all existing keys                 |
+| `COMMIT`| `COMMIT`                 | Save pending database changes          |
 
 ## Hashmap Commands
 
@@ -146,7 +147,7 @@ These are *convenience* fields that can be used to display and/or filter data in
 
 #### Examples
 
-**Display all fields for the given index:**
+**Display all HKEY/fields for the given index:**
 
 ```
 Q artist
@@ -216,18 +217,19 @@ Q artist name(autechre,"the cure") song:++title
 ## CLI
 
 ```
-usage: qdb [-h] [-p] [-q] db_path [command]
+usage: qdb [-h] [-d] [-p] [-q] db_path [command]
 
 Command Line Interface For the QDB database engine.
 
 positional arguments:
-  db_path      Path to the QDB database directory
+  db_path      path to the QDB database
   command      QDB command
 
 options:
   -h, --help   show this help message and exit
-  -p, --pipe   Reads commands from stdin
-  -q, --quiet  Do not show performance time
+  -d, --dump   dump database as JSON
+  -p, --pipe   reads commands from stdin
+  -q, --quiet  do not show performance time
 
 If no command is provided, starts an interactive shell.
 ```
@@ -260,9 +262,7 @@ It is distributed AS IS with no WARRANTY.
 -- 23805 references.
 -- 42110 referenced hkeys.
 
- + > IDXF song
-song: album | artist | discnumber | track | title | duration | file
- + > Q artist name=kraftwerk album:++date:title
+[music](+) > Q artist name=kraftwerk album:++date:title
 kraftwerk | 1974 | autobahn
 kraftwerk | 1975 | radioactivity
 kraftwerk | 1977 | trans-europe express
@@ -275,10 +275,10 @@ kraftwerk | 2005 | minimum-maximum
 kraftwerk | 2017 | 3-d the catalogue
 
 10 rows found.
-Fetched:   0.1174s.
+Fetched:   0.0987s.
 Processed: 0.0017s.
-Total:     0.1191s.
- + >
+Total:     0.1004s.
+
 ```
 
 ## Installation
