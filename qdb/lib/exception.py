@@ -6,6 +6,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 class QDBError(Exception):
   pass
 
+class QDBNoDatabaseError(QDBError):
+  pass
+
 class QDBParseError(QDBError):
   pass
 
@@ -18,8 +21,17 @@ class QDBQueryNoData(QDBError):
 class QDBHkeyError(QDBError):
   pass
 
-class QDBWriteError(QDBError):
+class QDBIODataIntegrityError(QDBError):
   pass
 
-class QDBReadError(QDBError):
+class QDBIOReadError(QDBError):
+  pass
+
+class QDBIOWriteError(QDBError):
+  pass
+
+class QDBIOMissingLogError(QDBError):
+  pass
+
+class QDBIOCompactionError(QDBError):
   pass
