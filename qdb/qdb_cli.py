@@ -9,6 +9,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb import __version__
+from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
 
 class QDBCompleter:
@@ -31,6 +32,7 @@ class QDBCompleter:
 class Client:
   def __init__(self, name: str):
     self.qdb = QDB(name)
+    self.database_name = self.qdb.store.database_name
     self.history_file = os.path.join(
         os.path.expanduser('~'),
         '.qdb_hist'
@@ -54,26 +56,26 @@ class Client:
         print(f'{cmd.upper()}: arguments missing.', file=sys.stderr)
         return 1
 
-  def pipe_commands(self):
+  def pipe_commands(self) -> int:
     ret = 0
     pos = 1
-    try:
-      for line in sys.stdin:
-        ret = self.execute(line)
-        if ret != 0:
-          print(f'Line {pos}: command failed: `{line.strip()}`.`', file=sys.stderr)
-          return ret
-        pos += 1
-    finally:
-      self.qdb.flush()
-      return ret
+    for line in sys.stdin:
+      ret = self.execute(line)
+      if ret != 0:
+        print(f'Line {pos}: command failed: `{line.strip()}`.`', file=sys.stderr)
+        return ret
+      pos += 1
+    return ret
 
-  def set_prompt(self):
-    indicator = '[-]' if self.qdb.store.is_db_empty else '[+]'
-    indicator = '[!]' if self.qdb.store.has_changed else indicator
+  def _set_prompt(self) -> str:
+    indicator = f'[{self.database_name}](-)' if self.qdb.store.is_db_empty else f'[{self.database_name}](+)'
+    indicator = f'[{self.database_name}](!)' if self.qdb.store.has_changed else indicator
     prompt = f'{indicator} > '
     return prompt
 
+  def _confirm(self, msg: str) -> bool:
+    response = input(msg + ' [y/N]: ')
+    return response.lower() == 'y'
 
   def run_repl(self):
     print(f'QDB version {__version__}')
@@ -87,36 +89,48 @@ class Client:
       print(f'-- {len(self.qdb.store.reverse_refs.keys())} references.')
       print(f'-- {len(self.qdb.store.refs.keys())} referenced hkeys.')
       print()
+    else:
+      if self.qdb.store.io.isdatabase:
+        print('-- Empty database.')
+      else:
+        print('-- New database.')
+      print()
     try:
       readline.read_history_file(self.history_file)
     except FileNotFoundError:
       Path(self.history_file).touch(mode=0o600)
 
     readline.set_completer(QDBCompleter(self.qdb).complete)
-    readline.set_completer_delims(' \t\n(@[:')
     readline.parse_and_bind('tab: complete')
 
     while True:
       try:
-        command = input(self.set_prompt())
+        command = input(self._set_prompt())
         ret = self.execute(command)
       except KeyboardInterrupt:
         print()
         continue
       except EOFError:
         print()
+        if self.qdb.store.has_changed:
+          if not self._confirm(f'{self.database_name}: Uncommitted changes! quit?'):
+            continue
         readline.write_history_file(self.history_file)
         break
+      except QDBError as e:
+        print(e, file=sys.stderr)
       except Exception as e:
-        print(f'Error: {e}.', file=sys.stderr)
+        print(f'Internal error: {e}', file=sys.stderr)
 
   def process_commands(self, command: str=None, pipe: bool=False):
+    if pipe and command:
+      print('QDB: too many options.', file=sys.stderr)
+      return 1
     if pipe:
       return self.pipe_commands()
     if command is not None:
       return self.execute(command)
     self.run_repl()
-
 
 def main() -> int:
   parser = argparse.ArgumentParser(
@@ -124,9 +138,10 @@ def main() -> int:
       description='Command Line Interface For the QDB database engine.',
       epilog='If no command is provided, starts an interactive shell.'
   )
-  parser.add_argument('db_path', help='Path to the QDB database directory')
-  parser.add_argument('-p', '--pipe', help='Reads commands from stdin', action='store_true')
-  parser.add_argument('-q', '--quiet', help='Do not show performance time', action='store_true')
+  parser.add_argument('db_path', help='Path to the QDB database')
+  parser.add_argument('--dump', '-d', help='Dump database as JSON', action='store_true')
+  parser.add_argument('--pipe', '-p', help='Reads commands from stdin', action='store_true')
+  parser.add_argument('--quiet', '-q', help='Do not show performance time', action='store_true')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
 
@@ -135,6 +150,10 @@ def main() -> int:
     environ['__QDB_QUIET__'] = '1'
 
   client = Client(args.db_path)
+  if args.dump:
+    client.qdb.store.dump()
+    return 0
+
   return client.process_commands(args.command, args.pipe)
 
 if __name__ == "__main__":
