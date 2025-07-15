@@ -11,35 +11,37 @@ from typing import Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from qdb.lib.datacache import Cache
-from qdb.lib.exception import QDBError
-from qdb.lib.query import Query
-from qdb.lib.storage import Store
+from qdb.lib.exception import QDBError, QDBNoDatabaseError
+from qdb.lib.query import QDBQuery
+from qdb.lib.storage import QDBStore
 from qdb.lib.utils import performance_measurement, is_numeric, is_virtual, validate_hkey
 
 class QDB:
   def __init__(self, name: str):
-    self.store = Store(name)
+    self.store = QDBStore(name)
     atexit.register(self.store.deinitialize)
-    self.Q = Query(self.store, parent=self)
+    self.Q = QDBQuery(self.store, parent=self)
     self._perf_info = {}
 
     self.commands = {
-        'DEL' :   self.delete,
-        'GET' :   self.get,
-        'HDEL':   self.hdel,
-        'Q':      self.q,
-        'QF':     self.get_field,
-        'HLEN':   self.hlen,
-        'W':      self.w,
-        'IDX' :   self.idx,
-        'IDXF':   self.idxf,
-        'KEYS':   self.keys,
-        'MDEL':   self.mdel,
-        'MGET':   self.mget,
-        'MSET':   self.mset,
-        'SCHEMA': self.schema,
-        'SET' :   self.set,
+        'COMMIT':  self.store.commit,
+        'COMPACT': self.compact,
+        'DEL' :    self.delete,
+        'GET' :    self.get,
+        'HDEL':    self.hdel,
+        'Q':       self.q,
+        'QF':      self.get_field,
+        'HLEN':    self.hlen,
+        'W':       self.w,
+        'IDX' :    self.idx,
+        'IDXF':    self.idxf,
+        'KEYS':    self.keys,
+        'LIST':    self.store.list_files,
+        'MDEL':    self.mdel,
+        'MGET':    self.mget,
+        'MSET':    self.mset,
+        'SCHEMA':  self.schema,
+        'SET' :    self.set,
     }
 
   def error(self, cmd: str=None, *args: str) -> int:
@@ -49,10 +51,9 @@ class QDB:
       print(f'{cmd}: arguments missing.', file=sys.stderr)
     return 1
 
-  def set(self, key: str, val: str) -> int:
+  def set(self, key: str, value: str) -> int:
     ''' Set a single value '''
-    data, vsz, ts = self.store.serialize(key, val)
-    return self.store.write(data, key, vsz, ts, is_hash=False)
+    self.store.write(key, value)
 
   def get(self, key: str) -> int:
     ''' Get a value '''
@@ -155,7 +156,10 @@ class QDB:
 
     for key in keys:
       # Original hash
-      kv = self.store.read_hash(key) or {}
+      try:
+        kv = self.store.read_hash(key) or {}
+      except QDBNoDatabaseError:
+        kv = {}
       subkv = {k: v for k, v in zip(members[::2], members[1::2])}
       refs: list[str] = []
 
@@ -170,17 +174,12 @@ class QDB:
 
         kv[field] = new_value
 
-        # if self.store.exists(new_value):
         # NOTE: if it looks like a valid hkey then create a reference
         if validate_hkey(new_value, confirm=True):
           refs.append(new_value)
 
-      # Serialize and write on disk
-      data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
-      # TODO catch exception
-      if self.store.write(data, key, vsz, ts, refs) != 0:
-        print(f'W: Error: failed to update `{key}` hkey.', file=sys.stderr)
-        err += 1
+      # Write on disk
+      self.store.write(key, kv, refs)
 
     return 1 if err > 0 else 0
 
@@ -470,7 +469,7 @@ class QDB:
     ''' Delete a hash or an index or fields in a hash or in an index '''
     is_index = self.store.is_index(index_or_key)
     if is_index:
-      keys = self.store.get_index_keys(index_or_key)
+      keys = self.store.get_index_keys(index_or_key).copy()
     else:
       keys = [index_or_key]
 
@@ -495,8 +494,7 @@ class QDB:
           print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)
           continue
       if fields:
-        data, vsz, ts = self.store.serialize(key, json.dumps(kv), string=False)
-        err += self.store.write(data, key, vsz, ts)
+        self.store.write(key, kv)
     return 1 if err > 0 else 0
 
   def get_field(self, hkey: str, field: str) -> int:
@@ -572,15 +570,17 @@ class QDB:
     print(f'{index}: {self.store.index_len(index)}')
     return 0
 
-  def compact(self):
-    return self.store.compact(force=True)
-
   def schema(self) -> int:
     self.store.database_schema()
     return 0
 
+  def compact(self):
+    try:
+      self.store.compact(force=True)
+    except QDBError as e:
+      print(e, file=sys.stderr)
+      return 1
+    return 0
+
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty
-
-  def flush(self):
-    return self.store.flush()
