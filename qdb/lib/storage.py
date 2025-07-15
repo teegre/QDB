@@ -15,50 +15,23 @@ from time import time, strftime
 from zlib import crc32
 
 from qdb.lib.datacache import Cache
-
-# Record format on disk:
-# CRC TS VT KSZ VSZ K V
-#     <----- CRC ----->
-#
-# Keystore:
-# K → ID VSZ VPOS TS
-#
-# Record format in hint file on disk;
-# TS KSZ VSZ VPOS K
-#
-# Legend:
-# K = KEY, V = VALUE
-# TS = TIMESTAMP,
-# VT = VALUE TYPE (1 byte: either - or +)
-# KSZ = KEY SIZE
-# VSZ = VALUE SIZE
-# VPOS = VALUE POSITION
-
-#             CRC TS  VT  KSZ VSZ
-HEADER_SIZE = 4 + 8 + 1 + 4 + 4
-HINT_HEADER_SIZE = HEADER_SIZE - 1
-REFS_HEADER_SIZE = HEADER_SIZE - 5
+from qdb.lib.exception import QDBNoDatabaseError
+from qdb.lib.io import QDBIO
 
 # Terminology:
 # key: a key in simple key/value pair
 # hkey : a key in a key/hash pair
 # hash: a multiple field/value pair
 # field : a key in a hash
-# index: kind of like a table
+# index: entity
 # reference: a hkey used as a value in a field
 
-@dataclass
-class KeyStoreEntry:
-  filename: str
-  value_size: int
-  position: int
-  timestamp: int
-
-class Store:
+class QDBStore:
   def __init__(self, db_path: str) :
-    self.database_path: str = db_path
-    self.database_name: str = os.path.splitext(os.path.basename(db_path))[0]
+    self.io = QDBIO(db_path)
+    self.database_name = os.path.splitext(os.path.basename(db_path))[0]
     self.keystore: Dict[str, KeyStoreEntry] = {}
+    self._pending_keys = set()
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
     self.refs: Dict[str: set[str]] = {}
@@ -67,250 +40,78 @@ class Store:
     self.reverse_refs: Dict[str: set[str]] = {}
     self.__paths__: Dict[tuple: list] = {}
     self.datacache = Cache()
-    self.file = None # file object
-    self._file_id: int = self._max_id
-    self._file_pos: int = 0
     self.has_changed = False
     self.initialize()
 
   def initialize(self):
-    self.reconstruct()
+    self.keystore, self.indexes, self.refs = self.io.rebuild()
     self.build_indexes_map()
     self.update_reverse_refs()
     self.precompute_paths()
 
   def deinitialize(self):
-    self.write_references()
-    self.compact()
-    # TODO: self.compress()
+    if self.io._has_changed:
+      self.io.flush(self._refs_ops)
+    self.io.compact()
 
-  def open(self) -> int:
-    if not os.path.exists(self.database_path):
-      os.mkdir(self.database_path)
-    self._file_id = self._max_id
-    try:
-      self.file = open(self.active_file, 'ab+')
-      return 0
-    except (IOError, OSError):
-      return 1
+  def commit(self):
+    new_file = self.io.flush(self._refs_ops)
+    for key in self._pending_keys:
+      self.keystore[key].filename = new_file
+    self._pending_keys.clear()
+    self.has_changed = False
 
-  def close(self) -> int:
-    try:
-      self.file.close()
-      self._file_id = self._max_id
-      self.file = None
-      self._file_pos = 0
-      return 0
-    except:
-      return 1
+  def compact(self, force: bool=False):
+    self.keystore = self.io.compact(force=force)
 
-  def flush(self) -> int:
-    if self.file is None:
-      return 1
-    try:
-      self.file.flush()
-      return self.close()
-    except (IOError, OSError) as e:
-      print(f'Error: flush did not work: {e}.', file=stderr)
-      return 1
+  def list_files(self):
+    self.io.list()
 
-  def serialize(self, key: str, val: str, string: bool=True) -> (int, int, int):
-    ts = int(time())
-    ksz = len(key)
-    vsz = len(val)
-    rec = struct.pack(
-        f'<Q1sII{ksz}s{vsz}s',
-        ts,
-        b'-' if string else b'+',
-        ksz, vsz, key.encode(),
-        val.encode()
-    )
-    crc = crc32(rec)
-    return struct.pack('<L', crc) + rec, vsz, ts
-
-  def deserialize_header(self, header: bytes) -> (int, int, str, int, int):
-    crc, ts, vt, ksz, vsz = struct.unpack('<LQ1sII', header)
-    return crc, ts, vt, ksz, vsz
-
-  def check_crc(self, crc, ts, vt, ksz, vsz, key, val: bytes) -> bool:
-    xcrc = crc32(struct.pack(f'<Q1sII{ksz}s{vsz}s', ts, vt, ksz, vsz, key, val))
-    return crc == xcrc
-
-  def write(self, data: bytes, key: str, vsz: int, ts: int, refs: list[str]=[], is_hash: bool=True) -> int:
+  def write(self, key: str, value: str, refs: list=[])  -> int:
     ''' Write data to file, update keystore, indexes and refs '''
-    if not self.file:
-      self.open()
-    # TODO USE CUSTOM EXCEPTIONS + MEANINGFUL ERROR MESSAGE
-    try:
-      fcntl.flock(self.file, fcntl.LOCK_EX)
-      self.file.seek(self._file_pos)
-      bytes_written = self.file.write(data)
-      if bytes_written != len(data):
-        print(f'Error writing `{key}`: imcomplete write: {bytes_written}/{len(data)} bytes.', file=stderr)
-        return 1
+    entry = self.io.write(key, value)
+    self.keystore[key] = self.io.write(key, value)
 
-      self.file.flush()
+    self._pending_keys.add(key)
 
-      self.keystore[key] = KeyStoreEntry(
-          self.active_file,
-          vsz,
-          self._file_pos,
-          ts
-      )
-      self._file_pos = self.file.tell()
-      if is_hash:
-        if not self.has_index(key):
-          if self.create_index(key) != 0:
-            return 1
-        for ref in refs :
-          self.create_ref(key, ref)
-        # add new hkey to the indexes map
-        self.indexes_map.setdefault(self.get_index(key), set()).add(key)
+    self.has_changed = True
 
-      return 0
-    except Exception as e:
-      print(f'Error writing key: `{key}`.', file=stderr)
-      return 1
-    finally:
-      fcntl.flock(self.file, fcntl.LOCK_UN)
-      self.has_changed = True
-
-  def write_references(self, ref_file: str=None) -> int:
-    if not ref_file and not self._refs_ops:
-      return 0
-
-    rf = self.active_refs if ref_file is None else ref_file
-    if ref_file:
-      refs = {hkey: sorted(keys) for hkey, keys in self.refs.items()}
-      data = json.dumps(refs).encode()
-    else:
-      data = json.dumps(self._refs_ops, sort_keys=True).encode()
-
-    rec = struct.pack(f'<12sI{len(data)}s', b'__QDB_REFS__', len(data), data)
-
-    with open(rf,'wb') as f:
-      bytes_written = f.write(rec)
-      if bytes_written != len(rec):
-        print('Error writing references: incomplete write {bytes_written}/{len(rec)} bytes.', file=stderr)
-        return 1
-
-    self._refs_ops.clear()
-    return 0
-
-  def load_references(self: str=None) -> int:
-    empty_refs = set()
-    for rf in sorted(glob(os.path.join(self.database_path, '*.ref'))):
-      with open(rf, 'rb') as f:
-        header = f.read(REFS_HEADER_SIZE)
-        tag, rsz = struct.unpack('<12sI', header)
-        if tag != b'__QDB_REFS__':
-          print(f'Error: invalid reference file.', file=stderr)
+    if isinstance(value, dict):
+      if not self.has_index(key):
+        if self.create_index(key) != 0:
           return 1
-        data = json.loads(f.read(rsz).decode())
-        if not data:
-          empty_refs.add(rf)
-          continue
-        for hkey, ops in data.items():
-          if isinstance(ops, list): # Compacted version
-            self.refs.setdefault(hkey, set()).update(ops)
-            continue
-          if 'add' in ops:
-            self.refs.setdefault(hkey, set()).update(ops['add'])
-          if 'del' in ops:
-            if ops['del'] == '__all__':
-              self.refs.pop(hkey, None)
-            else:
-              self.refs.pop(hkey)
-    for rf in empty_refs:
-      os.remove(rf)
+      for ref in refs :
+        self.create_ref(key, ref)
+      # add new hkey to the indexes map
+      self.indexes_map.setdefault(self.get_index(key), set()).add(key)
+
     return 0
 
-  def read(self, key: str) -> str:
+  def read(self, key: str, read_hash: bool=False) -> str | dict:
     ''' Read data for the given key '''
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
     entry = self.keystore.get(key)
     if entry is None:
       return None
-    fn = entry.filename
-    vsz = entry.value_size
-    pos = entry.position
-    ts = entry.timestamp
-
-    ksz = len(key)
-
-    if fn == self.active_file and self.file is not None:
-      f = self.file
-    else:
-      f = open(fn, 'rb')
-
-    f.seek(pos)
-    header = f.read(HEADER_SIZE)
-
-    vt = self.deserialize_header(header)[2]
-
-    f.seek(pos + HEADER_SIZE + ksz)
-    val = f.read(vsz)
-
-    if fn != self.active_file:
-      f.close()
-
-    if vt.decode() != '-':
-      print(f'Error: {key} is a hash.')
-      return None
-
-    return val.decode()
+    if not read_hash:
+      return self.io.read(entry, key)
+    if entry.timestamp < self.datacache.get_key_timestamp(key):
+      return self.datacache.read(key)
+    value = self.io.read(entry, key)
+    self.datacache.write(key, value)
+    return value
 
   def read_hash(self, hkey: str, dump: bool=False) -> dict:
     ''' Return the hash associated to the given hkey '''
-    if hkey in self.keystore:
-      entry: KeyStoreEntry = self.keystore.get(hkey)
+    value = self.read(hkey, read_hash=True)
 
-      if entry.timestamp < self.datacache.get_key_timestamp(hkey):
-        return self.datacache.read(hkey)
+    if value and not dump:
+      ID = hkey.split(':')[1]
+      value['@hkey'] = hkey
+      value['@id'] = ID
 
-      fn = entry.filename
-      vsz = entry.value_size
-      pos = entry.position
-      ts = entry.timestamp
-
-      ksz = len(hkey)
-
-      if fn == self.active_file and self.file is not None:
-        f = self.file
-      else:
-        try:
-          f = open(fn, 'rb')
-        except FileNotFoundError:
-          print(f'Error: data file not found for `{hkey}` hkey.', file=stderr)
-          return None
-
-      f.seek(pos)
-      header = f.read(HEADER_SIZE)
-      vt = self.deserialize_header(header)[2]
-
-      if vt.decode() != '+':
-        if fn != self.active_file:
-          f.close()
-        print(f'Error: {hkey} is not a hash.', file=stderr)
-        return None
-
-      f.seek(pos + HEADER_SIZE + ksz)
-      val = f.read(vsz)
-
-      if fn != self.active_file:
-        f.close()
-
-      data = json.loads(val.decode())
-
-      if not dump:
-        ID = hkey.split(':')[1]
-        data['@id'] = ID
-        data['@hkey'] = hkey
-
-      self.datacache.write(hkey, data)
-
-      return data
-
-    return None
+    return value
 
   def read_hash_field(self, key: str, field: str) -> int:
     data = self.read_hash(key)
@@ -323,36 +124,28 @@ class Store:
     Delete a key from the keystore
     and mark it for deletion
     '''
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+
     if key in self.keystore:
       if self.has_ref(key):
         print(f'Error: key `{key}` is referenced.', file=stderr)
         return 1
-      ts = int(time())
-      ksz = len(key)
-      vsz = 0
-      rec = struct.pack(
-          f'<Q1sII{ksz}s',
-          ts,
-          b'+' if self.has_index(key) else b'-',
-          ksz,
-          vsz,
-          key.encode()
-      )
-      crc = crc32(rec)
-      data = struct.pack('<L', crc) + rec
-      self.write(data, key, vsz, ts, is_hash=self.has_index(key))
+      self.io.write(key, None, delete=True)
       if self.has_index(key):
         if self.is_refd(key):
           self.delete_refd_key(key)
         index = self.get_index(key)
         self.keystore.pop(key, None)
+        self.indexes_map[index].discard(key)
         if self.is_index_empty(index):
-          self.delete_index(index)
-        self.indexes_map.pop(index)
+          self._delete_index(index)
+          self.indexes_map.pop(index, None)
       else:
         self.keystore.pop(key, None)
 
       self.datacache.delete(key)
+      self.has_changed = True
       return 0
     return 1
 
@@ -360,231 +153,34 @@ class Store:
     entry = self.keystore.get(hkey)
     if entry:
       return entry.timestamp
-    return None
+    return 0
 
   def dump(self) -> None:
     ''' Dump current database in json format '''
-    for key in sorted(self.keystore.keys()):
-      if self.has_index(key): # hash
-        data = {key: self.read_hash(key, dump=True)}
-      else:
-        data = {key: self.read(key) }
-      print(json.dumps(data))
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+
+    data = {
+        index: {
+          hkey: self.read_hash(hkey, dump=True)
+          for hkey in self.get_index_keys(index)
+        }
+        for index in self.indexes
+    }
+    print(json.dumps(data, sort_keys=True))
+    keys = set(self.keystore.keys())
+    hkeys = set()
+    for index in self.indexes:
+      hkeys.update(self.get_index_keys(index))
+    keys ^= hkeys
+    data = {k: self.read(k) for k in sorted(keys)}
+    if data:
+      print(json.dumps(data,sort_keys=True))
 
   def keystore_dump(self) -> None:
     ''' Dump keystore content '''
     for k, v in self.keystore.items():
       print(f'{k}: {v}')
-
-  def reconstruct(self) -> int:
-    ''' Reconstruct keystore from data files '''
-    files = sorted(glob(os.path.join(self.database_path, "*.log")))
-    err = 0
-    for file in files:
-      hint_file = file.replace('.log', '.hint')
-      # remove empty files...
-      if os.path.getsize(file) == 0:
-        os.remove(file)
-        if os.path.exists(hint_file):
-          os.remove(hint_file)
-        continue
-      if os.path.exists(hint_file):
-        err += self.reconstruct_from_hint(hint_file)
-        continue
-      err += self.reconstruct_keystore(file)
-    # delete empty indexes if any:
-    for index in self.indexes.copy():
-      if self.is_index_empty(index):
-        self.delete_index(index)
-    err += self.load_references()
-    return err
-
-  def reconstruct_keystore(self, file: str) -> int:
-    ''' Populate keystore  '''
-    with open(file, 'rb') as f:
-      pos = 0
-      while True:
-        try:
-          header = f.read(HEADER_SIZE)
-          if not header:
-            break
-          if len(header) != HEADER_SIZE:
-            print(f'Warning: incomplete header at {file}:{pos}', file=stderr)
-            return 1
-          crc, ts, vt, ksz, vsz = self.deserialize_header(header)
-
-          key = f.read(ksz)
-          val = f.read(vsz)
-
-          # check CRC validity
-          if not self.check_crc(crc, ts, vt, ksz, vsz, key, val):
-            print(f'Warning: bad CRC at {file}:{pos}', file=stderr)
-            return 1
-
-          key = key.decode()
-          vt = vt.decode()
-
-          if len(key) != ksz:
-            print(f'Warning: incomplete key at {file}:{pos}', file=stderr)
-            return 1
-          if vsz == 0:
-            self.keystore.pop(key, None)
-          else:
-            entry = self.keystore.get(key)
-            if entry is None or ts > entry.timestamp:
-              self.keystore[key] = KeyStoreEntry(file, vsz, pos, ts)
-
-            if ':' in key:
-              self.create_index(key)
-
-          pos = f.tell()
-        except Exception as e:
-          print(f'Error processing record at {file}:{pos}: {e}', file=stderr)
-          return 1
-
-    return self.load_references()
-
-  def reconstruct_from_hint(self, hint_file: str) -> int:
-    ''' Reconstruct keystore from a hint file '''
-    with open(hint_file, 'rb') as h:
-      fpos = 0
-      while True:
-        header = h.read(HINT_HEADER_SIZE)
-        if not header:
-          break
-        if len(header) != HINT_HEADER_SIZE:
-          print(f'Warning: incomplete header at {hint_file}:{pos}', file=stderr)
-          break
-        ts, ksz, vsz, pos = struct.unpack('<QIII', header)
-        key = h.read(ksz)
-
-        if len(key) != ksz:
-          print(f'Warning: incomplete header at {hint_file}:{fpos}', file=stderr)
-          return 1
-
-        key = key.decode()
-
-        if vsz == 0:
-          self.keystore.pop(key, None)
-        else:
-          entry = self.keystore.get(key)
-          if entry is None or ts > entry.timestamp:
-            self.keystore[key] = KeyStoreEntry(hint_file.replace('.hint', '.log'), vsz, pos, ts)
-
-            if ':' in key:
-              self.create_index(key)
-
-        fpos = h.tell()
-    return self.load_references()
-        
-  def compact(self, force: bool=False) -> int:
-    ''' Compact files and clean database directory '''
-    if not self.has_changed and not force:
-      return 0
-
-    if self.file is not None:
-      if self.flush() != 0:
-        return
-      print('QDB: Flushed and closed active file', file=sys.stderr)
-
-    files = [f for f in sorted(glob(os.path.join(self.database_path, '*.log')))
-             if f != self.active_file]
-    if not files:
-      return 0
-
-    print(f'QDB: Compacting `{self.database_name}` database...', file=sys.stderr)
-
-    name = f'{self.database_name}_{strftime("%Y%m%d_%H%M%S")}'
-    newfile = os.path.join(self.database_path, f'{name}.log')
-    newhint = newfile.replace('.log', '.hint')
-    newrefs = newfile.replace('.log', '.ref')
-    tmpfile = newfile + '.tmp'
-    tmphint = newhint + '.tmp'
-
-    warnings = 0
-
-    latest_records: Dict[str, tuple] = {}
-
-    for file in files:
-      with open(file, 'rb') as f:
-        pos = 0
-        while True:
-          try:
-            header= f.read(HEADER_SIZE)
-            if not header:
-              break
-            if len(header) != HEADER_SIZE:
-              print(f'Error: incomplete header at {file}:{pos}', file=stderr)
-              break
-            crc, ts, vt, ksz, vsz = self.deserialize_header(header)
-
-            key = f.read(ksz)
-            val = f.read(vsz)
-            
-            # check CRC validity
-            if not self.check_crc(crc, ts, vt, ksz, vsz, key, val):
-              print('Error: bad CRC at {file}:{pos}', file=stderr)
-              warnings += 1
-              break
-
-            key = key.decode()
-            if key not in latest_records or ts > latest_records[key][2]:
-              latest_records[key] = (file, pos, ts, vt, ksz, vsz)
-
-            pos = f.tell()
-          except Exception as e:
-            print(f'Error processing record at {file}:{pos}: {e}', file=stderr)
-            warnings += 1
-            break
-
-    if warnings > 0:
-      return 1
-
-    with open(tmpfile, 'wb') as d, open(tmphint, 'wb') as h:
-      pos = 0
-      keystore: Dict[str, KeyStoreEntry] = {}
-
-      for key, (oldfile, oldpos, ts, vt, ksz, vsz) in sorted(latest_records.items()):
-        # skipping marked for deletion
-        if vsz == 0:
-          continue
-
-        with open(oldfile, 'rb') as f:
-          f.seek(oldpos + HEADER_SIZE + ksz)
-          val = f.read(vsz)
-
-        rec = struct.pack(f'<Q1sII{ksz}s{vsz}s', ts, vt, ksz, vsz, key.encode(), val)
-        crc = struct.pack('<L', crc32(rec))
-        d.write(crc + rec)
-        hint = struct.pack(f'<QIII{ksz}s', ts, ksz, vsz, pos, key.encode())
-        h.write(hint)
-
-        keystore[key] = KeyStoreEntry(newfile, vsz, pos, ts)
-        pos += HEADER_SIZE + ksz + vsz
-
-    move(tmpfile, newfile)
-    move(tmphint, newhint)
-
-    self.keystore = keystore
-
-    for file in files:
-      try:
-        os.remove(file)
-        hint_file = file.replace('.log', '.hint')
-        ref_file = file.replace('.log', '.ref')
-        if os.path.exists(hint_file):
-          os.remove(hint_file)
-        if os.path.exists(ref_file):
-          os.remove(ref_file)
-      except Exception as e:
-        print(f'Error removing file {file}: {e}', file=stderr)
-        return 1
-
-    self.write_references(newrefs)
-    self.has_changed = False
-
-    print('QDB: Done.', file=stderr)
-    return warnings
 
   def create_index(self, hkey: str) -> int:
     ''' Create an index from the given key. '''
@@ -598,21 +194,10 @@ class Store:
     self.indexes.add(index)
     return 0
 
-  def delete_index(self, index: str) -> int:
+  def _delete_index(self, index: str) -> int:
     ''' Delete the given empty index. '''
-    if self.is_index(index) and self.is_index_empty(index):
-      self.indexes.discard(index)
-      return 0
-    if not self.is_index(index):
-      print(f'Error: `{index}`, no such index.', file=stderr)
-      return 1
-    keycount = len(self.get_index_keys(index))
-    print(
-        f'Error: `{index}` still contains {keycount}',
-        'hkeys' if keycount > 1 else 'hkey',
-        file=stderr
-    )
-    return 1
+    self.indexes.discard(index)
+    return 0
 
   def get_index(self, key: str) -> str | None:
     ''' Return the index of a given key if key and index exist. '''
@@ -644,8 +229,6 @@ class Store:
     if hkey == ref:
       print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
       return 1
-    # if not self.exists(hkey) or not self.exists(ref):
-    #   return 1
 
     self.refs.setdefault(hkey, set()).add(ref)
     self.reverse_refs.setdefault(ref, set()).add(hkey)
@@ -680,29 +263,6 @@ class Store:
       if key in keys:
         return ref
     return None
-
-  def build_hkeys_flat_refs(self, hkeys: set) -> dict:
-    flat_refs = defaultdict(lambda: defaultdict(set))
-
-    visited = set()
-
-    def dfs(cur_key):
-      if (root_key, cur_key) in visited:
-        return
-      visited.add((root_key, cur_key))
-
-      refs = self.refs.get(cur_key, set())
-      # if not refs:
-      #   refs = self.reverse_refs.get(cur_key, set())
-      for ref in refs:
-        idx = self.get_index(ref)
-        flat_refs[root_key][idx].add(ref)
-        dfs(ref)
-
-    for root_key in hkeys:
-      dfs(root_key)
-
-    return flat_refs
 
   def update_reverse_refs(self):
     reverse_refs = {}
@@ -828,46 +388,6 @@ class Store:
       self.__paths__[(idx2, idx1)] = list(reversed(result))
 
     return result
-
-  def find_index_path2(self, idx1: str, idx2: str) -> list[str]:
-    if idx1 == idx2:
-      return []
-
-    if not self.is_index(idx1) or not self.is_index(idx2):
-      self.__paths__.pop((idx1, idx2), None)
-      self.__paths__.pop((idx2, idx1), None)
-      return []
-
-    if (idx1, idx2) in self.__paths__:
-      return self.__paths__[(idx1, idx2)]
-
-    hk1 = sorted(self.get_index_keys(idx1))[0]
-    hk2 = sorted(self.get_index_keys(idx2))[0]
-
-    queue = deque([(hk1, [hk1])])
-    visited = {hk1}
-
-    while queue:
-      hkey, path = queue.popleft()
-
-      fwd_ngbs = self.refs.get(hkey, set())
-      rev_ngbs = self.reverse_refs.get(hkey, set())
-      ngbs = fwd_ngbs | rev_ngbs
-
-      for ngb in sorted(ngbs):
-        if ngb in visited:
-          continue
-
-        visited.add(ngb)
-        new_path = path + [ngb]
-        queue.append((ngb, new_path))
-
-        if self.is_index_of(ngb, self.get_index(hk2)):
-          index_path = [self.get_index(k) for k in new_path]
-          self.__paths__[(idx1, idx2)] = index_path
-          return index_path
-
-    return []
 
   def delete_ref_of_key(self, hkey: str, ref: str) -> int:
     '''
@@ -999,7 +519,6 @@ class Store:
     all_children = set()
     unrelated = set()
 
-    # indexes = sorted(self.indexes, key=lambda idx: len(self.get_index_keys(idx)), reverse=True)
     for indexes, path in self.__paths__.items():
       if not path:
         unrelated.update(indexes)
@@ -1047,23 +566,6 @@ class Store:
     ''' Return current greatest ID + 1 in index '''
     # TODO: MAKE IT SMARTER
     return str(self.index_len(index) + 1)
-
-  @property
-  def _max_id(self) -> int:
-    try:
-      return sum([1 for _ in glob(os.path.join(self.database_path, 'data*.log'))])
-    except:
-      return 0
-
-  @property
-  def active_file(self) -> str:
-    name = f'data{str(self._file_id).zfill(4)}.log'
-    return os.path.join(self.database_path, name)
-
-  @property
-  def active_refs(self) -> str:
-    name = f'data{str(self._file_id).zfill(4)}.ref'
-    return os.path.join(self.database_path, name)
 
   @property
   def is_db_empty(self) -> bool:
