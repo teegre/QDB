@@ -39,7 +39,7 @@ def populate_database():
     foreignID = f'country:{str(randint(1,10)).zfill(2)}'
     name = fake.city()
     postcode = fake.postalcode()
-    if qdb.w(ID, 'name', data, 'postcode', postcode,'country', foreignID) != 0:
+    if qdb.w(ID, 'name', name, 'postcode', postcode,'country', foreignID) != 0:
       return 1
     print(int(100*i/100), end='%\r ' if i < 100 else '%\n', flush=True)
 
@@ -91,9 +91,9 @@ def populate_database():
     print(int(100*i/10000), end='%\r ' if i < 10000 else '%\n', flush=True)
 
   print('ALRIGHT!')
+  print()
 
-  if qdb.store.compact() != 0:
-    return 1
+  qdb.store.commit()
 
   return 0
 
@@ -102,13 +102,12 @@ rs = populate_database()
 t2 = perf_counter()
 
 print(f'{"Built" if rs == 0 else "Failed"} in {(t2-t1):.4f}s.', file=sys.stderr)
+print()
 
 if rs:
   exit(rs)
 
-qdb.store.precompute_paths()
-
-print()
+qdb.store.initialize()
 
 print('database schema:')
 qdb.schema()
@@ -120,5 +119,6 @@ print()
 print('Query: what is the number of person per astrological sign?')
 print('Q astro ++@id:sign person:@[count:*]')
 qdb.q('astro', '++@id:sign', 'person:@[count:*]')
-
+print()
+del os.environ['__QDB_QUIET__']
 exit(rs)
