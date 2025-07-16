@@ -197,14 +197,18 @@ class QDBStore:
   def _delete_index(self, index: str) -> int:
     ''' Delete the given empty index. '''
     self.indexes.discard(index)
+    for idx1, idx2 in self.__paths__.copy():
+      if idx1 == index or idx2 == index:
+        self.__paths__.pop((idx1, idx2), None)
+        self.__paths__.pop((idx1, idx2), None)
     return 0
 
-  def get_index(self, key: str) -> str | None:
+  def get_index(self, hkey: str) -> str | None:
     ''' Return the index of a given key if key and index exist. '''
-    if not key in self.keystore:
+    if not hkey in self.keystore:
       return None
     try:
-      index = key.split(':')[0]
+      index = hkey.split(':')[0]
     except ValueError:
       return None
     if self.is_index(index):
@@ -473,8 +477,6 @@ class QDBStore:
 
   def is_index_of(self, hkey: str, index: str) -> bool:
     ''' Return true if hkey exists and belongs to index. '''
-    if hkey is None or index is None:
-      return False
     return self.get_index(hkey) == index
 
   def is_index_empty(self, index_or_key: str) -> bool:
