@@ -45,7 +45,7 @@ class QDBQuery:
       else:
         yield cond['field']
 
-  def validate_fields_and_group(self, parsed_exprs: dict, agg_exprs: dict, fields: dict) -> dict:
+  def _validate_fields_and_group(self, parsed_exprs: dict, agg_exprs: dict, fields: dict) -> dict:
     def is_grouped(index: str):
       return any(
           v['op'] in AGGFUNC or (v['op'] == 'count' and v['field'] == '*')
@@ -463,7 +463,7 @@ class QDBQuery:
           selected_fields[i]['fields'].append(f)
 
     # Check for any unused fields and get grouped fields
-    group_fields = self.validate_fields_and_group(
+    group_fields = self._validate_fields_and_group(
         parsed_exprs,
         agg_exprs,
         {
