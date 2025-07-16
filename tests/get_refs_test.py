@@ -6,28 +6,28 @@ import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from qdb.lib.storage import Store
+from qdb.lib.storage import QDBStore
 
 @pytest.fixture
 def store():
-  qdb = Store('persons.qdb')
+  qdb = QDBStore('persons-test.qdb')
   return qdb
 
 def test_direct_ref(store):
     """Direct relationship test: person -> country"""
     person_key = "person:00001"
     results = store.get_refs(person_key, "country")
-    assert results == ["country:06"], f"Expected only 'country:06' for person:00001, got {results}"
+    assert results == ["country:05"], f"Expected only 'country:05' for person:00001, got {results}"
 
 def test_reverse_ref(store):
     """Reverse relationship test: country -> person"""
-    country_key = "country:06"
+    country_key = "country:01"
     results = store.get_refs(country_key, "person")
-    assert "person:00001" in results, "Expected person:00001 in results for country:06"
+    assert "person:00174" in results, "Expected person:00174 in results for country:01"
 
 def test_indirect_ref(store):
     """Indirect multi-hop test: person -> city (via address)"""
-    person_key = "person:00001"
+    person_key = "person:00174"
     results = store.get_refs(person_key, "city")
     assert results, "Expected person -> city results to be non-empty"
 
@@ -61,16 +61,17 @@ def test_cache(store):
         f"Expected second call to be much faster (first={first_duration:.5f}s, second={second_duration:.5f}s)"
     )
 
-
 def test_multiple_hop(store):
     """Test multi-hop path person -> address -> city -> country"""
-    person_key = "person:00001"
+    person_key = "person:00144"
     results = store.get_refs(person_key, "country")
-    assert results == ["country:06"], "Expected person -> country path to be resolved correctly"
+    assert results == ["country:01"], "Expected person -> country path to be resolved correctly"
 
 def test_get_refs_with_index(store):
     """Test direct reference retrieval"""
-    person_key = "person:00001"
+    person_key = "person:09999"
     results = store.get_refs_with_index(person_key, "country")
     assert results == set(), "Expected no direct ref with index"
+    results = store.get_refs_with_index(person_key, "address")
+    assert results == {'address:3304'}, "Expected address:3304 for person:09999"
 
