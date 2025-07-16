@@ -113,7 +113,10 @@ class Client:
       except EOFError:
         print()
         if self.qdb.store.has_changed:
-          if not self._confirm(f'{self.database_name}: Uncommitted changes! quit?'):
+          if not self._confirm(
+              f'{self.database_name}: Uncommitted changes!'
+              f'\n{self.database_name}: Quit anyway?'
+          ):
             continue
         readline.write_history_file(self.history_file)
         break
@@ -138,10 +141,10 @@ def main() -> int:
       description='Command Line Interface For the QDB database engine.',
       epilog='If no command is provided, starts an interactive shell.'
   )
-  parser.add_argument('db_path', help='Path to the QDB database')
-  parser.add_argument('-d', '--dump', help='Dump database as JSON', action='store_true')
-  parser.add_argument('-p', '--pipe', help='Reads commands from stdin', action='store_true')
-  parser.add_argument('-q', '--quiet', help='Do not show performance time', action='store_true')
+  parser.add_argument('db_path', help='path to the QDB database')
+  parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
+  parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
+  parser.add_argument('-q', '--quiet', help='do not show performance time', action='store_true')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
 
