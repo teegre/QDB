@@ -261,7 +261,7 @@ class QDBIO:
           if ops['del'] == '__all__':
             refs.pop(hkey, None)
           else:
-            refs['hkey'].discard(hkey)
+            refs[hkey].discard(hkey)
 
     self._remove(*empty)
 
