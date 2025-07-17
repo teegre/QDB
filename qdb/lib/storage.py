@@ -409,12 +409,19 @@ class QDBStore:
     self.reverse_refs[ref].discard(hkey)
 
     # Remove from cache
-    pair = (hkey, self.get_index(ref))
-    if pair in self._refs_cache:
-      self._refs_cache[pair].remove(ref)
-      if not self._refs_cache[pair]:
-        self._refs_cache.pop(pair)
+    pair1 = (hkey, self.get_index(ref))
+    pair2 = (ref, self.get_index(hkey))
+    if pair1 in self._refs_cache:
+      self._refs_cache[pair1].remove(ref)
+      if not self._refs_cache[pair1]:
+        self._refs_cache.pop(pair1)
+    if pair2 in self._refs_cache:
+      self._refs_cache[pair2].remove(hkey)
+      if not self._refs_cache[pair2]:
+        self._refs_cache.pop(pair2)
 
+    if not self.refs[hkey]:
+      del self.refs[hkey]
     if not self.reverse_refs[ref]:
       del self.reverse_refs[ref]
 
@@ -423,10 +430,9 @@ class QDBStore:
     except AttributeError:
       self._refs_ops.setdefault(hkey, {})
       self._refs_ops[hkey].update({ 'del', [ref] })
-    if not self.refs.get(hkey):
-      del self.refs[hkey]
-      if not self._refs_ops.get(hkey).get('del'):
-        self._refs_ops[hkey] = {'del': '__all__'}
+
+    if not self._refs_ops.get(hkey).get('del'):
+      self._refs_ops[hkey] = {'del': '__all__'}
 
     return 0
 
