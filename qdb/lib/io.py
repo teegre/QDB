@@ -261,7 +261,8 @@ class QDBIO:
           if ops['del'] == '__all__':
             refs.pop(hkey, None)
           else:
-            refs[hkey].discard(hkey)
+            for r in ops['del']:
+              refs[hkey].discard(r)
 
     self._remove(*empty)
 
@@ -302,6 +303,9 @@ class QDBIO:
       if self._archive:
         self._archive.close()
 
+      if not os.getenv('__QDB_QUIET__'):
+        print(f'QDB: Committing changes...', file=sys.stderr)
+
       self._archive = tarfile.open(self._database_path, 'a')
 
       info = tarfile.TarInfo(name=os.path.basename(self._active_file.name))
@@ -337,6 +341,9 @@ class QDBIO:
       self._load()
 
       self._has_changed = True
+
+      if not os.getenv('__QDB_QUIET__'):
+        print(f'QDB: Done.', file=sys.stderr)
 
       return new_file
 
