@@ -423,9 +423,10 @@ class QDBStore:
     except AttributeError:
       self._refs_ops.setdefault(hkey, {})
       self._refs_ops[hkey].update({ 'del', [ref] })
-    if not self.refs[hkey]:
+    if not self.refs.get(hkey):
       del self.refs[hkey]
-      self._refs_ops[hkey] = {'del': '__all__'}
+      if not self._refs_ops.get(hkey).get('del'):
+        self._refs_ops[hkey] = {'del': '__all__'}
 
     return 0
 
