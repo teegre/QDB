@@ -50,7 +50,7 @@ class QDBStore:
     self.precompute_paths()
 
   def deinitialize(self):
-    if self.io._has_changed:
+    if self.io._has_changed or (self.has_changed and not os.getenv('__QDB_REPL__')):
       self.io.flush(self._refs_ops)
     self.io.compact()
 
