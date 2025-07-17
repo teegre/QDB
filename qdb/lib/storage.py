@@ -67,7 +67,7 @@ class QDBStore:
   def list_files(self):
     self.io.list()
 
-  def write(self, key: str, value: str, refs: list=[])  -> int:
+  def write(self, key: str, value: str|dict, refs: list=[])  -> int:
     ''' Write data to file, update keystore, indexes and refs '''
     entry = self.io.write(key, value)
     self.keystore[key] = self.io.write(key, value)
@@ -84,6 +84,8 @@ class QDBStore:
         self.create_ref(key, ref)
       # add new hkey to the indexes map
       self.indexes_map.setdefault(self.get_index(key), set()).add(key)
+      if entry.timestamp > self.datacache.get_key_timestamp(key):
+        self.datacache.write(key, value)
 
     return 0
 
@@ -405,6 +407,13 @@ class QDBStore:
 
     self.refs[hkey].discard(ref)
     self.reverse_refs[ref].discard(hkey)
+
+    # Remove from cache
+    pair = (hkey, self.get_index(ref))
+    if pair in self._refs_cache:
+      self._refs_cache[pair].remove(ref)
+      if not self._refs_cache[pair]:
+        self._refs_cache.pop(pair)
 
     if not self.reverse_refs[ref]:
       del self.reverse_refs[ref]
