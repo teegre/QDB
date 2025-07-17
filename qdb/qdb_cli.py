@@ -58,13 +58,13 @@ class Client:
 
   def pipe_commands(self) -> int:
     ret = 0
-    pos = 1
+    line_count = 1
     for line in sys.stdin:
-      ret = self.execute(line)
+      ret = self.execute(line.strip('\n'))
       if ret != 0:
-        print(f'Line {pos}: command failed: `{line.strip()}`.`', file=sys.stderr)
+        print(f'QDB: Line {line_count}: command failed: `{line.strip()}`.`', file=sys.stderr)
         return ret
-      pos += 1
+      line_count += 1
     return ret
 
   def _set_prompt(self) -> str:
@@ -95,6 +95,9 @@ class Client:
       else:
         print('-- New database.')
       print()
+
+    os.environ['__QDB_REPL__'] = '1'
+
     try:
       readline.read_history_file(self.history_file)
     except FileNotFoundError:
@@ -139,7 +142,7 @@ def main() -> int:
   parser = argparse.ArgumentParser(
       prog='qdb',
       description='Command Line Interface For the QDB database engine.',
-      epilog='If no command is provided, starts an interactive shell.'
+      epilog='If no option is provided, starts an interactive shell.'
   )
   parser.add_argument('db_path', help='path to the QDB database')
   parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
@@ -160,5 +163,5 @@ def main() -> int:
   return client.process_commands(args.command, args.pipe)
 
 if __name__ == "__main__":
-    os.environ['__QDB_REPL__'] = '1'
-    sys.exit(main())
+    ret = main()
+    sys.exit(ret)
