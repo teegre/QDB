@@ -15,6 +15,9 @@ class QDBAuthenticationError(QDBError):
 class QDBAuthenticationCancelledError(QDBError):
   pass
 
+class QDBNoAdminError(QDBError):
+  pass
+
 class QDBUnauthorizedError(QDBError):
   pass
 

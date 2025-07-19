@@ -14,7 +14,11 @@ from functools import wraps
 from io import BytesIO
 from tarfile import TarInfo
 
-from qdb.lib.exception import QDBUnknownUserError, QDBAuthenticationError
+from qdb.lib.exception import (
+    QDBUnknownUserError,
+    QDBAuthenticationError,
+    QDBNoAdminError,
+)
 
 class QDBAuthType(Enum):
   QDB_ADMIN = auto()
@@ -88,6 +92,14 @@ class QDBUsers:
     info.uname = uname
     info.gname = gname
 
+  @property
+  def hasadmin(self) -> bool:
+    for userinfo in self.users.values():
+      auth = userinfo['auth']
+      if QDBAuthType(auth) == QDBAuthType.QDB_ADMIN:
+        return True
+    return False
+
   def add_user(self, username: str, password: str, auth_type: QDBAuthType.QDB_READONLY):
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
     self.users[username] = {
@@ -97,6 +109,8 @@ class QDBUsers:
     self._users_ops[username] = {'add': self.users[username]}
 
   def remove_user(self, username: str):
+    if os.getenv('__QDB_USER__') == username:
+      raise QDBNoAdminError('Forbidden: cannot delete current user.')
     user_info = self.users.pop(username, None)
     if user_info:
       self._users_ops[username] = {'del': None}

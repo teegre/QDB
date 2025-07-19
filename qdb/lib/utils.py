@@ -11,6 +11,7 @@ from typing import Any
 
 from qdb.lib.exception import (
     QDBAuthenticationCancelledError,
+    QDBNoAdminError,
     QDBHkeyError,
     QDBUnauthorizedError,
 )
@@ -76,7 +77,6 @@ def authorize(qdbusers: QDBUsers, username: str=None, password: str=None):
 def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None):
   try:
     if not username:
-      print('QDB: New user.')
       username = input('Username: ')
       if not username:
         raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
@@ -90,7 +90,6 @@ def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_ty
         raise QDBAuthenticationCancelledError('QDB: passwords do not match.')
       password = password2
       del password1, password2
-
     if not auth_type:
       auth_type = input('Authorization type (admin,[readonly]): ')
     if not auth_type:
@@ -109,6 +108,12 @@ def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_ty
   except (KeyboardInterrupt, EOFError):
     print()
     raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
+
+  if auth != QDBAuthType.QDB_ADMIN and not qdbusers.hasadmin:
+    del password
+    raise QDBNoAdminError(
+        'QDB: You MUST create an administrator before adding any other user.'
+    )
 
   qdbusers.add_user(username, password, auth)
   del password

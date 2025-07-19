@@ -101,7 +101,8 @@ class QDBIO:
     if os.path.exists(self._database_path):
       self._archive = tarfile.open(self._database_path, 'r:')
       self.isdatabase = True
-    self.users = QDBUsers(self._database_path)
+    if self.users is None:
+      self.users = QDBUsers(self._database_path)
 
 
   def _get(self, name):

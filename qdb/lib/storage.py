@@ -56,6 +56,8 @@ class QDBStore:
       self.io.flush(self._refs_ops)
     if self.users.unsaved:
       self.users._save()
+      self.io._archive.close()
+      self.io._load()
     self.io.compact()
 
   def commit(self):
