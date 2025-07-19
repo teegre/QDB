@@ -14,11 +14,18 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb.lib.exception import QDBError, QDBNoDatabaseError
 from qdb.lib.query import QDBQuery
 from qdb.lib.storage import QDBStore
-from qdb.lib.utils import performance_measurement, is_numeric, is_virtual, validate_hkey
+from qdb.lib.users import QDBAuthType
+from qdb.lib.utils import (
+    authorization,
+    user_add,
+    performance_measurement,
+    is_numeric, is_virtual, validate_hkey
+)
 
 class QDB:
-  def __init__(self, name: str):
-    self.store = QDBStore(name)
+  def __init__(self, name: str, load: bool=True):
+    self.store = QDBStore(name, load=load)
+    self.users = self.store.users
     atexit.register(self.store.deinitialize)
     self.Q = QDBQuery(self.store, parent=self)
     self._perf_info = {}
@@ -36,13 +43,27 @@ class QDB:
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEYS':    self.keys,
-        'LIST':    self.store.list_files,
+        'LIST':    self.list_files,
         'MDEL':    self.mdel,
         'MGET':    self.mget,
         'MSET':    self.mset,
         'SCHEMA':  self.schema,
         'SET' :    self.set,
+        'USERADD': self.add_user,
+        'USERDEL': self.delete_user,
+        'USERS':   self.list_users,
     }
+
+  @classmethod
+  def do_load_database(cls, command: str) -> bool:
+    command = command.split(maxsplit=1)[0] if command is not None else None
+    return command.upper() not in [
+        'COMPACT',
+        'LIST',
+        'USERADD',
+        'USERDEL',
+        'USERS',
+    ] if command is not None else True
 
   def error(self, cmd: str=None, *args: str) -> int:
     if cmd not in self.commands:
@@ -51,10 +72,12 @@ class QDB:
       print(f'{cmd}: arguments missing.', file=sys.stderr)
     return 1
 
+  @authorization([QDBAuthType.QDB_ADMIN])
   def set(self, key: str, value: str) -> int:
     ''' Set a single value '''
     self.store.write(key, value)
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get(self, key: str) -> int:
     ''' Get a value '''
     val = self.store.read(key)
@@ -63,6 +86,7 @@ class QDB:
       return 0
     return 1
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def keys(self) -> int:
     ''' Print existing keys '''
     found = 0
@@ -75,10 +99,12 @@ class QDB:
       return 1
     return 0
 
+  @authorization([QDBAuthType.QDB_ADMIN])
   def delete(self, key: str) -> int:
     ''' delete a single key '''
     return self.store.delete(key)
     
+  @authorization([QDBAuthType.QDB_ADMIN])
   def mset(self, *items: str) -> int:
     '''
     set multiple values
@@ -92,6 +118,7 @@ class QDB:
       err += self.set(key, val)
     return err
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def mget(self, *keys: str) -> int:
     ''' get multiple values '''
     err = 0
@@ -99,6 +126,7 @@ class QDB:
       err += self.get(key)
     return err
 
+  @authorization([QDBAuthType.QDB_ADMIN])
   def mdel(self, *keys: str) -> int:
     ''' delete multiple keys '''
     err = 0
@@ -128,6 +156,7 @@ class QDB:
     return f'{index}:{self.store.autoid(index)}'
 
   # @performance_measurement(message='Written')
+  @authorization([QDBAuthType.QDB_ADMIN])
   def w(self, hkey_or_index: str, *members: str) -> int:
     ''' 
     Create/update multiple members of a hash
@@ -411,8 +440,11 @@ class QDB:
         pos += 1
     return fields_positions
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   @performance_measurement(message='Processed')
   def q(self, index_or_key: str, *exprs: str) -> int:
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.database_name}` no such database.')
     if not index_or_key:
       print(f'Q: missing index or hkey.', file=sys.stderr)
       return 1
@@ -465,8 +497,11 @@ class QDB:
 
     return 0
 
+  @authorization([QDBAuthType.QDB_ADMIN])
   def hdel(self, index_or_key: str, *fields: str) -> int:
     ''' Delete a hash or an index or fields in a hash or in an index '''
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.database_name}` no such database.')
     is_index = self.store.is_index(index_or_key)
     if is_index:
       keys = self.store.get_index_keys(index_or_key).copy()
@@ -497,6 +532,7 @@ class QDB:
         self.store.write(key, kv)
     return 1 if err > 0 else 0
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_field(self, hkey: str, field: str) -> int:
     ''' Return the value of a field in a hash. '''
     if self.store.exists(hkey):
@@ -512,6 +548,7 @@ class QDB:
     print(f'GETF: Error: `{hkey}`, no such hkey.', file=sys.stderr)
     return 1
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hkey(self, key: str=None) -> int:
     ''' 
     Get all fields for the given key/index
@@ -544,10 +581,12 @@ class QDB:
       print(f'{k}: {" | ".join([f for f in kv.keys() if not is_virtual(f)])}')
     return 0 if err == 0 else 1
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idx(self) -> None:
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idxf(self, index: str) -> None:
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
@@ -555,6 +594,7 @@ class QDB:
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:
     '''
     Print hkeys count for the given index.
@@ -570,10 +610,12 @@ class QDB:
     print(f'{index}: {self.store.index_len(index)}')
     return 0
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def schema(self) -> int:
     self.store.database_schema()
     return 0
 
+  @authorization([QDBAuthType.QDB_ADMIN])
   def compact(self):
     try:
       self.store.compact(force=True)
@@ -581,6 +623,35 @@ class QDB:
       print(e, file=sys.stderr)
       return 1
     return 0
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def dump(self):
+    self.store.dump()
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def add_user(self, username: str=None, password: str=None, auth: str=None):
+    user_add(self.users, username, password, auth)
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def delete_user(self, username: str):
+    self.users.remove_user(username)
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def list_users(self) -> int:
+    if self.users is None:
+      print('QDB: no users.', file=sys.stderr)
+      return 1
+    users = self.users.list_users()
+    if users:
+      print(users)
+      return 0
+    else:
+      print('QDB: no users.', file=sys.stderr)
+      return 1
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def list_files(self):
+    self.store.list_files()
 
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty

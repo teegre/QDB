@@ -5,11 +5,17 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from functools import wraps
+from getpass import getpass
 from time import perf_counter
 from typing import Any
 
-from qdb.lib.exception import QDBHkeyError
+from qdb.lib.exception import (
+    QDBAuthenticationCancelledError,
+    QDBHkeyError,
+    QDBUnauthorizedError,
+)
 from qdb.lib.ops import VIRTUAL
+from qdb.lib.users import QDBUsers, QDBAuthType
 
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
@@ -36,6 +42,76 @@ def performance_measurement(_func=None, *, message: str='Executed'):
       return result
     return wrapper
   return decorator
+
+def authorization(auth_types: list[QDBAuthType]):
+  def decorator(func):
+    @wraps(func)
+    def wrap(self, *args, **kwargs):
+      if self.users is None or not self.users.users:
+        return func(self, *args, **kwargs)
+      user = os.getenv('__QDB_USER__')
+      if not user:
+        authorize(self.users)
+        user = os.getenv('__QDB_USER__')
+      auth = self.users.get_auth(user)
+      if QDBAuthType(auth) in auth_types:
+        return func(self, *args, **kwargs)
+      raise QDBUnauthorizedError('QDB: Unauthorized action.')
+    return wrap
+  return decorator
+
+def authorize(qdbusers: QDBUsers, username: str=None, password: str=None):
+  try:
+    if not username:
+      print('QDB: This database requires authentication.', file=sys.stderr)
+      username = input('Username: ')
+    if not password:
+      password = getpass('Password: ')
+  except (KeyboardInterrupt, EOFError):
+    print()
+    raise QDBAuthenticationCancelledError('Authentication cancelled.')
+  qdbusers.authenticate(username, password) 
+  del password
+
+def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None):
+  try:
+    if not username:
+      print('QDB: New user.')
+      username = input('Username: ')
+      if not username:
+        raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
+
+    if not password:
+      password1 = getpass('Password: ')
+      if not password1:
+        raise QDBAuthenticationCancelledError('QDB: password is mandatory.')
+      password2 = getpass('Again: ')
+      if password1 != password2:
+        raise QDBAuthenticationCancelledError('QDB: passwords do not match.')
+      password = password2
+      del password1, password2
+
+    if not auth_type:
+      auth_type = input('Authorization type (admin,[readonly]): ')
+    if not auth_type:
+      auth = QDBAuthType.QDB_READONLY
+    else:
+      match auth_type:
+        case 'admin':
+          auth = QDBAuthType.QDB_ADMIN
+        case 'readonly':
+          auth = QDBAuthType.QDB_READONLY
+        case _:
+          raise QDBAuthenticationCancelledError(
+              f'QDB: `{auth_type}`, invalid authorization type.'
+              '\nQDB: should be `admin` or `readonly`.'
+          )
+  except (KeyboardInterrupt, EOFError):
+    print()
+    raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
+
+  qdbusers.add_user(username, password, auth)
+  del password
 
 def is_numeric(value: str) -> bool:
   try:

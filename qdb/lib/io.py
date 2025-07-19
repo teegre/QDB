@@ -7,11 +7,14 @@ import tempfile
 import time
 
 from dataclasses import dataclass
+from io import BytesIO
+from tarfile import TarInfo
 from tempfile import TemporaryFile
 from zlib import crc32
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from qdb.lib.users import QDBUsers
 from qdb.lib.utils import validate_hkey
 
 from qdb.lib.exception import (
@@ -89,14 +92,17 @@ class QDBIO:
     self._position = 0
     self._active_refs = None
     self._active_refs_size = 0
+    self.users = None
     self.isdatabase = False
-    self._has_changed = False
+    self.haschanged = False
     self._load()
 
   def _load(self):
     if os.path.exists(self._database_path):
       self._archive = tarfile.open(self._database_path, 'r:')
       self.isdatabase = True
+    self.users = QDBUsers(self._database_path)
+
 
   def _get(self, name):
     if self._archive:
@@ -106,13 +112,15 @@ class QDBIO:
         return None
     return None
 
-  def _new_tmp_file(self, origin: str=None, hint: bool=False):
+  def _new_tmp_file(self, origin: str=None, hint: bool=False, user: bool=False):
     tmp = tempfile.NamedTemporaryFile(prefix='qdb')
 
     if origin and hint:
       tmp.name = origin.replace('.log', '.hint')
     elif origin:
       tmp.name = origin.replace('.log', '.ref')
+    elif user:
+      tmp.name += '.user'
     else:
       tmp.name += '.log'
 
@@ -309,6 +317,7 @@ class QDBIO:
       self._archive = tarfile.open(self._database_path, 'a')
 
       info = tarfile.TarInfo(name=os.path.basename(self._active_file.name))
+      QDBUsers.set_user_info(info)
       info.size = self._active_file_size
       info.mtime = time.time()
       self._active_file.seek(0)
@@ -316,6 +325,7 @@ class QDBIO:
       if refs:
         self.save_refs(refs)
         inforefs = tarfile.TarInfo(name=os.path.basename(self._active_refs.name))
+        QDBUsers.set_user_info(inforefs)
         inforefs.size = self._active_refs_size
         inforefs.mtime = info.mtime
         self._active_refs.seek(0)
@@ -338,9 +348,12 @@ class QDBIO:
 
       self._archive.close()
 
+      if self.users:
+        self.users._save()
+
       self._load()
 
-      self._has_changed = True
+      self.haschanged = True
 
       if not os.getenv('__QDB_QUIET__'):
         print(f'QDB: Done.', file=sys.stderr)
@@ -348,15 +361,24 @@ class QDBIO:
       return new_file
 
   def compact(self, force: bool=False) -> dict:
-    if not self.isdatabase:
+    if not self.isdatabase and not self.users.haschanged:
       return
 
-    if not force and not self._has_changed:
+    if not force and not self.haschanged and not self.users.haschanged:
       return
+
+    if not self.isdatabase and self.users.users:
+      self._archive = tarfile.open(self._database_path, 'w')
+      self.users._save()
 
     files = [f for f in sorted(self._archive.getnames()) if f.endswith('.log')]
 
-    if not files:
+    user_files = [u for u in sorted(self._archive.getnames()) if u.startswith('.users')]
+
+    if self.users.haschanged or force:
+      self._compact_users(user_files)
+
+    if not files or not self.haschanged:
       return
 
     if not os.getenv('__QDB_QUIET__'):
@@ -456,6 +478,8 @@ class QDBIO:
 
     infolog = tarfile.TarInfo(name=logname)
     infohint = tarfile.TarInfo(name=hintname)
+    QDBUsers.set_user_info(infolog)
+    QDBUsers.set_user_info(infohint)
     infolog.size = logsize
     infohint.size = hintsize
     infolog.mtime = infohint.mtime = time.time()
@@ -466,6 +490,7 @@ class QDBIO:
       self.save_refs(refs, ref_file=tmprefs)
       tmprefs.seek(0)
       inforefs = tarfile.TarInfo(name=tmprefs.name)
+      QDBUsers.set_user_info(inforefs)
       inforefs.size = self._active_refs_size
       inforefs.mtime = infolog.mtime
 
@@ -474,6 +499,9 @@ class QDBIO:
       new.addfile(infohint, tmphint)
       if references:
         new.addfile(inforefs, tmprefs)
+      if self.users.filename in self._archive.getnames():
+        usersinfo = self._archive.getmember(self.users.filename)
+        new.addfile(usersinfo, self._archive.extractfile(self.users.filename))
     except IOError as e:
       new.close()
       os.remove(new.name)
@@ -494,9 +522,60 @@ class QDBIO:
     if self._archive and not os.getenv('__QDB_REPL__'):
       self._archive.close()
 
-    self._has_changed = False
+    self.haschanged = False
 
     return keystore
+
+  def _compact_users(self, user_files: list):
+    other_files = [o for o in self._archive.getmembers() if o.name not in user_files]
+    users = {}
+
+    for filename in sorted(user_files):
+      user_file = self._archive.extractfile(filename)
+      users_ops = json.loads(user_file.read())
+      for user, op in users_ops.items():
+        if 'add' in op:
+          users[user] = op['add']
+        elif 'del' in op:
+          users.pop(user, None)
+        else:
+          users[user] = op
+
+    users_data = json.dumps(users, indent=2).encode()
+    tmpuser = self._new_tmp_file(user=True)
+    tmpuser.write(users_data)
+    tmpuser.flush()
+    tmpuser.seek(0, os.SEEK_END)
+    usersize = tmpuser.tell()
+    tmpuser.seek(0)
+
+    infouser = tarfile.TarInfo(name=self.users.filename)
+    QDBUsers.set_user_info(infouser)
+    infouser.size = usersize
+    infouser.mtime = time.time()
+
+    new = tarfile.open(self._database_path + '.tmp', 'w')
+    try:
+      for tarinfo in other_files:
+        new.addfile(tarinfo, self._archive.extractfile(tarinfo))
+    except IOError:
+      new.close()
+      os.remove(new.name)
+      raise QDBIOCompactionError('IO Error: compaction failed.')
+    try:
+      new.addfile(infouser, tmpuser)
+    except IOError:
+      new.close()
+      os.remove(new.name)
+      raise QDBIOCompactionError('IO Error: compaction failed')
+
+    tmpuser.close()
+    os.replace(new.name, self._database_path)
+    new.close()
+    if not self._archive:
+      self._archive = tarfile.open(self._database_path, 'r:')
+
+    self.haschanged = False
 
   def rebuild(self):
     keystore = {}
@@ -591,6 +670,8 @@ class QDBIO:
     return keystore, indexes
 
   def list(self):
+    if not self._archive:
+      self._archive.open(self._database_path, 'r:')
     if self._archive:
       self._archive.list(verbose=True)
       return

@@ -27,21 +27,23 @@ from qdb.lib.io import QDBIO
 # reference: a hkey used as a value in a field
 
 class QDBStore:
-  def __init__(self, db_path: str) :
+  def __init__(self, db_path: str, load: bool=True) :
     self.io = QDBIO(db_path)
+    self.users = self.io.users
     self.database_name = os.path.splitext(os.path.basename(db_path))[0]
-    self.keystore: Dict[str, KeyStoreEntry] = {}
-    self._pending_keys = set()
-    self.indexes = set()
-    self.indexes_map: Dict[str: set[str]] = {}
-    self.refs: Dict[str: set[str]] = {}
-    self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
-    self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
-    self.reverse_refs: Dict[str: set[str]] = {}
-    self.__paths__: Dict[tuple: list] = {}
-    self.datacache = Cache()
-    self.has_changed = False
-    self.initialize()
+    self.haschanged = False
+    if load:
+      self.keystore: Dict[str, KeyStoreEntry] = {}
+      self._pending_keys = set()
+      self.indexes = set()
+      self.indexes_map: Dict[str: set[str]] = {}
+      self.refs: Dict[str: set[str]] = {}
+      self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
+      self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
+      self.reverse_refs: Dict[str: set[str]] = {}
+      self.__paths__: Dict[tuple: list] = {}
+      self.datacache = Cache()
+      self.initialize()
 
   def initialize(self):
     self.keystore, self.indexes, self.refs = self.io.rebuild()
@@ -50,8 +52,10 @@ class QDBStore:
     self.precompute_paths()
 
   def deinitialize(self):
-    if self.io._has_changed or (self.has_changed and not os.getenv('__QDB_REPL__')):
+    if self.io.haschanged or (self.haschanged and not os.getenv('__QDB_REPL__')):
       self.io.flush(self._refs_ops)
+    if self.users.unsaved:
+      self.users._save()
     self.io.compact()
 
   def commit(self):
@@ -59,12 +63,14 @@ class QDBStore:
     for key in self._pending_keys:
       self.keystore[key].filename = new_file
     self._pending_keys.clear()
-    self.has_changed = False
+    self.haschanged = False
 
   def compact(self, force: bool=False):
     self.keystore = self.io.compact(force=force)
 
   def list_files(self):
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
     self.io.list()
 
   def write(self, key: str, value: str|dict, refs: list=[])  -> int:
@@ -74,7 +80,7 @@ class QDBStore:
 
     self._pending_keys.add(key)
 
-    self.has_changed = True
+    self.haschanged = True
 
     if isinstance(value, dict):
       if not self.has_index(key):
@@ -106,6 +112,8 @@ class QDBStore:
 
   def read_hash(self, hkey: str, dump: bool=False) -> dict:
     ''' Return the hash associated to the given hkey '''
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
     value = self.read(hkey, read_hash=True)
 
     if value and not dump:
@@ -147,7 +155,7 @@ class QDBStore:
         self.keystore.pop(key, None)
 
       self.datacache.delete(key)
-      self.has_changed = True
+      self.haschanged = True
       return 0
     return 1
 
@@ -588,3 +596,7 @@ class QDBStore:
   @property
   def is_db_empty(self) -> bool:
     return len(self.keystore) == 0
+
+  @property
+  def isdatabase(self) -> bool:
+    return self.io.isdatabase

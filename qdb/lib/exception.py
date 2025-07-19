@@ -9,6 +9,18 @@ class QDBError(Exception):
 class QDBNoDatabaseError(QDBError):
   pass
 
+class QDBAuthenticationError(QDBError):
+  pass
+
+class QDBAuthenticationCancelledError(QDBError):
+  pass
+
+class QDBUnauthorizedError(QDBError):
+  pass
+
+class QDBUnknownUserError(QDBError):
+  pass
+
 class QDBParseError(QDBError):
   pass
 

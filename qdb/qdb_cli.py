@@ -11,6 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
+from qdb.lib.utils import authorize
 
 class QDBCompleter:
   def __init__(self, qdb: QDB):
@@ -29,9 +30,13 @@ class QDBCompleter:
     except IndexError:
       return None
 
-class Client:
-  def __init__(self, name: str):
-    self.qdb = QDB(name)
+class QDBClient:
+  def __init__(self, name: str, username: str=None, password: str=None, command: str=None):
+    self.qdb = QDB(name, load=QDB.do_load_database(command))
+    if self.qdb.users is not None and self.qdb.users.hasusers:
+      authorize(self.qdb.users, username, password)
+    if password:
+      del password
     self.database_name = self.qdb.store.database_name
     self.history_file = os.path.join(
         os.path.expanduser('~'),
@@ -69,7 +74,7 @@ class Client:
 
   def _set_prompt(self) -> str:
     indicator = f'[{self.database_name}](-)' if self.qdb.store.is_db_empty else f'[{self.database_name}](+)'
-    indicator = f'[{self.database_name}](!)' if self.qdb.store.has_changed else indicator
+    indicator = f'[{self.database_name}](!)' if self.qdb.store.haschanged else indicator
     prompt = f'{indicator} > '
     return prompt
 
@@ -85,7 +90,7 @@ class Client:
     print('(c) 2025 Stéphane MEYER (Teegre)')
     print()
     if not self.qdb.store.is_db_empty:
-      print(f'-- {len(self.qdb.store.keystore.keys())} hkeys.')
+      print(f'-- {len(self.qdb.store.keystore.keys())} hkeys.') # FIXME: what about regular keys?
       print(f'-- {len(self.qdb.store.reverse_refs.keys())} references.')
       print(f'-- {len(self.qdb.store.refs.keys())} referenced hkeys.')
       print()
@@ -115,7 +120,7 @@ class Client:
         continue
       except EOFError:
         print()
-        if self.qdb.store.has_changed:
+        if self.qdb.store.haschanged:
           if not self._confirm(
               f'{self.database_name}: Uncommitted changes!'
               f'\n{self.database_name}: Quit anyway?'
@@ -145,9 +150,11 @@ def main() -> int:
       epilog='If no option is provided, starts an interactive shell.'
   )
   parser.add_argument('db_path', help='path to the QDB database')
+  parser.add_argument('-u', '--username', help='user name')
+  parser.add_argument('-w', '--password', help='password')
   parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
-  parser.add_argument('-q', '--quiet', help='do not show performance time', action='store_true')
+  parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
 
@@ -155,12 +162,25 @@ def main() -> int:
     from os import environ
     environ['__QDB_QUIET__'] = '1'
 
-  client = Client(args.db_path)
-  if args.dump:
-    client.qdb.store.dump()
-    return 0
+  try:
+    client = QDBClient(args.db_path, args.username, args.password, command=args.command)
+  except QDBError as e:
+    print('QDB:', e, file=sys.stderr)
+    return 1
 
-  return client.process_commands(args.command, args.pipe)
+  if args.dump:
+    try:
+      client.qdb.dump()
+      return 0
+    except QDBError as e:
+      print(e, file=sys.stderr)
+      return 1
+
+  try:
+    return client.process_commands(args.command, args.pipe)
+  except QDBError as e:
+    print(e, file=sys.stderr)
+    return 1
 
 if __name__ == "__main__":
     ret = main()
