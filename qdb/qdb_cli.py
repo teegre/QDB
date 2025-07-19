@@ -163,7 +163,7 @@ def main() -> int:
     environ['__QDB_QUIET__'] = '1'
 
   try:
-    client = QDBClient(args.db_path, args.username, args.password, command=args.command)
+    client = QDBClient(args.database, args.username, args.password, command=args.command)
   except QDBError as e:
     print('QDB:', e, file=sys.stderr)
     return 1
