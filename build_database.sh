@@ -6,7 +6,7 @@ echo "* Done."
 source persons_venv/bin/activate
 echo "* Virtual environment activated."
 echo "* Installing dependencies..."
-pip install faker &> /dev/null && {
+pip install faker bcrypt &> /dev/null && {
   echo "* Done."
   echo "* Building database..."
   python fixtures.py
