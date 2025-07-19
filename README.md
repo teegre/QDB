@@ -53,14 +53,14 @@ Unlike traditional databases, **QDB** does not require a schema to be declared. 
 
 ## Basic Commands
 
-| Command | Syntax                   | Description                            |
-| ------- | ------------------------ | -------------------------------------- |
-| `SET`   | `SET <KEY> <VALUE>`      | Create/modify a key/value pair         |
-| `MSET`  | `MSET <KEY> <VALUE> ...` | Create/modify multiple key/value pairs |
-| `DEL`   | `DEL <KEY>`              | Delete a key and its associated value  |
-| `MDEL`  | `MDEL <KEY1> <KEY2> ...` | Delete multiple keys                   |
-| `KEYS`  | `KEYS`                   | List all existing keys                 |
-| `COMMIT`| `COMMIT`                 | Save pending database changes          |
+| Command  | Syntax                   | Description                            |
+| -------- | ------------------------ | -------------------------------------- |
+| `SET`    | `SET <KEY> <VALUE>`      | Create/modify a key/value pair         |
+| `MSET`   | `MSET <KEY> <VALUE> ...` | Create/modify multiple key/value pairs |
+| `DEL`    | `DEL <KEY>`              | Delete a key and its associated value  |
+| `MDEL`   | `MDEL <KEY1> <KEY2> ...` | Delete multiple keys                   |
+| `KEYS`   | `KEYS`                   | List all existing keys                 |
+| `COMMIT` | `COMMIT`                 | Save pending database changes          |
 
 ## Hashmap Commands
 
@@ -143,7 +143,7 @@ These are *convenience* fields that can be used to display and/or filter data in
 | `min`    | Minimum     |
 | `sum`    | Sum         |
 
-> *Note: the sorting prefix must be added before the aggregation function e.g. `Q artist @id=83:title song:@[--count:*]`.*
+> Note: the sorting prefix must be added before the aggregation function e.g. `Q artist @id=83:title song:@[--count:*]`.
 
 #### Examples
 
@@ -203,7 +203,7 @@ Q artist name(autechre,"the cure") song:++title
 - `song:title`: follow reference to `song` and select its title
 - `++`: sort ascending by title
 
-## Other Hashmap Commands
+### Other Hashmap Commands
 
 | Command  | Syntax                                       | Description                                                     |
 | -------- | -------------------------------------------- | --------------------------------------------------------------- |
@@ -214,24 +214,49 @@ Q artist name(autechre,"the cure") song:++title
 | `IDXF`   | `IDXF <INDEX>`                               | Show fields for a specific index                                |
 | `SCHEMA` | `SCHEMA`                                     | Show current database schema                                    |
 
+## User Management Commands
+
+| Command   | Syntax                                      | Description   |
+| --------- | ------------------------------------------- | ------------- |
+| `USERADD` | `USERADD [USERNAME] [PASSWORD] [AUTH_TYPE]` | Add new user  |
+| `USERDEL` | `USERDEL <USERNAME>`                        | Delete a user |
+| `USERS`   | `USERS`                                     | List users    |
+
+> When no parameters are given,`USERADD` prompts the user.
+> 
+> `AUTH_TYPE` can be one of the following:
+> 
+> - `admin`
+> 
+> - `readonly` 
+
+## Other Commands
+
+| Command   | Syntax    | Description          |
+| --------- | --------- | -------------------- |
+| `COMPACT` | `COMPACT` | Compact the database |
+| `LIST`    | `LIST`    | List database files  |
+
 ## CLI
 
 ```
-usage: qdb [-h] [-d] [-p] [-q] db_path [command]
+usage: qdb [-h] [-d] [-p] [-q] [-u USERNAME] [-w PASSWORD] [command] database
 
 Command Line Interface For the QDB database engine.
 
 positional arguments:
-  db_path      path to the QDB database
-  command      QDB command
+  command               QDB command
+  database              path to the QDB database
 
 options:
-  -h, --help   show this help message and exit
-  -d, --dump   dump database as JSON
-  -p, --pipe   reads commands from stdin
-  -q, --quiet  do not show performance time
+  -h, --help            show this help message and exit
+  -d, --dump            dump database as JSON
+  -p, --pipe            reads commands from stdin
+  -q, --quiet           be quiet
+  -u, --username USERNAME
+  -w, --password PASSWORD
 
-If no command is provided, starts an interactive shell.
+If no option is provided, starts an interactive shell.
 ```
 
 ### Execute a command
@@ -278,12 +303,11 @@ kraftwerk | 2017 | 3-d the catalogue
 Fetched:   0.0987s.
 Processed: 0.0017s.
 Total:     0.1004s.
-
 ```
 
 ## Installation
 
-Before proceeding, ensure **python** (version 3.13 or higher), **python-setuptools** and **pipx** are installed on your system.
+Before proceeding, ensure **python** (version 3.13 or higher), **python-setuptools**, **pipx** and **python-bcrypt** are installed on your system.
 
 ### Clone this repository
 
@@ -301,17 +325,15 @@ Before proceeding, ensure **python** (version 3.13 or higher), **python-setuptoo
 
 ## Try QDB
 
-To give **QDB** a try, a `build_database.sh` script is provided. It generates a *persons* database with random fake data:
+To give **QDB** a try, a `build_database.sh` script is provided.
 
-
+It generates a *persons* database with random fake data:
 
 * 10000 persons (index: `person`, fields: name, age, zodiac, address)
 * 12 astrological signs (index: `astro`, fields: sign)
 * 5000 addresses (index: `address`, fields: street, city)
 * 100 cities (index: `city`, fields: name, postcode, country)
 * 10 countries (index: `country`, fields: name, code)
-
-
 
 The database schema should look similar to:
 
