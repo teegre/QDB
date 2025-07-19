@@ -149,13 +149,13 @@ def main() -> int:
       description='Command Line Interface For the QDB database engine.',
       epilog='If no option is provided, starts an interactive shell.'
   )
-  parser.add_argument('db_path', help='path to the QDB database')
-  parser.add_argument('-u', '--username', help='user name')
-  parser.add_argument('-w', '--password', help='password')
+  parser.add_argument('command', help='QDB command', nargs='?', default=None)
+  parser.add_argument('database', help='path to the QDB database')
   parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
-  parser.add_argument('command', help='QDB command', nargs='?', default=None)
+  parser.add_argument('-u', '--username')
+  parser.add_argument('-w', '--password')
   args = parser.parse_args()
 
   if args.quiet:
