@@ -1,23 +1,29 @@
+import json
 import os
 import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from dataclasses import dataclass
+from io import BytesIO
 from time import time
 
 @dataclass
-class CacheEntry:
+class QDBCacheEntry:
   data: dict|str
   timestamp: int
 
-class Cache:
+class QDBCache:
   __cache: dict = {}
+  def __init__(self):
+    self.haschanged = False
+
   def write(self, key: str, data: dict[str]):
     entry = self.__cache.get(key)
     if entry and entry.data == data:
       return
-    self.__cache[key] = CacheEntry(data, int(time()))
+    self.__cache[key] = QDBCacheEntry(data, int(time()))
+    self.haschanged = True
 
   def read(self, key: str) -> dict[str] | str | None:
     entry = self.__cache.get(key)
@@ -35,10 +41,24 @@ class Cache:
 
   def purge(self) -> int:
     self.__cache.clear()
+    self.haschanged = True
     return 0
 
-  def exists(self, key: str) -> bool:
-    return key in self.__cache
+  def dump(self) -> BytesIO:
+    return BytesIO(json.dumps(
+      {k: [ce.data, ce.timestamp] for k, ce in self.__cache.items()}
+    ).encode())
+
+  def load(self, cache_data: bytes):
+    self.__cache = {
+        k: QDBCacheEntry(v[0], v[1])
+        for k, v in json.loads(cache_data.decode()).items()
+    }
+
+
+  @property
+  def size(self):
+    return len(self.__cache)
 
   def __repr__(self):
     idxs = [ k.split(':')[0] for k in sorted(self.__cache.keys()) ]
