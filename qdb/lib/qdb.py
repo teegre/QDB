@@ -606,6 +606,7 @@ class QDB:
   def idx(self) -> None:
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
+    return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idxf(self, index: str) -> None:
@@ -614,6 +615,7 @@ class QDB:
       print(f'{index}: {' | '.join([f for f in fields if not is_virtual(f)])}')
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
+    return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:
@@ -648,22 +650,26 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN])
   def dump(self):
     self.store.dump()
+    return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def purge(self):
     self.store.datacache.purge()
     if not os.getenv('__QDB_QUIET__'):
       print('QDB: cache is purged.', file=sys.stderr)
+    return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def add_user(self, username: str=None, password: str=None, auth: str=None):
     user_add(self.users, username, password, auth)
     if not self.store.exists('@QDB_USERS'):
       self.store.write('@QDB_USERS', '1')
+    return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def delete_user(self, username: str):
     self.users.remove_user(username)
+    return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def list_users(self) -> int:
@@ -697,8 +703,9 @@ class QDB:
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
-  def list_files(self):
+  def list_files(self) -> int:
     self.store.list_files()
+    return 0
 
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty
