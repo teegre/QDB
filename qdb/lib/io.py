@@ -234,11 +234,9 @@ class QDBIO:
       return
     temp = self._database_path + '.tmp'
     with tarfile.open(temp, 'w') as new:
-      for file in self._archive.getnames():
-        if file not in files:
-          member = self._get(file)
-          info = new.gettarinfo(member)
-          new.addfile(info, member)
+      for tarinfo in self._archive.getmembers():
+        if tarinfo.name not in files:
+          new.addfile(tarinfo, self._archive.extractfile(tarinfo))
 
     os.replace(temp, self._database_path)
 
@@ -306,6 +304,24 @@ class QDBIO:
     self._active_refs.flush()
     self._active_refs.seek(0, os.SEEK_END)
     self._active_refs_size = self._active_refs.tell()
+
+  def save_cache(self, cache_data: BytesIO):
+    if '.cache' in self._archive.getnames():
+      self._remove('.cache')
+    with tarfile.open(self._database_path, 'a') as tar:
+      cacheinfo = tarfile.TarInfo('.cache')
+      QDBUsers.set_user_info(cacheinfo)
+      cacheinfo.size = cache_data.seek(0, os.SEEK_END)
+      cache_data.seek(0)
+      cacheinfo.mtime = time.time()
+      tar.addfile(cacheinfo, cache_data)
+
+  def load_cache(self) -> bytes:
+    try:
+      cache_data = self._archive.extractfile('.cache')
+    except KeyError:
+      cache_data = None
+    return cache_data.read() if cache_data else b'{}'
 
   def flush(self, refs: dict=None) -> str:
     if self._active_file:
