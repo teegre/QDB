@@ -61,20 +61,20 @@ def authorization(auth_types: list[QDBAuthType]):
     return wrap
   return decorator
 
-def authorize(qdbusers: QDBUsers, username: str=None, password: str=None):
+def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change: bool=False):
   try:
     if not username:
       print('QDB: This database requires authentication.', file=sys.stderr)
       username = input('Username: ')
     if not password:
-      password = getpass('Password: ')
+      password = getpass('Password: ' if not change else 'Current password: ')
   except (KeyboardInterrupt, EOFError):
     print()
     raise QDBAuthenticationCancelledError('Authentication cancelled.')
   qdbusers.authenticate(username, password) 
   del password
 
-def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None):
+def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None, change: bool=False):
   try:
     if not username:
       username = input('Username: ')
@@ -82,7 +82,7 @@ def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_ty
         raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
 
     if not password:
-      password1 = getpass('Password: ')
+      password1 = getpass('Password: ' if not change else 'New password: ')
       if not password1:
         raise QDBAuthenticationCancelledError('QDB: password is mandatory.')
       password2 = getpass('Again: ')

@@ -11,15 +11,24 @@ from typing import Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from qdb.lib.exception import QDBError, QDBNoDatabaseError
+from qdb.lib.exception import (
+    QDBAuthenticationCancelledError,
+    QDBAuthenticationError,
+    QDBError,
+    QDBNoDatabaseError,
+)
 from qdb.lib.query import QDBQuery
 from qdb.lib.storage import QDBStore
 from qdb.lib.users import QDBAuthType
 from qdb.lib.utils import (
     authorization,
-    user_add,
+    authorize,
+    is_numeric,
+    is_virtual,
     performance_measurement,
-    is_numeric, is_virtual, validate_hkey, validate_key
+    user_add,
+    validate_hkey,
+    validate_key,
 )
 
 class QDB:
@@ -33,6 +42,7 @@ class QDB:
     self.commands = {
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
+        'CHPW':    self.chpw,
         'DEL' :    self.delete,
         'GET' :    self.get,
         'HDEL':    self.hdel,
@@ -648,8 +658,8 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN])
   def add_user(self, username: str=None, password: str=None, auth: str=None):
     user_add(self.users, username, password, auth)
-    self.store.write('@QDB_USERS', '1')
-    self.store.commit()
+    if not self.store.exists('@QDB_USERS'):
+      self.store.write('@QDB_USERS', '1')
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def delete_user(self, username: str):
@@ -667,6 +677,24 @@ class QDB:
     else:
       print('QDB: no users.', file=sys.stderr)
       return 1
+
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  def chpw(self):
+    if not self.users.hasusers:
+      print('Error: No current user.')
+      return 1
+    user = os.getenv('__QDB_USER__')
+    auth = 'admin' if QDBAuthType(self.users.get_auth(user)) == QDBAuthType.QDB_ADMIN else 'readonly'
+    try:
+      authorize(self.users, username=user, change=True)
+    except QDBAuthenticationCancelledError:
+      return 1
+    except QDBAuthenticationError:
+      print('Error: invalid password.')
+      return 1
+    user_add(self.users, user, None, auth_type=auth, change=True)
+    print('QDB: password succesfully changed.')
+    return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def list_files(self):
