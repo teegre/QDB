@@ -62,15 +62,18 @@ class QDBClient:
         return 1
 
   def pipe_commands(self) -> int:
-    ret = 0
+    if not os.getenv('__QDB_QUIET__'):
+      print('QDB: Processing commands...', file=sys.stderr)
     line_count = 1
     for line in sys.stdin:
       ret = self.execute(line.strip('\n'))
       if ret != 0:
         print(f'QDB: Line {line_count}: command failed: `{line.strip()}`.`', file=sys.stderr)
-        return ret
+        return 1
       line_count += 1
-    return ret
+    if not os.getenv('__QDB_QUIET__'):
+      print('QDB: Done.', file=sys.stderr)
+    return 0
 
   def _set_prompt(self) -> str:
     indicator = f'[{self.database_name}](-)' if self.qdb.store.is_db_empty else f'[{self.database_name}](+)'
@@ -139,6 +142,9 @@ class QDBClient:
       return 1
     if pipe:
       return self.pipe_commands()
+    if not pipe and not sys.stdin.isatty():
+      print('QDB: `--pipe` option is missing.')
+      return 1
     if command is not None:
       return self.execute(command)
     self.run_repl()
