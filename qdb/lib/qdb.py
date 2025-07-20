@@ -19,7 +19,7 @@ from qdb.lib.utils import (
     authorization,
     user_add,
     performance_measurement,
-    is_numeric, is_virtual, validate_hkey
+    is_numeric, is_virtual, validate_hkey, validate_key
 )
 
 class QDB:
@@ -47,6 +47,7 @@ class QDB:
         'MDEL':    self.mdel,
         'MGET':    self.mget,
         'MSET':    self.mset,
+        'PURGE':   self.purge,
         'SCHEMA':  self.schema,
         'SET' :    self.set,
         'USERADD': self.add_user,
@@ -75,15 +76,18 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN])
   def set(self, key: str, value: str) -> int:
     ''' Set a single value '''
+    validate_key(key)
     self.store.write(key, value)
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get(self, key: str) -> int:
     ''' Get a value '''
-    val = self.store.read(key)
-    if val is not None:
-      print(f'{val}')
-      return 0
+    if validate_key(key, confirm=True):
+      val = self.store.read(key)
+      if val is not None:
+        print(f'{val}')
+        return 0
+    print(f'GET: `{key}`, no such KEY.')
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
@@ -91,18 +95,21 @@ class QDB:
     ''' Print existing keys '''
     found = 0
     for k in self.store.keystore.keys():
-      if not self.store.has_index(k):
+      if not self.store.has_index(k) and validate_key(key, confirm=True):
         found += 1
         print(k)
     if found == 0:
-      print(f'KEYS: No key found.', file=sys.stderr)
+      print('KEYS: No key found.', file=sys.stderr)
       return 1
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def delete(self, key: str) -> int:
     ''' delete a single key '''
-    return self.store.delete(key)
+    if validate_key(key, confirm=True):
+      return self.store.delete(key)
+    print(f'GET: `{key}`, no such KEY.')
+    return 1
     
   @authorization([QDBAuthType.QDB_ADMIN])
   def mset(self, *items: str) -> int:
@@ -115,31 +122,35 @@ class QDB:
       return 1
     err = 0
     for key, val in zip(items[::2], items[1::2]):
+      validate_key(key)
       err += self.set(key, val)
-    return err
+    return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def mget(self, *keys: str) -> int:
     ''' get multiple values '''
     err = 0
     for key in keys:
-      err += self.get(key)
-    return err
+      if validate_key(key, confirm=True):
+        err += self.get(key)
+    return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def mdel(self, *keys: str) -> int:
     ''' delete multiple keys '''
     err = 0
     for key in keys:
-      err += self.delete(key)
-      if err:
-        print(f'MDEL: key `{key}` not found.', file=sys.stderr)
-    return err
+      if validate_key(key, confirm=True):
+        err += self.delete(key)
+        if err:
+          print(f'MDEL: key `{key}` not found.', file=sys.stderr)
+    return 1 if err > 0 else 0
 
   def _autoid(self, expr: str) -> str:
     '''
     Return @autoid or 'expr' otherwise.
     '''
+    # TODO Move me to the parser...
     AUTOID_RE = re.compile(r'^@autoid\((?P<index>[a-zA-Z_]+)\)$')
     m = AUTOID_RE.match(expr.lower())
 
@@ -629,8 +640,16 @@ class QDB:
     self.store.dump()
 
   @authorization([QDBAuthType.QDB_ADMIN])
+  def purge(self):
+    self.store.datacache.purge()
+    if not os.getenv('__QDB_QUIET__'):
+      print('QDB: cache is purged.', file=sys.stderr)
+
+  @authorization([QDBAuthType.QDB_ADMIN])
   def add_user(self, username: str=None, password: str=None, auth: str=None):
     user_add(self.users, username, password, auth)
+    self.store.write('@QDB_USERS', '1')
+    self.store.commit()
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def delete_user(self, username: str):

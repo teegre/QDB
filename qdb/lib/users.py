@@ -115,7 +115,7 @@ class QDBUsers:
     if user_info:
       self._users_ops[username] = {'del': None}
     else:
-      raise QDBUnknownUserError('Error: `{username}`, no such user.')
+      raise QDBUnknownUserError(f'Error: `{username}`, no such user.')
 
   def authenticate(self, username: str, password: str):
     user = self.users.get(username)

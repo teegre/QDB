@@ -32,7 +32,7 @@ def performance_measurement(_func=None, *, message: str='Executed'):
       t2 = perf_counter()
       d = t2 - t1
       if hasattr(args[0], 'parent') and hasattr(args[0].parent, '_perf_info'):
-          args[0].parent._perf_info[message] = d
+        args[0].parent._perf_info[message] = d
       else:
         p = d - args[0]._perf_info['Fetched']
         t = d
@@ -136,6 +136,15 @@ def coerce_number(x: Any) -> Any:
 
 def is_virtual(field: str) -> bool:
   return field in VIRTUAL
+
+def validate_key(key: str, confirm: bool=False) -> bool | None:
+  KEY_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*')
+  if not KEY_RE.match(key):
+    if confirm:
+      return False
+    raise QDBKeyError(f'Error: malformad KEY: `{key}`.')
+  if confirm:
+    return True
 
 def validate_hkey(hkey: str, confirm: bool=False) -> bool | None:
   HKEY_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z0-9-_]+$')

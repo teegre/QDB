@@ -32,8 +32,9 @@ class QDBStore:
     self.users = self.io.users
     self.database_name = os.path.splitext(os.path.basename(db_path))[0]
     self.haschanged = False
+    self.datacache = QDBCache()
     if load:
-      self.keystore: Dict[str, KeyStoreEntry] = {}
+      self.keystore: Dict[str, QDBInfo] = {}
       self._pending_keys = set()
       self.indexes = set()
       self.indexes_map: Dict[str: set[str]] = {}
@@ -58,6 +59,8 @@ class QDBStore:
       self.users._save()
       self.io._archive.close()
       self.io._load()
+    if self.datacache.haschanged:
+      self.io.save_cache(self.datacache.dump())
     self.io.compact()
 
   def commit(self):
