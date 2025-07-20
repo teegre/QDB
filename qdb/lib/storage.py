@@ -27,22 +27,24 @@ from qdb.lib.io import QDBIO, QDBInfo
 
 class QDBStore:
   def __init__(self, db_path: str, load: bool=True) :
+    self.database_name = os.path.splitext(os.path.basename(db_path))[0]
     self.io = QDBIO(db_path)
     self.users = self.io.users
-    self.database_name = os.path.splitext(os.path.basename(db_path))[0]
-    self.haschanged = False
     self.datacache = QDBCache()
+    self.haschanged = False
+    self.keystore: Dict[str, QDBInfo] = {}
+    self._pending_keys = set()
+    self.indexes = set()
+    self.indexes_map: Dict[str: set[str]] = {}
+    self.refs: Dict[str: set[str]] = {}
+    self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
+    self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
+    self.reverse_refs: Dict[str: set[str]] = {}
+    self.__paths__: Dict[tuple: list] = {}
     if load:
-      self.keystore: Dict[str, QDBInfo] = {}
-      self._pending_keys = set()
-      self.indexes = set()
-      self.indexes_map: Dict[str: set[str]] = {}
-      self.refs: Dict[str: set[str]] = {}
-      self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
-      self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
-      self.reverse_refs: Dict[str: set[str]] = {}
-      self.__paths__: Dict[tuple: list] = {}
       self.initialize()
+    else:
+      self.keystore, self.indexes, self.refs = self.io.rebuild(partial=True)
 
   def initialize(self):
     self.keystore, self.indexes, self.refs = self.io.rebuild()

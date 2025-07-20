@@ -8,6 +8,7 @@ import time
 
 from dataclasses import dataclass
 from io import BytesIO
+from operator import itemgetter
 from tarfile import TarInfo
 from tempfile import TemporaryFile
 from zlib import crc32
@@ -456,7 +457,7 @@ class QDBIO:
     logsize = 0
     hintsize = 0
 
-    for key, (oldfile, oldpos, ts, vt, ksz, vsz) in sorted(latest.items()):
+    for key, (oldfile, oldpos, ts, vt, ksz, vsz) in sorted(latest.items(), key=itemgetter(0)):
       if vsz == 0: # Marked for deletion
         continue
 
@@ -594,7 +595,7 @@ class QDBIO:
 
     self.haschanged = False
 
-  def rebuild(self):
+  def rebuild(self, partial: bool=False):
     keystore = {}
     indexes = set()
     refs = {}
@@ -605,7 +606,8 @@ class QDBIO:
       return keystore, indexes, refs
 
     files = [f for f in self._archive.getnames() if f.endswith('.log')]
-    if not files:
+
+    if not files and self._archive.getnames():
       raise QDBIODataIntegrityError('IO Error: No data could be found.')
 
     for log in files:
@@ -622,14 +624,14 @@ class QDBIO:
       if hint in self._archive.getnames():
         self._rebuild_from_hint(hint, keystore, indexes)
         continue
-      self._rebuild_keystore(log, keystore, indexes)
+      self._rebuild_keystore(log, keystore, indexes, partial)
     refs = self.load_refs()
 
     self._remove(*empty)
 
     return keystore, indexes, refs
 
-  def _rebuild_keystore(self, name: str, keystore: dict, indexes: set):
+  def _rebuild_keystore(self, name: str, keystore: dict, indexes: set, partial: bool=False):
     position = 0
 
     log = self._get(name)
@@ -648,6 +650,9 @@ class QDBIO:
         raise QDBIODataIntegrityError(f'IO Error: bad CRC: `{log.name}:{position}`')
 
       key = key.decode()
+
+      if partial and not key.startswith('@'):
+        break
       
       if header.value_size == 0:
         keystore.pop(key, None)
@@ -659,7 +664,7 @@ class QDBIO:
           indexes.add(key.split(':')[0])
       position = log.tell()
 
-  def _rebuild_from_hint(self, name: str, keystore: dict, indexes: set):
+  def _rebuild_from_hint(self, name: str, keystore: dict, indexes: set, partial: bool=False):
     hint = self._get(name)
 
     while True:
@@ -671,6 +676,9 @@ class QDBIO:
       header = self._deserialize_hint_header(header)
       key = hint.read(header.key_size)
       key = key.decode()
+
+      if partial and not key.startswith('@'):
+        break
 
       if header.value_size == 0:
         keystore.pop(key, None)
