@@ -50,6 +50,8 @@ class QDBCache:
     ).encode())
 
   def load(self, cache_data: bytes):
+    if not cache_data:
+      return
     self.__cache = {
         k: QDBCacheEntry(v[0], v[1])
         for k, v in json.loads(cache_data.decode()).items()

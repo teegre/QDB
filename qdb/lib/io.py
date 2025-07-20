@@ -307,6 +307,8 @@ class QDBIO:
     self._active_refs_size = self._active_refs.tell()
 
   def save_cache(self, cache_data: BytesIO):
+    if not self._archive:
+      return
     if '.cache' in self._archive.getnames():
       self._remove('.cache')
     with tarfile.open(self._database_path, 'a') as tar:
@@ -318,6 +320,8 @@ class QDBIO:
       tar.addfile(cacheinfo, cache_data)
 
   def load_cache(self) -> bytes:
+    if not self._archive:
+      return
     try:
       cache_data = self._archive.extractfile('.cache')
     except KeyError:
