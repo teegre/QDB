@@ -216,11 +216,12 @@ Q artist name(autechre,"the cure") song:++title
 
 ## User Management Commands
 
-| Command   | Syntax                                      | Description   |
-| --------- | ------------------------------------------- | ------------- |
-| `USERADD` | `USERADD [USERNAME] [PASSWORD] [AUTH_TYPE]` | Add new user  |
-| `USERDEL` | `USERDEL <USERNAME>`                        | Delete a user |
-| `USERS`   | `USERS`                                     | List users    |
+| Command   | Syntax                                      | Description                    |
+| --------- | ------------------------------------------- | ------------------------------ |
+| `CHPW`    | `CHPW`                                      | Change current user's password |
+| `USERADD` | `USERADD [USERNAME] [PASSWORD] [AUTH_TYPE]` | Add new user                   |
+| `USERDEL` | `USERDEL <USERNAME>`                        | Delete a user                  |
+| `USERS`   | `USERS`                                     | List users                     |
 
 > When no parameters are given,`USERADD` prompts the user.
 > 
@@ -232,10 +233,11 @@ Q artist name(autechre,"the cure") song:++title
 
 ## Other Commands
 
-| Command   | Syntax    | Description          |
-| --------- | --------- | -------------------- |
-| `COMPACT` | `COMPACT` | Compact the database |
-| `LIST`    | `LIST`    | List database files  |
+| Command   | Syntax    | Description           |
+| --------- | --------- | --------------------- |
+| `COMPACT` | `COMPACT` | Compact the database  |
+| `LIST`    | `LIST`    | List database files   |
+| `PURGE`   | `PURGE`   | Purge persisted cache |
 
 ## CLI
 
