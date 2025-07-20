@@ -143,7 +143,7 @@ These are *convenience* fields that can be used to display and/or filter data in
 | `min`    | Minimum     |
 | `sum`    | Sum         |
 
-> Note: the sorting prefix must be added before the aggregation function e.g. `Q artist @id=83:title song:@[--count:*]`.
+> Note: the sorting prefix must be added before the aggregation function e.g. `Q artist @id=83:name song:@[--count:*]`.
 
 #### Examples
 
