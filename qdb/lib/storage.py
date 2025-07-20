@@ -7,16 +7,15 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from collections import defaultdict, deque
-from dataclasses import dataclass
 from glob import glob
 from shutil import move
 from sys import stdin, stdout, stderr
 from time import time, strftime
 from zlib import crc32
 
-from qdb.lib.datacache import Cache
-from qdb.lib.exception import QDBNoDatabaseError
-from qdb.lib.io import QDBIO
+from qdb.lib.datacache import QDBCache
+from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError
+from qdb.lib.io import QDBIO, QDBInfo
 
 # Terminology:
 # key: a key in simple key/value pair
@@ -43,14 +42,17 @@ class QDBStore:
       self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
       self.reverse_refs: Dict[str: set[str]] = {}
       self.__paths__: Dict[tuple: list] = {}
-      self.datacache = Cache()
       self.initialize()
 
   def initialize(self):
     self.keystore, self.indexes, self.refs = self.io.rebuild()
+    if not self.users.hasusers and '@QDB_USERS' in self.keystore:
+      raise QDBNoAdminError('Access denied.')
     self.build_indexes_map()
     self.update_reverse_refs()
     self.precompute_paths()
+    cache = self.io.load_cache()
+    self.datacache.load(cache)
 
   def deinitialize(self):
     if self.io.haschanged or (self.haschanged and not os.getenv('__QDB_REPL__')):
