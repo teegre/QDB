@@ -395,7 +395,7 @@ class QDBIO:
     if self.users.haschanged or force:
       self._compact_users(user_files)
 
-    if not files or not self.haschanged:
+    if (not files or not self.haschanged) and not force:
       return
 
     if not os.getenv('__QDB_QUIET__'):
@@ -605,6 +605,9 @@ class QDBIO:
       return keystore, indexes, refs
 
     files = [f for f in self._archive.getnames() if f.endswith('.log')]
+    if not files:
+      raise QDBIODataIntegrityError('IO Error: No data could be found.')
+
     for log in files:
       hint = log.replace('.log', '.hint')
       ref = log.replace('.log', '.ref')
