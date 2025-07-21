@@ -16,6 +16,8 @@ from zlib import crc32
 from qdb.lib.datacache import QDBCache
 from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError
 from qdb.lib.io import QDBIO, QDBInfo
+from qdb.lib.ops import OPTIONS
+from qdb.lib.utils import coerce_number
 
 # Terminology:
 # key: a key in simple key/value pair
@@ -179,22 +181,12 @@ class QDBStore:
     if not self.io.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
 
-    data = {
-        index: {
-          hkey: self.read_hash(hkey, dump=True)
-          for hkey in self.get_index_keys(index)
-        }
-        for index in self.indexes
-    }
-    print(json.dumps(data, sort_keys=True))
-    keys = set(self.keystore.keys())
-    hkeys = set()
-    for index in self.indexes:
-      hkeys.update(self.get_index_keys(index))
-    keys ^= hkeys
-    data = {k: self.read(k) for k in sorted(keys)}
-    if data:
-      print(json.dumps(data,sort_keys=True))
+    for key in sorted(self.keystore, key=lambda k: coerce_number(k.split(':')[1]) if self.has_index(k) else k):
+     if self.isoption(key):
+       continue
+     print(json.dumps(
+       { key: self.read_hash(key, dump=True) if self.has_index(key) else self.read(key) }
+    ))
 
   def keystore_dump(self) -> None:
     ''' Dump keystore content '''
@@ -601,6 +593,9 @@ class QDBStore:
     ''' Return current greatest ID + 1 in index '''
     # TODO: MAKE IT SMARTER
     return str(self.index_len(index) + 1)
+
+  def isoption(self, key: str) -> bool:
+    return key in OPTIONS
 
   @property
   def is_db_empty(self) -> bool:
