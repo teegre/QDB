@@ -524,6 +524,9 @@ class QDBIO:
       if self.users.filename in self._archive.getnames():
         usersinfo = self._archive.getmember(self.users.filename)
         new.addfile(usersinfo, self._archive.extractfile(self.users.filename))
+      if '.cache' in self._archive.getnames():
+        cacheinfo = self._archive.getmember('.cache')
+        new.addfile(cacheinfo, self._archive.extractfile('.cache'))
     except IOError as e:
       new.close()
       os.remove(new.name)
