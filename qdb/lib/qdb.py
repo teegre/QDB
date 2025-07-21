@@ -23,6 +23,7 @@ from qdb.lib.users import QDBAuthType
 from qdb.lib.utils import (
     authorization,
     authorize,
+    coerce_number,
     is_numeric,
     is_virtual,
     performance_measurement,
@@ -47,6 +48,7 @@ class QDB:
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'Q':       self.q,
+        'Q2':      self.q2,
         'QF':      self.get_field,
         'HLEN':    self.hlen,
         'W':       self.w,
@@ -518,6 +520,24 @@ class QDB:
 
     return 0
 
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  @performance_measurement(message='Processed')
+  def q2(self, index: str, *exprs) -> int:
+    try:
+      hkeys = self.Q.query(index, *exprs, only_root_hkeys=True)
+    except QDBError as e:
+      print(f'Q2: {e}.')
+      return 1
+
+    for hkey in sorted(hkeys, key=lambda k: coerce_number(k.split(':')[1])):
+      print(hkey)
+
+    if not os.getenv('__QDB_QUIET__'):
+      print(' ', file=sys.stderr)
+      print(len(hkeys), 'HKEYS' if len(hkeys) > 1 else 'row', 'found.', file=sys.stderr)
+
+    return 0
+
   @authorization([QDBAuthType.QDB_ADMIN])
   def hdel(self, index_or_key: str, *fields: str) -> int:
     ''' Delete a hash or an index or fields in a hash or in an index '''
@@ -630,7 +650,7 @@ class QDB:
     if not self.store.is_index(index):
       print(f'HLEN: Error: `{index}` no such index.', file=sys.stderr)
       return 1
-    print(f'{index}: {self.store.index_len(index)}')
+    print(f'{self.store.index_len(index)}')
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])

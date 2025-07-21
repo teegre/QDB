@@ -287,7 +287,7 @@ class QDBQuery:
     return reduced
 
   @performance_measurement(message='Fetched')
-  def query(self, index_or_key: str, *exprs: str) -> (dict, list[dict]):
+  def query(self, index_or_key: str, *exprs: str, only_root_hkeys: bool=False) -> tuple[dict, list[dict]] | set:
     limit = None
     random = False
 
@@ -553,6 +553,9 @@ class QDBQuery:
       if limit:
         all_keys = all_keys[:limit] if random else sorted(all_keys)[:limit]
 
+    if only_root_hkeys and agg_exprs:
+      raise QDBQueryError(f'Error: aggregation not supported.')
+
     # Unique index query, no expressions: build tree and return it
     if not parsed_exprs and len(selected_indexes) == 1:
       for key in sorted(all_keys) if not random else all_keys:
@@ -639,6 +642,8 @@ class QDBQuery:
                 node[index][ref][agg_index] = dataset
 
     elif set(selected_indexes) - cond_indexes - {root_index} or not refs_map:
+      if only_root_hkeys:
+        root_keys = set()
       for key in all_keys:
         for idx in selected_indexes:
           if idx == prm_index:
@@ -647,7 +652,15 @@ class QDBQuery:
           refs = self.store.get_refs(key, idx)
           if not refs:
             raise QDBQueryError(f'Error: no references: `{prm_index}` → `{idx}`.')
+          if only_root_hkeys:
+            root_keys.update(refs)
+            continue
           refs_map[key][idx].update(refs)
+
+    if only_root_hkeys:
+      if prm_index == root_index:
+        return all_keys
+      return root_keys if root_keys else all_keys
 
     if not refs_map and not agg_exprs:
       for k in all_keys:
