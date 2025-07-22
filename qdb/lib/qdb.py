@@ -36,6 +36,7 @@ class QDB:
   def __init__(self, name: str, load: bool=True):
     self.store = QDBStore(name, load=load)
     self.users = self.store.users
+    self.auth_required = self.users.hasusers
     atexit.register(self.store.deinitialize)
     self.Q = QDBQuery(self.store, parent=self)
     self._perf_info = {}

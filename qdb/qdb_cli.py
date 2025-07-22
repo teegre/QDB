@@ -14,6 +14,11 @@ from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
 from qdb.lib.utils import authorize, spinner
 
+def has_piped_input():
+  mode = os.fstat(0).st_mode
+  return not stat.S_ISCHR(mode)
+
+
 class QDBCompleter:
   def __init__(self, qdb: QDB):
     self.qdb = qdb
@@ -45,7 +50,11 @@ class QDBClient:
     )
 
   def execute(self, command: str) -> int:
-    parts = shlex.split(command)
+    try:
+      parts = shlex.split(command)
+    except ValueError as e:
+      print(f'QDB: {e}.')
+      return 1
     if not parts:
       return 0
 
@@ -63,13 +72,23 @@ class QDBClient:
         return 1
 
   def pipe_commands(self) -> int:
+    if self.qdb.auth_required and not os.getenv('__QDB_USER__'):
+      try:
+        authorize(self.qdb.users)
+      except QDBError as e:
+        print(f'QDB: {e}', file=sys.stderr)
+        return 1
+
     os.environ['__QDB_PIPE__'] = '1'
     interrupted = False
+
     if not os.getenv('__QDB_QUIET__'):
       print('QDB: Processing commands...', file=sys.stderr)
       spin = iter(spinner())
       print('\x1b[?25l', end='', file=sys.stderr)
+
     line_count = 1
+
     try:
       for line in sys.stdin:
         try:
@@ -89,6 +108,7 @@ class QDBClient:
       print()
       print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
       interrupted = True
+
     if not os.getenv('__QDB_QUIET__'):
       print('\x1b[?25h', end='', file=sys.stderr)
       if not interrupted:
@@ -158,10 +178,7 @@ class QDBClient:
         print(f'Internal error: {e}', file=sys.stderr)
 
   def process_commands(self, command: str=None, pipe: bool=False):
-    if pipe and command:
-      print('QDB: too many options.', file=sys.stderr)
-      return 1
-    if self.has_piped_input():
+    if has_piped_input():
       if not pipe:
         print('QDB: `--pipe` option is missing.', file=sys.stderr)
         return 1
@@ -170,10 +187,6 @@ class QDBClient:
     if command is not None:
       return self.execute(command)
     self.run_repl()
-
-  def has_piped_input(self):
-    mode = os.fstat(0).st_mode
-    return not stat.S_ISCHR(mode)
 
 def main() -> int:
   parser = argparse.ArgumentParser(
@@ -190,6 +203,10 @@ def main() -> int:
   parser.add_argument('-v', '--version', action='version', version=f'QDB version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
+
+  if args.pipe and (args.command or not has_piped_input()):
+    print('QDB: too many options.', file=sys.stderr)
+    return 1
 
   if args.quiet:
     from os import environ

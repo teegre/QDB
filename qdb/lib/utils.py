@@ -11,6 +11,7 @@ from typing import Any
 
 from qdb.lib.exception import (
     QDBAuthenticationCancelledError,
+    QDBError,
     QDBNoAdminError,
     QDBHkeyError,
     QDBUnauthorizedError,
@@ -63,14 +64,23 @@ def authorization(auth_types: list[QDBAuthType]):
 
 def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change: bool=False):
   try:
-    if not username:
-      print('QDB: This database requires authentication.', file=sys.stderr)
-      username = input('Username: ')
-    if not password:
-      password = getpass('Password: ' if not change else 'Current password: ')
+    with open('/dev/tty', 'r') as stdin, open('/dev/tty', 'w') as stdout:
+      if not username:
+        print('QDB: This database requires authentication.', file=sys.stderr)
+        stdout.write('Username: ')
+        stdout.flush()
+        username = stdin.readline().strip()
+      if not password:
+        password = getpass('Password: ' if not change else 'Current password: ', stream=stdout)
   except (KeyboardInterrupt, EOFError):
-    print()
-    raise QDBAuthenticationCancelledError('Authentication cancelled.')
+      print()
+      raise QDBAuthenticationCancelledError('Authentication cancelled.')
+  except OSError:
+    raise QDBError(
+        'Cannot prompt for credentials in pipe mode.'
+        '\nUse `--username` and `--password` options.'
+    )
+
   qdbusers.authenticate(username, password) 
   del password
 
