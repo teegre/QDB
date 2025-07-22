@@ -69,8 +69,8 @@ class QDBStore:
       self.io.save_cache(self.datacache.dump())
     self.io.compact()
 
-  def commit(self):
-    new_file = self.io.flush(self._refs_ops)
+  def commit(self, quiet: bool=False):
+    new_file = self.io.flush(self._refs_ops, quiet=quiet)
     for key in self._pending_keys:
       self.keystore[key].filename = new_file
     self._pending_keys.clear()
@@ -101,8 +101,9 @@ class QDBStore:
         self.create_ref(key, ref)
       # add new hkey to the indexes map
       self.indexes_map.setdefault(self.get_index(key), set()).add(key)
-      if entry.timestamp > self.datacache.get_key_timestamp(key):
-        self.datacache.write(key, value)
+      if not os.getenv('__QDB_PIPE__'):
+        if entry.timestamp > self.datacache.get_key_timestamp(key):
+          self.datacache.write(key, value)
 
     return 0
 

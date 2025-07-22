@@ -215,7 +215,6 @@ class QDBIO:
     if bytes_written != len(qdbdata.data):
       raise QDBIOWriteError(f'IO Error: could not write data for `{key}`.')
     self._active_file_size += bytes_written
-    self._active_file.flush()
 
     qdbinfo = QDBInfo(
         self._active_file.name,
@@ -328,12 +327,14 @@ class QDBIO:
       cache_data = None
     return cache_data.read() if cache_data else b'{}'
 
-  def flush(self, refs: dict=None) -> str:
+  def flush(self, refs: dict=None, quiet: bool=False) -> str:
     if self._active_file:
+      self._active_file.flush()
+
       if self._archive:
         self._archive.close()
 
-      if not os.getenv('__QDB_QUIET__'):
+      if not os.getenv('__QDB_QUIET__') and not quiet:
         print(f'QDB: Committing changes...', file=sys.stderr)
 
       self._archive = tarfile.open(self._database_path, 'a')
@@ -364,6 +365,7 @@ class QDBIO:
 
       new_file = info.name
 
+      self._active_file.close()
       self._active_file = None
       self._active_file_size = 0
       self._position = 0
@@ -377,7 +379,7 @@ class QDBIO:
 
       self.haschanged = True
 
-      if not os.getenv('__QDB_QUIET__'):
+      if not os.getenv('__QDB_QUIET__') and not quiet:
         print(f'QDB: Done.', file=sys.stderr)
 
       return new_file
