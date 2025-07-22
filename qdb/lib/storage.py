@@ -101,6 +101,7 @@ class QDBStore:
         self.create_ref(key, ref)
       # add new hkey to the indexes map
       self.indexes_map.setdefault(self.get_index(key), set()).add(key)
+
       if not os.getenv('__QDB_PIPE__'):
         if entry.timestamp > self.datacache.get_key_timestamp(key):
           self.datacache.write(key, value)
@@ -246,8 +247,9 @@ class QDBStore:
       print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
       return 1
 
-    self.refs.setdefault(hkey, set()).add(ref)
-    self.reverse_refs.setdefault(ref, set()).add(hkey)
+    if not os.getenv('__QDB_PIPE__'):
+      self.refs.setdefault(hkey, set()).add(ref)
+      self.reverse_refs.setdefault(ref, set()).add(hkey)
     self._refs_ops.setdefault(hkey, {}).setdefault('add', []).append(ref)
 
     return 0
@@ -494,8 +496,8 @@ class QDBStore:
     return list(self.read_hash(hkey).keys())
 
   def has_index(self, key: str) -> bool:
-    ''' Return True if a given key exists and has an index, False otherwise. '''
-    return self.get_index(key) and key in self.keystore
+    ''' Return True if a given key has an index, False otherwise. '''
+    return self.get_index(key) is not None
 
   def is_index(self, index: str) -> bool:
     ''' Return True if index exists. '''
@@ -538,9 +540,7 @@ class QDBStore:
 
   def index_len(self, index: str) ->  int:
     ''' Return the number of hkeys in the given index.'''
-    if self.is_index(index):
-      return sum(1 for k in self.keystore.keys() if k.startswith(index + ':'))
-    return 0
+    return len(self.indexes_map.get(index, []))
 
   def database_schema(self):
     if not self.io.isdatabase:
