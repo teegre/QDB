@@ -212,7 +212,7 @@ class QDBStore:
     for idx1, idx2 in self.__paths__.copy():
       if idx1 == index or idx2 == index:
         self.__paths__.pop((idx1, idx2), None)
-        self.__paths__.pop((idx1, idx2), None)
+        self.__paths__.pop((idx2, idx1), None)
     return 0
 
   def get_index(self, hkey: str) -> str | None:
@@ -543,6 +543,8 @@ class QDBStore:
     return 0
 
   def database_schema(self):
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
     graph = defaultdict(set)
     all_children = set()
     unrelated = set()
@@ -597,6 +599,12 @@ class QDBStore:
 
   def isoption(self, key: str) -> bool:
     return key in OPTIONS
+
+  @property
+  def database_size(self) -> int:
+    if not self.io.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+    return len([k for k in self.keystore if k not in OPTIONS])
 
   @property
   def is_db_empty(self) -> bool:

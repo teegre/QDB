@@ -6,6 +6,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from collections import defaultdict
 from random import shuffle
+from typing import Optional
 
 from qdb.lib.exception import QDBParseError, QDBQueryError, QDBQueryNoData
 from qdb.lib.ops import OPFUNC, AGGFUNC, BINOP, REVOP
@@ -558,6 +559,8 @@ class QDBQuery:
 
     # Unique index query, no expressions: build tree and return it
     if not parsed_exprs and len(selected_indexes) == 1:
+      if only_root_hkeys:
+        return all_keys
       for key in sorted(all_keys) if not random else all_keys:
         data_tree[root_index][key] = {}
       return data_tree, {}, False
@@ -661,6 +664,7 @@ class QDBQuery:
       if prm_index == root_index:
         return all_keys
       return root_keys if root_keys else all_keys
+
 
     if not refs_map and not agg_exprs:
       for k in all_keys:

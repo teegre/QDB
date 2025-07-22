@@ -62,6 +62,7 @@ class QDB:
         'PURGE':   self.purge,
         'SCHEMA':  self.schema,
         'SET' :    self.set,
+        'SIZE':    self.get_size,
         'USERADD': self.add_user,
         'USERDEL': self.delete_user,
         'USERS':   self.list_users,
@@ -69,10 +70,12 @@ class QDB:
 
   @classmethod
   def do_load_database(cls, command: str) -> bool:
+    ''' Return True if a full database load is needed for the given command.'''
     command = command.split(maxsplit=1)[0] if command is not None else None
     return command.upper() not in [
         'COMPACT',
         'LIST',
+        'PURGE',
         'USERADD',
         'USERDEL',
         'USERS',
@@ -107,7 +110,7 @@ class QDB:
     ''' Print existing keys '''
     found = 0
     for k in self.store.keystore.keys():
-      if not self.store.has_index(k) and validate_key(key, confirm=True):
+      if not self.store.has_index(k) and validate_key(k, confirm=True):
         found += 1
         print(k)
     if found == 0:
@@ -178,8 +181,8 @@ class QDB:
     index = m.groupdict()['index']
     return f'{index}:{self.store.autoid(index)}'
 
-  # @performance_measurement(message='Written')
   @authorization([QDBAuthType.QDB_ADMIN])
+  # @performance_measurement(message='Written')
   def w(self, hkey_or_index: str, *members: str) -> int:
     ''' 
     Create/update multiple members of a hash
@@ -309,7 +312,10 @@ class QDB:
         rows.sort(key=lambda row: self._sort_key(row, fields_data, field_positions, force_t_type=True))
 
     for row in rows:
-      print(' | '.join(row['row']), flush=True)
+      try:
+        print(' | '.join(row['row']), flush=True)
+      except BrokenPipeError:
+        raise QDBError('Q: Error: broken pipe.')
 
     if not os.getenv('__QDB_QUIET__'):
       print(file=sys.stderr)
@@ -512,7 +518,10 @@ class QDB:
 
 
     for row in all_rows:
-      print(' | '.join(row['row']), flush=True)
+      try:
+        print(' | '.join(row['row']), flush=True)
+      except BrokenPipeError:
+        raise QDBError('Q: Error: broken pipe.')
 
     if not os.getenv('__QDB_QUIET__'):
       print(' ', file=sys.stderr)
@@ -523,6 +532,8 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   @performance_measurement(message='Processed')
   def q2(self, index: str, *exprs) -> int:
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.database_name}` no such database.')
     try:
       hkeys = self.Q.query(index, *exprs, only_root_hkeys=True)
     except QDBError as e:
@@ -542,7 +553,7 @@ class QDB:
   def hdel(self, index_or_key: str, *fields: str) -> int:
     ''' Delete a hash or an index or fields in a hash or in an index '''
     if not self.store.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.database_name}` no such database.')
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.io._database_path}` no such database.')
     is_index = self.store.is_index(index_or_key)
     if is_index:
       keys = self.store.get_index_keys(index_or_key).copy()
@@ -576,6 +587,8 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_field(self, hkey: str, field: str) -> int:
     ''' Return the value of a field in a hash. '''
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.io._database_path}` no such database.')
     if self.store.exists(hkey):
       value = self.store.read_hash_field(hkey, field)
       if value == '?NOFIELD?':
@@ -595,6 +608,8 @@ class QDB:
     Get all fields for the given key/index
     or for all indexes if none is provided.
     '''
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.io._database_path}` no such database.')
     if key:
       if self.store.is_index(key):
         keys = sorted([k for k in self.store.keystore if k.startswith(key + ':')])
@@ -624,12 +639,16 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idx(self) -> None:
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.io._database_path}` no such database.')
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idxf(self, index: str) -> None:
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.io._database_path}` no such database.')
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
       print(f'{index}: {' | '.join([f for f in fields if not is_virtual(f)])}')
@@ -643,6 +662,8 @@ class QDB:
     Print hkeys count for the given index.
     Return 0 on success, 1 if index does not exist.
     '''
+    if not self.store.isdatabase:
+      raise QDBNoDatabaseError(f'QDB: Error: `{self.store.io._database_path}` no such database.')
     if not index:
       for idx in sorted(self.store.indexes):
         print(f'{idx}: {self.store.index_len(idx)}')
@@ -700,9 +721,8 @@ class QDB:
     if users:
       print(users)
       return 0
-    else:
-      print('QDB: no users.', file=sys.stderr)
-      return 1
+    print('QDB: no users.', file=sys.stderr)
+    return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def chpw(self):
@@ -726,6 +746,12 @@ class QDB:
   def list_files(self) -> int:
     self.store.list_files()
     return 0
+
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  def get_size(self):
+    print(self.store.database_size)
+    return 0
+
 
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty
