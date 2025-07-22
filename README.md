@@ -222,6 +222,7 @@ Q artist name(autechre,"the cure") song:++title
 | `USERADD` | `USERADD [USERNAME] [PASSWORD] [AUTH_TYPE]` | Add new user                   |
 | `USERDEL` | `USERDEL <USERNAME>`                        | Delete a user                  |
 | `USERS`   | `USERS`                                     | List users                     |
+| `WHOAMI`  | `WHOAMI`                                    | Show current user              |
 
 > When no parameters are given,`USERADD` prompts the user.
 > 
@@ -243,21 +244,23 @@ Q artist name(autechre,"the cure") song:++title
 ## CLI
 
 ```
-usage: qdb [-h] [-d] [-p] [-q] [-u USERNAME] [-w PASSWORD] [command] database
+usage: qdb [-h] [-d] [-p] [-q] [-u username] [-w password] [-v]
+           database [command]
 
 Command Line Interface For the QDB database engine.
 
 positional arguments:
-  command               QDB command
   database              path to the QDB database
+  command               QDB command
 
 options:
   -h, --help            show this help message and exit
   -d, --dump            dump database as JSON
   -p, --pipe            reads commands from stdin
   -q, --quiet           be quiet
-  -u, --username USERNAME
-  -w, --password PASSWORD
+  -u, --username username
+  -w, --password password
+  -v, --version         show program's version number and exit
 
 If no option is provided, starts an interactive shell.
 ```
