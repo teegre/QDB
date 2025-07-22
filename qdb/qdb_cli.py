@@ -2,6 +2,7 @@ import argparse
 import os
 import readline
 import shlex
+import stat
 import sys
 
 from pathlib import Path
@@ -71,7 +72,11 @@ class QDBClient:
     line_count = 1
     try:
       for line in sys.stdin:
-        ret = self.execute(line.strip('\n'))
+        try:
+          ret = self.execute(line.strip('\n'))
+        except QDBError:
+          print('\x1b[?25h', end='', file=sys.stderr)
+          raise
         if line_count % 10000 == 0:
           self.qdb.store.commit(quiet=True)
         if ret != 0:
@@ -156,14 +161,19 @@ class QDBClient:
     if pipe and command:
       print('QDB: too many options.', file=sys.stderr)
       return 1
+    if self.has_piped_input():
+      if not pipe:
+        print('QDB: `--pipe` option is missing.', file=sys.stderr)
+        return 1
     if pipe:
       return self.pipe_commands()
-    if not pipe and not sys.stdin.isatty():
-      print('QDB: `--pipe` option is missing.')
-      return 1
     if command is not None:
       return self.execute(command)
     self.run_repl()
+
+  def has_piped_input(self):
+    mode = os.fstat(0).st_mode
+    return not stat.S_ISCHR(mode)
 
 def main() -> int:
   parser = argparse.ArgumentParser(
