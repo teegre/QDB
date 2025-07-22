@@ -749,9 +749,8 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_size(self):
-    print(self.store.database_size)
+    print(str(self.store.database_size))
     return 0
-
 
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty
