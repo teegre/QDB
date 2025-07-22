@@ -11,7 +11,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
-from qdb.lib.utils import authorize
+from qdb.lib.utils import authorize, spinner
 
 class QDBCompleter:
   def __init__(self, qdb: QDB):
@@ -62,16 +62,32 @@ class QDBClient:
         return 1
 
   def pipe_commands(self) -> int:
+    os.environ['__QDB_PIPE__'] = '1'
+    interrupted = False
     if not os.getenv('__QDB_QUIET__'):
       print('QDB: Processing commands...', file=sys.stderr)
+      spin = iter(spinner())
+      print('\x1b[?25l', end='', file=sys.stderr)
     line_count = 1
-    for line in sys.stdin:
-      ret = self.execute(line.strip('\n'))
-      if ret != 0:
-        print(f'QDB: Line {line_count}: command failed: `{line.strip()}`.`', file=sys.stderr)
-        return 1
-      line_count += 1
+    try:
+      for line in sys.stdin:
+        ret = self.execute(line.strip('\n'))
+        if line_count % 10000 == 0:
+          self.qdb.store.commit(quiet=True)
+        if ret != 0:
+          print(f'QDB: Line {line_count}: command failed: `{line.strip("\n")}`.`', file=sys.stderr)
+          return 1
+        if not os.getenv('__QDB_QUIET__'):
+          print(f'\r{next(spin)} {line_count}', end='', file=sys.stderr)
+        line_count += 1
+    except KeyboardInterrupt:
+      print()
+      print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
+      interrupted = True
     if not os.getenv('__QDB_QUIET__'):
+      print('\x1b[?25h', end='', file=sys.stderr)
+      if not interrupted:
+        print()
       print('QDB: Done.', file=sys.stderr)
     return 0
 
@@ -93,15 +109,15 @@ class QDBClient:
     print('(c) 2025 Stéphane MEYER (Teegre)')
     print()
     if not self.qdb.store.is_db_empty:
-      print(f'-- {len(self.qdb.store.keystore.keys())} hkeys.') # FIXME: what about regular keys?
-      print(f'-- {len(self.qdb.store.reverse_refs.keys())} references.')
-      print(f'-- {len(self.qdb.store.refs.keys())} referenced hkeys.')
+      print(f'** {self.qdb.store.database_size} keys.')
+      print(f'** {len(self.qdb.store.reverse_refs.keys())} references.')
+      print(f'** {len(self.qdb.store.refs.keys())} referenced hkeys.')
       print()
     else:
       if self.qdb.store.io.isdatabase:
-        print('-- Empty database.')
+        print('** Empty database.')
       else:
-        print('-- New database.')
+        print('** New database.')
       print()
 
     os.environ['__QDB_REPL__'] = '1'
@@ -159,8 +175,9 @@ def main() -> int:
   parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
-  parser.add_argument('-u', '--username')
-  parser.add_argument('-w', '--password')
+  parser.add_argument('-u', '--username', metavar='username')
+  parser.add_argument('-w', '--password', metavar='password')
+  parser.add_argument('-v', '--version', action='version', version=f'QDB version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
   args = parser.parse_args()
 
@@ -186,6 +203,7 @@ def main() -> int:
     return client.process_commands(args.command, args.pipe)
   except QDBError as e:
     print(e, file=sys.stderr)
+    sys.stderr.close()
     return 1
 
 if __name__ == "__main__":

@@ -159,3 +159,11 @@ def validate_field_name(field: str) -> None:
   FIELD_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9]*$')
   if not FIELD_RE.match(field):
     raise QDBError('Error: malformed field name: `{field}`.')
+
+
+def spinner():
+  # │╱─╲
+  chars = 20 * '│' + 20 * '╱' + 20 * '─' + 20 * '╲'
+  while True:
+    for c in chars:
+      yield c
