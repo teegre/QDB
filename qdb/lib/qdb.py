@@ -67,6 +67,7 @@ class QDB:
         'USERADD': self.add_user,
         'USERDEL': self.delete_user,
         'USERS':   self.list_users,
+        'WHOAMI':  self.whoami,
     }
 
   @classmethod
@@ -706,6 +707,7 @@ class QDB:
     user_add(self.users, username, password, auth)
     if not self.store.exists('@QDB_USERS'):
       self.store.write('@QDB_USERS', '1')
+      self.store.commit(quiet=True)
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -752,6 +754,10 @@ class QDB:
   def get_size(self):
     print(str(self.store.database_size))
     return 0
+
+  def whoami(self):
+    user = os.getenv('__QDB_USER__')
+    print(f'You are {user if user else "nobody"}.')
 
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty

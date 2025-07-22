@@ -25,6 +25,12 @@ class QDBAuthType(Enum):
   QDB_READONLY = auto()
   QDB_FORBIDDEN = auto()
 
+AUTH_TYPE = {
+    1: 'admin',
+    2: 'readonly',
+    3: 'forbidden'
+}
+
 class QDBUsers:
   def __init__(self, db_path: str):
     self._database_path = db_path
@@ -120,16 +126,16 @@ class QDBUsers:
   def authenticate(self, username: str, password: str):
     user = self.users.get(username)
     if not user:
-      raise QDBAuthenticationError('Error: Invalid username or password.')
+      raise QDBAuthenticationError('Invalid username or password.')
     if not bcrypt.checkpw(password.encode(), user['hash'].encode()):
-      raise QDBAuthenticationError('Error: Invalid username or password.')
+      raise QDBAuthenticationError('Invalid username or password.')
     os.environ['__QDB_USER__'] = username
 
   def get_auth(self, username: str) -> str:
     return self.users.get(username, {}).get('auth', QDBAuthType.QDB_FORBIDDEN)
 
   def list_users(self):
-    return ' '.join(self.users.keys())
+    return ' | '.join(n + f' ({AUTH_TYPE[a["auth"]]})' for n, a in self.users.items())
 
   @property
   def hasusers(self) -> bool:
