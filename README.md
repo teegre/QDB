@@ -238,6 +238,7 @@ Q artist name(autechre,"the cure") song:++title
 | `COMPACT` | `COMPACT` | Compact the database  |
 | `LIST`    | `LIST`    | List database files   |
 | `PURGE`   | `PURGE`   | Purge persisted cache |
+| `SIZE`    | `SIZE`    | Display database size |
 
 ## CLI
 
