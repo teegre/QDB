@@ -208,6 +208,7 @@ Q artist name(autechre,"the cure") song:++title
 | Command  | Syntax                                       | Description                                                     |
 | -------- | -------------------------------------------- | --------------------------------------------------------------- |
 | `QF`     | `QF <HKEY> <FIELD>`                          | Display the value of a field for a specific **HKEY**            |
+| `QQ`     | `QQ <INDEX> <EXPR>`                          | Store HKEYS matching the given expression                       |
 | `HDEL`   | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY** |
 | `HLEN`   | `HLEN <INDEX>`                               | Display the number of **HKEY**S for a specific index            |
 | `IDX`    | `IDX`                                        | Display existing indexes                                        |
@@ -241,11 +242,47 @@ Q artist name(autechre,"the cure") song:++title
 | `PURGE`   | `PURGE`   | Purge persisted cache |
 | `SIZE`    | `SIZE`    | Display database size |
 
+
+## Functions
+
+### Root Index Functions
+
+| Function  | Syntax               | Description                               | Applies to |
+| --------- | -------------------- | ----------------------------------------- | ---------- |
+| `@autoid` | `@autoid(<INDEX>)`   | Generate a HKEY for the given index       | `W`        |
+| `@recall` | `@recall(<INDEX>)`   | Recall HKEYS previously stored with `QQ`  | `Q`, `W`   |
+
+
+### Expression Functions
+
+Functions used in field values.
+
+| Function     | Syntax         | Description                                                        |
+| ------------ | -------------- | ------------------------------------------------------------------ |
+| `@dec`       | `@dec()`       | Decrement current field value                                      |
+| `@epoch`     | `@epoch()`     | Current time in seconds since the Epoch                            |
+| `@epochreal` | `@epochreal()` | Current time in seconds since the Epoch as a floating-point number |
+| `@inc`       | `@inc()`       | Increment current field value                                      |
+
+### Examples
+
+```
+QQ stat album:title=1999
+W @recall(stat) lastplayed @epochreal() playcount @inc()
+```
+> → Update last played time and playcount for the "1999" album.
+
+```
+QQ stat album:title=1999
+W !@recall(stat) lastplayed null playcount 0
+```
+
+> → Set last played time to null and playcount to 0 for all album excepted "1999"
+
 ## CLI
 
 ```
-usage: qdb [-h] [-d] [-p] [-q] [-u username] [-w password] [-v]
-           database [command]
+usage: qdb [-h] [-d] [-p] [-q] [-u username] [-w password] [-v] database [command]
 
 Command Line Interface For the QDB database engine.
 
