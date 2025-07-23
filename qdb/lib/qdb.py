@@ -24,6 +24,7 @@ from qdb.lib.utils import (
     authorization,
     authorize,
     coerce_number,
+    expand,
     is_numeric,
     is_virtual,
     performance_measurement,
@@ -49,7 +50,7 @@ class QDB:
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'Q':       self.q,
-        'Q2':      self.q2,
+        'QQ':      self.qq,
         'QF':      self.get_field,
         'HLEN':    self.hlen,
         'W':       self.w,
@@ -175,13 +176,30 @@ class QDB:
       if expr.lower().startswith('@autoid'):
         raise QDBError(
             f'Error: invalid @autoid expression: `{expr}`.\n'
-            f'Syntax: @autoid(index)'
+             'Syntax: @autoid(index)'
         )
-      else:
-        return expr
+
+      return expr
 
     index = m.groupdict()['index']
     return f'{index}:{self.store.autoid(index)}'
+
+  def _recall(self, expr: str) -> tuple[str, list, str]:
+    RECALL_RE = re.compile(r'(?P<neg>!)?@recall\((?P<index>[a-zA-Z_]+)\)$')
+    m = RECALL_RE.match(expr.lower())
+
+    if not m:
+      if expr.lower().startswith('@recall') or expr.lower().startswith('!@recall'):
+        raise QDBError(
+            f'Error: invalid @recall expression: `{expr}`.\n'
+             'Syntax: @recall(index)'
+        )
+
+      return expr, None, ''
+
+    neg = '!' if m.groupdict()['neg'] == '!' else ''
+    index = m.groupdict()['index']
+    return index, self.store.recall_hkeys(index), neg
 
   @authorization([QDBAuthType.QDB_ADMIN])
   # @performance_measurement(message='Written')
@@ -193,10 +211,21 @@ class QDB:
       print(f'W: arguments mismatch. (missing field or value)', file=sys.stderr)
       return 1
 
+    keys = None
+
     hkey_or_index = self._autoid(hkey_or_index)
+    try:
+      hkey_or_index, keys, neg = self._recall(hkey_or_index)
+    except QDBError as e:
+      print(f'W: {e}')
+      return 1
 
     if self.store.is_index(hkey_or_index):
-      keys = sorted(self.store.get_index_keys(hkey_or_index))
+      if keys is not None:
+        if neg:
+          keys = sorted(self.store.get_index_keys(hkey_or_index) ^ keys)
+      else:
+        keys = sorted(self.store.get_index_keys(hkey_or_index))
     else:
       try:
         validate_hkey(hkey_or_index)
@@ -224,6 +253,8 @@ class QDB:
         old_value = kv.get(field)
         if new_value == old_value: # and not is_new:
           continue
+
+        new_value = expand(new_value, old_value)
 
         if self.store.is_refd_by(key, old_value):
           # delete old referenced key.
@@ -481,6 +512,14 @@ class QDB:
       return 1
 
     try:
+      index_or_key, keys, neg = self._recall(index_or_key)
+      if keys is not None:
+        exprs = (f'@hkey{neg}(' + ','.join(keys) + ')',) + exprs
+    except QDBError as e:
+      print(f'W: {e}')
+      return 1
+
+    try:
       tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
     except QDBError as e:
       print(f'Q: {e}', file=sys.stderr)
@@ -533,7 +572,7 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   @performance_measurement(message='Processed')
-  def q2(self, index: str, *exprs) -> int:
+  def qq(self, index: str, *exprs) -> int:
     if not self.store.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.store.database_name}` no such database.')
     try:
@@ -542,12 +581,7 @@ class QDB:
       print(f'Q2: {e}.')
       return 1
 
-    for hkey in sorted(hkeys, key=lambda k: coerce_number(k.split(':')[1])):
-      print(hkey)
-
-    if not os.getenv('__QDB_QUIET__'):
-      print(' ', file=sys.stderr)
-      print(len(hkeys), 'HKEYS' if len(hkeys) > 1 else 'row', 'found.', file=sys.stderr)
+    self.store.store_hkeys(sorted(hkeys, key=lambda k: coerce_number(k.split(':')[1])))
 
     return 0
 

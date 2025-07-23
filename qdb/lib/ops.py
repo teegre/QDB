@@ -1,9 +1,9 @@
+import operator
 import os
 import sys
+import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-import operator
 
 OP = {
   '=':  'eq', # equal
@@ -58,10 +58,10 @@ VIRTUAL = (
 
 OTHER = (
     '@autoid',
-    '@epoch',
-    '@epochreal',
+    '@recall',
 )
 
 OPTIONS = (
   '@QDB_USERS',
 )
+

@@ -14,7 +14,7 @@ from time import time, strftime
 from zlib import crc32
 
 from qdb.lib.datacache import QDBCache
-from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError
+from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError, QDBHkeyError
 from qdb.lib.io import QDBIO, QDBInfo
 from qdb.lib.ops import OPTIONS
 from qdb.lib.utils import coerce_number
@@ -38,6 +38,7 @@ class QDBStore:
     self._pending_keys = set()
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
+    self.last_hkey: Dict[str: str] = {}
     self.refs: Dict[str: set[str]] = {}
     self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
     self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
@@ -100,7 +101,9 @@ class QDBStore:
       for ref in refs :
         self.create_ref(key, ref)
       # add new hkey to the indexes map
-      self.indexes_map.setdefault(self.get_index(key), set()).add(key)
+      index = self.get_index(key)
+      self.indexes_map.setdefault(index, set()).add(key)
+      self.last_hkey[index] = key
 
       if not os.getenv('__QDB_PIPE__'):
         if entry.timestamp > self.datacache.get_key_timestamp(key):
@@ -177,6 +180,15 @@ class QDBStore:
     if entry:
       return entry.timestamp
     return 0
+
+  def store_hkeys(self, hkeys: list):
+    self.last_hkey[self.get_index(hkeys[0])] = set(hkeys)
+
+  def recall_hkeys(self, index: str) -> list:
+    hkeys = self.last_hkey.pop(index, None)
+    if hkeys is None:
+      raise QDBHkeyError(f'Error: no HKEYS to recall for index `{index}`.')
+    return hkeys
 
   def dump(self) -> None:
     ''' Dump current database in json format '''

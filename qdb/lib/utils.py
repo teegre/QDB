@@ -6,7 +6,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from functools import wraps
 from getpass import getpass
-from time import perf_counter
+from time import perf_counter, time
 from typing import Any
 
 from qdb.lib.exception import (
@@ -177,3 +177,35 @@ def spinner():
   while True:
     for c in chars:
       yield c
+
+def epoch(dummy: str=None, real: bool=False) -> str:
+  return str(time()) if real else str(int(time()))
+
+def epochreal(dummy: str=None) -> str:
+  return epoch(real=True)
+
+def inc(value: str) -> str:
+  value = coerce_number(value)
+  if isinstance(value, (int, float)):
+    return str(value + 1)
+  return value
+
+def dec(value: str) -> str:
+  value = coerce_number(value)
+  if isinstance(value, (int, float)):
+    return str(value - 1)
+  return value
+
+FUNCTIONS = {
+    '@dec()':       dec,
+    '@epoch()':     epoch,
+    '@epochreal()': epochreal,
+    '@inc()':       inc,
+}
+
+def expand(expr: str, value: str=None):
+  expanded = expr
+  for func in FUNCTIONS:
+    if func in expr:
+      expanded = expanded.replace(func, FUNCTIONS[func](value))
+  return expanded
