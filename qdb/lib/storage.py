@@ -195,12 +195,12 @@ class QDBStore:
     if not self.io.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
 
-    for key in sorted(self.keystore, key=lambda k: coerce_number(k.split(':')[1]) if self.has_index(k) else k):
+    for key in self.keystore:
      if self.isoption(key):
        continue
      print(json.dumps(
        { key: self.read_hash(key, dump=True) if self.has_index(key) else self.read(key) }
-    ))
+    ), flush=True)
 
   def keystore_dump(self) -> None:
     ''' Dump keystore content '''
