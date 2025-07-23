@@ -571,7 +571,6 @@ class QDB:
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
-  @performance_measurement(message='Processed')
   def qq(self, index: str, *exprs) -> int:
     if not self.store.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.store.database_name}` no such database.')

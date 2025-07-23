@@ -6,7 +6,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from collections import defaultdict
 from random import shuffle
-from typing import Optional
 
 from qdb.lib.exception import QDBParseError, QDBQueryError, QDBQueryNoData
 from qdb.lib.ops import OPFUNC, AGGFUNC, BINOP, REVOP

@@ -83,9 +83,9 @@ class QDBClient:
     interrupted = False
 
     if not os.getenv('__QDB_QUIET__'):
+      print('\x1b[?25l', end='', flush=True)
       print('QDB: Processing commands...', file=sys.stderr)
       spin = iter(spinner())
-      print('\x1b[?25l', end='', file=sys.stderr)
 
     line_count = 1
 
@@ -94,7 +94,8 @@ class QDBClient:
         try:
           ret = self.execute(line.strip('\n'))
         except QDBError:
-          print('\x1b[?25h', end='', file=sys.stderr)
+          print()
+          print('\x1b[?25h', end='', flush=True)
           raise
         if line_count % 10000 == 0:
           self.qdb.store.commit(quiet=True)
@@ -110,7 +111,7 @@ class QDBClient:
       interrupted = True
 
     if not os.getenv('__QDB_QUIET__'):
-      print('\x1b[?25h', end='', file=sys.stderr)
+      print('\x1b[?25h', end='', flush=True)
       if not interrupted:
         print()
       print('QDB: Done.', file=sys.stderr)
@@ -235,4 +236,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     ret = main()
+    print('\x1b[?25h', end='', flush=True)
     sys.exit(ret)

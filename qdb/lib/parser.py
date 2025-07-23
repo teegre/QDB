@@ -122,12 +122,16 @@ class QDBParser:
 
     def validate_quoted_expr(expr: str):
       stack = []
+      quote_type = ''
       for i, c in enumerate(expr):
         if c in ('"', "'"):
-          if stack and stack[-1] == c:
-            stack.pop()
-          else:
-            stack.append(c)
+          if i == 0:
+            quote_type = c
+          if c == quote_type:
+            if stack and stack[-1] == c:
+              stack.pop()
+            else:
+              stack.append(c)
       if stack:
         raise QDBParseError(f'Error: unbalanced quotes in expression: `{expr}`.')
 
