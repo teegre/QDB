@@ -208,4 +208,5 @@ def expand(expr: str, value: str=None):
   for func in FUNCTIONS:
     if func in expr:
       expanded = expanded.replace(func, FUNCTIONS[func](value))
+      break
   return expanded
