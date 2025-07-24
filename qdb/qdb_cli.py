@@ -49,6 +49,14 @@ class QDBClient:
         '.qdb_hist'
     )
 
+  @classmethod
+  def hide_cursor(cls):
+    print('\x1b[?25l', end='', flush=True)
+
+  @classmethod
+  def show_cursor(cls):
+    print('\x1b[?25h', end='', flush=True)
+
   def execute(self, command: str) -> int:
     try:
       parts = shlex.split(command)
@@ -83,8 +91,8 @@ class QDBClient:
     interrupted = False
 
     if not os.getenv('__QDB_QUIET__'):
-      print('\x1b[?25l', end='', flush=True)
       print('QDB: Processing commands...', file=sys.stderr)
+      self.hide_cursor()
       spin = iter(spinner())
 
     line_count = 1
@@ -95,7 +103,6 @@ class QDBClient:
           ret = self.execute(line.strip('\n'))
         except QDBError:
           print()
-          print('\x1b[?25h', end='', flush=True)
           raise
         if line_count % 10000 == 0:
           self.qdb.store.commit(quiet=True)
@@ -111,10 +118,8 @@ class QDBClient:
       interrupted = True
 
     if not os.getenv('__QDB_QUIET__'):
-      print('\x1b[?25h', end='', flush=True)
       if not interrupted:
         print()
-      print('QDB: Done.', file=sys.stderr)
     return 0
 
   def _set_prompt(self) -> str:
@@ -236,5 +241,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     ret = main()
-    print('\x1b[?25h', end='', flush=True)
+    QDBClient.show_cursor()
     sys.exit(ret)
