@@ -100,8 +100,12 @@ class QDBIO:
 
   def _load(self):
     if os.path.exists(self._database_path):
-      self._archive = tarfile.open(self._database_path, 'r:')
-      self.isdatabase = True
+      try:
+        self._archive = tarfile.open(self._database_path, 'r:')
+        self.isdatabase = True
+      except tarfile.ReadError:
+        raise QDBIOReadError(f'Error: `{self._database_path}` is not a valid QDB database.')
+
     if self.users is None:
       self.users = QDBUsers(self._database_path)
 
