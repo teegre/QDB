@@ -43,17 +43,13 @@ class QDB:
     self._perf_info = {}
 
     self.commands = {
+        'CHPW':    self.chpw,
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
-        'CHPW':    self.chpw,
         'DEL' :    self.delete,
         'GET' :    self.get,
         'HDEL':    self.hdel,
-        'Q':       self.q,
-        'QQ':      self.qq,
-        'QF':      self.get_field,
         'HLEN':    self.hlen,
-        'W':       self.w,
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEYS':    self.keys,
@@ -62,12 +58,16 @@ class QDB:
         'MGET':    self.mget,
         'MSET':    self.mset,
         'PURGE':   self.purge,
+        'Q':       self.q,
+        'QF':      self.get_field,
+        'QQ':      self.qq,
         'SCHEMA':  self.schema,
         'SET' :    self.set,
         'SIZE':    self.get_size,
         'USERADD': self.add_user,
         'USERDEL': self.delete_user,
         'USERS':   self.list_users,
+        'W':       self.w,
         'WHOAMI':  self.whoami,
     }
 
@@ -240,7 +240,9 @@ class QDB:
 
     err = 0
 
+
     for key in keys:
+      haschanged = False
       # Original hash
       try:
         kv = self.store.read_hash(key) or {}
@@ -253,6 +255,8 @@ class QDB:
         old_value = kv.get(field)
         if new_value == old_value: # and not is_new:
           continue
+
+        haschanged = True
 
         new_value = expand(new_value, old_value)
 
@@ -267,7 +271,8 @@ class QDB:
           refs.append(new_value)
 
       # Write on disk
-      self.store.write(key, kv, refs)
+      if haschanged:
+        self.store.write(key, kv, refs)
 
     return 1 if err > 0 else 0
 

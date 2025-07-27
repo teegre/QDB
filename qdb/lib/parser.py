@@ -120,6 +120,13 @@ class QDBParser:
     q_r = re.compile(q_p)
     q_v = {}
 
+    def store_quoted(m):
+      key = f'__Q{len(q_v)}__'
+      quoted = m.group(0)[1:-1]
+      unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode('utf-8')
+      q_v[key] = unescaped
+      return key
+
     def validate_quoted_expr(expr: str):
       stack = []
       quote_type = ''
@@ -135,19 +142,13 @@ class QDBParser:
       if stack:
         raise QDBParseError(f'Error: unbalanced quotes in expression: `{expr}`.')
 
-    def store_quoted(m):
-      key = f'__Q{len(q_v)}__'
-      quoted = m.group(0)[1:-1]
-      unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode('utf-8')
-      q_v[key] = unescaped
-      return key
-
     def safe_split_colon(s: str) -> list:
       parts = []
       cur = ''
       br_depth = 0
       pr_depth = 0
-      for c in s:
+
+      for pos, c in enumerate(s):
         if c == '(':
           pr_depth += 1
         if c == '[':
@@ -171,14 +172,13 @@ class QDBParser:
 
       return parts
 
-    validate_quoted_expr(expr)
     expr_safe = q_r.sub(store_quoted, expr)
 
-    # How come?
     if not expr_safe.strip():
       raise QDBParseError('Error: empty expression.')
 
     parts = safe_split_colon(expr_safe)
+    validate_quoted_expr(expr_safe)
 
     if self.store.is_index(parts[0]):
       index = parts[0]

@@ -12,7 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
-from qdb.lib.utils import authorize, spinner
+from qdb.lib.utils import authorize, spinner, splitcmd
 
 def has_piped_input():
   mode = os.fstat(0).st_mode
@@ -59,9 +59,9 @@ class QDBClient:
 
   def execute(self, command: str) -> int:
     try:
-      parts = shlex.split(command)
+      parts = splitcmd(command)
     except ValueError as e:
-      print(f'QDB: {e}.')
+      print(f'QDB: {e}.', file=sys.stderr)
       return 1
     if not parts:
       return 0
@@ -81,11 +81,7 @@ class QDBClient:
 
   def pipe_commands(self) -> int:
     if self.qdb.auth_required and not os.getenv('__QDB_USER__'):
-      try:
-        authorize(self.qdb.users)
-      except QDBError as e:
-        print(f'QDB: {e}', file=sys.stderr)
-        return 1
+      authorize(self.qdb.users)
 
     os.environ['__QDB_PIPE__'] = '1'
     interrupted = False
@@ -99,11 +95,7 @@ class QDBClient:
 
     try:
       for line in sys.stdin:
-        try:
-          ret = self.execute(line.strip('\n'))
-        except QDBError:
-          print()
-          raise
+        ret = self.execute(line.strip('\n'))
         if line_count % 10000 == 0:
           self.qdb.store.commit(quiet=True)
         if ret != 0:

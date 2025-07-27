@@ -173,10 +173,38 @@ def validate_field_name(field: str) -> None:
 
 def spinner():
   # │╱─╲
-  chars = 20 * '│' + 20 * '╱' + 20 * '─' + 20 * '╲'
+  chars = 20 * '|' + 20 * '/' + 20 * '-' + 20 * '\\'
   while True:
     for c in chars:
       yield c
+
+def splitcmd(cmd: str) -> list[str]:
+  token = ''
+  tokens = []
+  quoted = False
+  quote_char = ''
+  pos = 0
+  while pos < len(cmd):
+    c = cmd[pos]
+
+    if c in '"\'' and not cmd[pos - 1] == '\\':
+      if not quoted:
+        quoted = True
+        quote_char = c
+      elif c == quote_char:
+        quoted = False
+        quote_char = ''
+      token += c
+    elif c == ' ' and not quoted:
+      tokens.append(token)
+      token = ''
+    else:
+      token += c
+    pos += 1
+  if token:
+    tokens.append(token)
+
+  return tokens
 
 def epoch(dummy: str=None, real: bool=False) -> str:
   return str(time()) if real else str(int(time()))
@@ -203,8 +231,13 @@ FUNCTIONS = {
     '@inc()':       inc,
 }
 
+def unquote(expr: str):
+  quoted = re.sub(r'''(?<!\\)"(.*?)(?<!\\)"''', r'\1', expr)
+  unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode()
+  return unescaped
+
 def expand(expr: str, value: str=None):
-  expanded = expr
+  expanded = unquote(expr)
   for func in FUNCTIONS:
     if func in expr:
       expanded = expanded.replace(func, FUNCTIONS[func](value))
