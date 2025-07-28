@@ -44,6 +44,7 @@ class QDBStore:
     self._refs_ops: Dict[str, Dict[str, list[str]|str]] = {}
     self.reverse_refs: Dict[str: set[str]] = {}
     self.__paths__: Dict[tuple: list] = {}
+    self._card_cache = {}
     if load:
       self.initialize()
     else:
@@ -418,6 +419,43 @@ class QDBStore:
       self.__paths__[(idx2, idx1)] = list(reversed(result))
 
     return result
+
+  def cardinality(self, A: str, B: str, sample_size: int=100) -> int:
+    ''' Estimate cardinality between index A and B. '''
+    if (A, B) in self._card_cache:
+      return self._card_cache[(A, B)]
+
+    Ak = sorted(self.store.get_index_keys(A))
+    Bk = sorted(self.store.get_index_keys(B))
+    ss = min(sample_size, len(Ak), len(Bk))
+
+    Ac = [len(self.store.get_refs(k, B)) for k in Ak[:ss]]
+    Bc = [len(self.store.get_refs(k, A)) for k in Bk[:ss]]
+
+    Aac = round(sum(Ac) / len(Ac)) if Ac else 0 # A → B
+    Bac = round(sum(Bc) / len(Bc)) if Bc else 0 # B → A
+
+    tolerance = 0.1
+    is_one_AtoB = (1 - tolerance) <= Aac <= (1 + tolerance)
+    is_one_BtoA = (1 - tolerance) <= Bac <= (1 + tolerance)
+
+    if is_one_AtoB and Bac > (1 + tolerance):
+      self._card_cache[(A, B)] = 21
+      self._card_cache[(B, A)] = 12
+      return 21 # many-to-one
+    if Aac > (1 + tolerance) and is_one_BtoA:
+      self._card_cache[(A, B)] = 12
+      self._card_cache[(B, A)] = 21
+      return 12 # one-to-many
+    if Aac > (1 + tolerance) and Bac > (1 + tolerance):
+      self._card_cache[(A, B)] = 22
+      self._card_cache[(B, A)] = 22
+      return 22 # many-to-many
+    if is_one_AtoB and is_one_BtoA:
+      self._card_cache[(A, B)] = 11
+      self._card_cache[(B, A)] = 11
+      return 11 # one-to-one
+    return 0 # ???
 
   def delete_ref_of_key(self, hkey: str, ref: str) -> int:
     '''
