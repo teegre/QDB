@@ -414,9 +414,10 @@ class QDBIO:
 
     latest = {}
 
+    warnings = 0
+
     for file in files:
       position = 0
-      warnings = 0
 
       log = self._get(file)
 
@@ -712,7 +713,10 @@ class QDBIO:
 
   def list(self):
     if not self._archive:
-      self._archive.open(self._database_path, 'r:')
+      try:
+        self._archive = tarfile.open(self._database_path, 'r:')
+      except FileNotFoundError:
+        raise QDBIOReadError('no file.')
     if self._archive:
       self._archive.list(verbose=True)
       return

@@ -33,6 +33,9 @@ class QDBQueryError(QDBError):
 class QDBQueryNoData(QDBError):
   pass
 
+class QDBKeyError(QDBError):
+  pass
+
 class QDBHkeyError(QDBError):
   pass
 

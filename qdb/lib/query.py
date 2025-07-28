@@ -273,7 +273,7 @@ class QDBQuery:
         case 'avg':
           reduced[f'{idx}:{op}:{f}'] = { str(round(sum(clean_values) / len(clean_values), 2)): {} }
         case 'sum':
-          reduced[f'{idx}:{op}:{f}'] = { str(sum(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { str(round(sum(clean_values), 2)): {} }
         case 'min':
           reduced[f'{idx}:{op}:{f}'] = { str(min(clean_values)): {} }
         case 'max':

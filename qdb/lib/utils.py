@@ -12,8 +12,9 @@ from typing import Any
 from qdb.lib.exception import (
     QDBAuthenticationCancelledError,
     QDBError,
-    QDBNoAdminError,
     QDBHkeyError,
+    QDBKeyError,
+    QDBNoAdminError,
     QDBUnauthorizedError,
 )
 from qdb.lib.ops import VIRTUAL
