@@ -39,7 +39,9 @@ class QDBCompleter:
 class QDBClient:
   def __init__(self, name: str, username: str=None, password: str=None, command: str=None):
     self.qdb = QDB(name, load=QDB.do_load_database(command))
-    if self.qdb.users is not None and self.qdb.users.hasusers:
+    if not self.qdb.users.hasusers and (username or password):
+      raise QDBError(f'Error: `{username}`, unknown user.')
+    if self.qdb.users.hasusers:
       authorize(self.qdb.users, username, password)
     if password:
       del password

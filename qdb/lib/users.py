@@ -67,7 +67,7 @@ class QDBUsers:
     if not self._users_ops:
       return
     data = json.dumps(self._users_ops, indent=2).encode()
-    user_info = tarfile.TarInfo(self.filename + '_')
+    user_info = tarfile.TarInfo(self.filename + '_' + str(len(self.users) + 1))
     self.set_user_info(user_info)
     user_info.size = len(data)
     user_info.mtime = time.time()
