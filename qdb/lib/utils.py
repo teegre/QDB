@@ -1,12 +1,13 @@
 import os
 import re
 import sys
+import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from datetime import datetime
 from functools import wraps
 from getpass import getpass
-from time import perf_counter, time
 from typing import Any
 
 from qdb.lib.exception import (
@@ -24,14 +25,14 @@ def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-      t1 = perf_counter()
+      t1 = time.perf_counter()
       if os.getenv('__QDB_QUIET__'):
         return func(*args, **kwargs)
       result = func(*args, **kwargs)
       if not os.getenv('__QDB_DEBUG__'):
         if result == 1:
           return result
-      t2 = perf_counter()
+      t2 = time.perf_counter()
       d = t2 - t1
       if hasattr(args[0], 'parent') and hasattr(args[0].parent, '_perf_info'):
         args[0].parent._perf_info[message] = d
@@ -207,29 +208,39 @@ def splitcmd(cmd: str) -> list[str]:
 
   return tokens
 
-def epoch(dummy: str=None, real: bool=False) -> str:
-  return str(time()) if real else str(int(time()))
+def abs_(value: str) -> str:
+  value = coerce_number(value)
+  if isinstance(value, (int, float)):
+    return str(abs(value))
+  raise QDBError(f'@abs: Type error: `{value}`.')
 
-def epochreal(dummy: str=None) -> str:
-  return epoch(real=True)
+def epoch(value: str=None, real: bool=False) -> str:
+  if value is None:
+    return str(time.time()) if real else str(int(time.time()))
+  dt = datetime.fromisoformat(value)
+  return str(int(dt.timestamp())) if not real else str(dt.timestamp())
+
+def epochreal(value: str=None) -> str:
+  return epoch(value=value, real=True)
 
 def inc(value: str) -> str:
   value = coerce_number(value)
   if isinstance(value, (int, float)):
     return str(value + 1)
-  return value
+  return str(value)
 
 def dec(value: str) -> str:
   value = coerce_number(value)
   if isinstance(value, (int, float)):
     return str(value - 1)
-  return value
+  return str(value)
 
 FUNCTIONS = {
-    '@dec()':       dec,
-    '@epoch()':     epoch,
-    '@epochreal()': epochreal,
-    '@inc()':       inc,
+    '@abs':       abs_,
+    '@dec':       dec,
+    '@epoch':     epoch,
+    '@epochreal': epochreal,
+    '@inc':       inc,
 }
 
 def unquote(expr: str):
@@ -237,10 +248,19 @@ def unquote(expr: str):
   unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode()
   return unescaped
 
-def expand(expr: str, value: str=None):
+def expand(expr: str, value: str=None, write: bool=False) -> str:
   expanded = unquote(expr)
-  for func in FUNCTIONS:
-    if func in expr:
-      expanded = expanded.replace(func, FUNCTIONS[func](value))
-      break
-  return expanded
+  func = unwrap_function(expr, extract_func=True)
+  if func in FUNCTIONS:
+    expanded = FUNCTIONS[func](value)
+    return expanded
+  return expr if write else value
+
+def unwrap_function(expr: str, extract_func: bool=False) -> str:
+  '''Return base field from nested function.'''
+  while match := re.match(r'(@?\w+)\(([^()]+)\)', expr):
+    if extract_func:
+      expr = match.group(1)
+    else:
+      expr = match.group(2)
+  return expr.strip()

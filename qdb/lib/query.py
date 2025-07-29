@@ -11,7 +11,14 @@ from qdb.lib.exception import QDBParseError, QDBQueryError, QDBQueryNoData
 from qdb.lib.ops import OPFUNC, AGGFUNC, BINOP, REVOP
 from qdb.lib.parser import QDBParser
 from qdb.lib.storage import QDBStore
-from qdb.lib.utils import is_numeric, coerce_number, is_virtual, performance_measurement
+from qdb.lib.utils import (
+    coerce_number,
+    expand,
+    is_numeric,
+    is_virtual,
+    performance_measurement,
+    unwrap_function,
+)
 
 class QDBQuery:
   def __init__(self, store: QDBStore, parent=None):
@@ -82,7 +89,7 @@ class QDBQuery:
           grouped[i] = [f]
       if is_grouped(i) and f not in fields.get(i, []):
         continue
-      if f not in fields.get(i, []) and f != '*':
+      if unwrap_function(f) not in fields.get(i, []) and f != '*':
         raise QDBQueryError(
             f'Error: field `{i}:{f}` is not used in any condition or aggregation.\n'
             f'Consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
@@ -187,10 +194,11 @@ class QDBQuery:
               group_key = tuple(data.get(f) for f in group_fields) if group else ('__all__',)
 
               for agg in agg_exprs[idx]:
-                op, f = agg['op'], agg['field']
+                op, f = agg['op'], unwrap_function(agg['field'])
                 val = data.get(f.replace('*', '@id'))
+                val = expand(agg['field'], val)
                 val = coerce_number(val) if not is_virtual(f) else val
-                grouped[group_key][f'{idx}:{op}:{f}'].append(val)
+                grouped[group_key][f'{idx}:{op}:{agg["field"]}'].append(val)
 
             for group_key, agg_vals in grouped.items():
               pointer = results

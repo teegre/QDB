@@ -97,6 +97,9 @@ class QDBClient:
 
     try:
       for line in sys.stdin:
+        if line[0] == '#': # Comment
+          line_count += 1
+          continue
         ret = self.execute(line.strip('\n'))
         if line_count % 10000 == 0:
           self.qdb.store.commit(quiet=True)
@@ -111,9 +114,7 @@ class QDBClient:
       print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
       interrupted = True
 
-    if not os.getenv('__QDB_QUIET__'):
-      if not interrupted:
-        print()
+    QDBClient.show_cursor()
     return 0
 
   def _set_prompt(self) -> str:
@@ -209,8 +210,7 @@ def main() -> int:
     return 1
 
   if args.quiet:
-    from os import environ
-    environ['__QDB_QUIET__'] = '1'
+    os.environ['__QDB_QUIET__'] = '1'
 
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
@@ -229,6 +229,8 @@ def main() -> int:
   try:
     return client.process_commands(args.command, args.pipe)
   except QDBError as e:
+    if not os.getenv('__QDB_QUIET__'):
+      print()
     print(e, file=sys.stderr)
     sys.stderr.close()
     return 1

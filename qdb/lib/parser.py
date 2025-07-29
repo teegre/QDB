@@ -10,7 +10,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb.lib.exception import QDBParseError
 from qdb.lib.ops import OP, SORTPREFIX, AGGFUNC
 from qdb.lib.storage import QDBStore
-from qdb.lib.utils import coerce_number, is_virtual
+from qdb.lib.utils import coerce_number, is_virtual, unwrap_function
 
 class QDBParser:
   def __init__(self, store: QDBStore, main_index: str=None):
@@ -19,7 +19,7 @@ class QDBParser:
 
   def validate_field(self, index: str, field: str, excepted: list=[], context: str=None) -> None:
     valid_fields = self.store.get_fields_from_index(index)
-    if field not in valid_fields + excepted:
+    if unwrap_function(field) not in valid_fields + excepted:
       suggestions = difflib.get_close_matches(field, valid_fields, n=3, cutoff=0.5)
 
       msg = f'Error: `{field}` is not a valid field for `{index}`'
@@ -52,10 +52,10 @@ class QDBParser:
             f'\nAvailable aggregate functions: {', '.join(sorted(AGGFUNC))}'
         )
 
-  def _parse_condition(self, part: str, fields: list, sort: list, aggregate: bool=False) -> Optional[dict]:
+  def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
     # IN-style syntax: optional sort, field(value1[, ..., valueN])
     in_match = re.match(
-        r'^(?P<sort>\+\+|--)?(?P<field>[^\s:!()]+)'
+        r'^(?P<sort>\+\+|--)?(?P<field>[^@\s:!()]+)'
         r'(?P<neg>!)?\((?P<values>[^\)]*)\)$', part
     )
 
@@ -87,17 +87,24 @@ class QDBParser:
       }
 
     match = re.match(
-        r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
+        r'^(?P<sort>\+\+|--)?(?P<field>@?\w+(?:\([^\)]+\))?)'
         r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
         r'(?P<value>.+)?$', part
     )
+
+    # match = re.match(
+    #     r'^(?P<sort>\+\+|--)?(?P<field>[^=><!*^$]+)'
+    #     r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
+    #     r'(?P<value>.+)?$', part
+    # )
 
     if not match:
       raise QDBParseError(f'Error: invalid expression: `{part}`')
 
     groups = match.groupdict()
     field = groups['field'].strip()
-    if field not in fields and not field.startswith('@['):
+
+    if unwrap_function(field) not in fields and not field.startswith('@['):
       fields.append(field)
 
     if groups['sort']:
@@ -208,13 +215,10 @@ class QDBParser:
     agg_fields = []
     fields_to_check = []
     index_fields = self.store.get_fields_from_index(index)
-    has_aggregate = False
 
     for part in parts:
       for k, v in q_v.items():
         part = part.replace(k, v)
-
-      conditions.append(self._parse_condition(part, fields, sort_info, has_aggregate))
 
       agg_match = re.match(r'^@\[(?P<aggs>[^\]]+)\]$', part)
       if agg_match:
@@ -223,7 +227,8 @@ class QDBParser:
         if not aggs:
           raise QDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
 
-        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[\w|\*@]+)'
+        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>@?\w+(?:\([^\)]+\))?)'
+        # item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[\w|\*@]+)'
 
         items = aggs.split(',')
 
@@ -248,9 +253,10 @@ class QDBParser:
               agg_fields.append(composite_field)
               if agg_sort:
                 sort_info.append({'order': SORTPREFIX[agg_sort], 'field': composite_field})
-            has_aggregate = True
           else:
             raise QDBParseError(f'syntax error in: `@[{item}]`')
+      else:
+        conditions.append(self._parse_condition(part, fields, sort_info))
 
     # Field validity check
     for field in fields:

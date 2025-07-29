@@ -112,7 +112,7 @@ class QDBStore:
 
     return 0
 
-  def read(self, key: str, read_hash: bool=False) -> str | dict:
+  def read(self, key: str, read_hash: bool=False) -> str | dict | None:
     ''' Read data for the given key '''
     if not self.io.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
@@ -145,6 +145,15 @@ class QDBStore:
     if data:
       return(data.get(field, '?NOFIELD?'))
     return None
+
+  # TODO: Database options
+  # def get_opt(self, option: str) -> str | None:
+  #   opt = option.upper()
+  #   return self.read('@' + opt)
+
+  # def set_opt(self, option: str, value: str) -> int:
+  #   opt = option.upper()
+  #   self.write('@' + opt, value)
 
   def delete(self, key: str) -> int:
     '''
@@ -425,12 +434,12 @@ class QDBStore:
     if (A, B) in self._card_cache:
       return self._card_cache[(A, B)]
 
-    Ak = sorted(self.store.get_index_keys(A))
-    Bk = sorted(self.store.get_index_keys(B))
+    Ak = sorted(self.get_index_keys(A))
+    Bk = sorted(self.get_index_keys(B))
     ss = min(sample_size, len(Ak), len(Bk))
 
-    Ac = [len(self.store.get_refs(k, B)) for k in Ak[:ss]]
-    Bc = [len(self.store.get_refs(k, A)) for k in Bk[:ss]]
+    Ac = [len(self.get_refs(k, B)) for k in Ak[:ss]]
+    Bc = [len(self.get_refs(k, A)) for k in Bk[:ss]]
 
     Aac = round(sum(Ac) / len(Ac)) if Ac else 0 # A → B
     Bac = round(sum(Bc) / len(Bc)) if Bc else 0 # B → A

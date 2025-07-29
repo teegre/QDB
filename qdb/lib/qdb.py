@@ -29,6 +29,7 @@ from qdb.lib.utils import (
     is_virtual,
     performance_measurement,
     user_add,
+    unwrap_function,
     validate_hkey,
     validate_key,
 )
@@ -258,7 +259,7 @@ class QDB:
 
         haschanged = True
 
-        new_value = expand(new_value, old_value)
+        new_value = expand(new_value, old_value, write=True)
 
         if self.store.is_refd_by(key, old_value):
           # delete old referenced key.
@@ -320,8 +321,9 @@ class QDB:
       if index_fields:
         row.append(key)
         for f in index_fields:
+          field = unwrap_function(f)
           if not is_virtual(f):
-            v = data.get(f, '?NOFIELD?')
+            v = expand(f, data.get(field, '?NOFIELD?'))
             row.append(f'{f}={v}')
         rows.append({'row': row, 'sort_value': None})
       else:
@@ -332,8 +334,9 @@ class QDB:
               if not is_virtual(f):
                 row.append(f'{f}={v}')
           else:
-            for field in fields:
-              val = data.get(field, '?NOFIELD?')
+            for f in fields:
+              field = unwrap_function(f)
+              val = expand(f, data.get(field, '?NOFIELD?'))
               row.append(val)
               sort_data = fields_data[root_index]['sort']
         rows.append({'row': row, 'sort_value': sort_data})
@@ -434,8 +437,9 @@ class QDB:
             current_values[(index, f)] = v
       else:
         for f in fields:
+          field = unwrap_function(f)
           try:
-            current_values[(index, f)] = data[f]
+            current_values[(index, f)] = expand(f, data[field])
           except (KeyError, TypeError):
             raise QDBError(f'an unexpected error involving `{index}:{f}` occured.')
         if row_meta.get('sort_value') is None and sort_data:
@@ -590,7 +594,9 @@ class QDB:
     try:
       hkeys = self.Q.query(index, *exprs, only_root_hkeys=True)
     except QDBError as e:
-      print(f'Q2: {e}.')
+      if not os.getenv('__QDB_QUIET'):
+        print()
+      print(f'QQ: {e}', file=sys.stderr)
       return 1
 
     self.store.store_hkeys(sorted(hkeys, key=lambda k: coerce_number(k.split(':')[1])))
