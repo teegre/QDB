@@ -257,18 +257,19 @@ Q artist name(autechre,"the cure") song:++title
 
 Functions used in field values.
 
-| Function     | Syntax         | Description                                                        |
-| ------------ | -------------- | ------------------------------------------------------------------ |
-| `@dec`       | `@dec()`       | Decrement current field value                                      |
-| `@epoch`     | `@epoch()`     | Current time in seconds since the Epoch                            |
-| `@epochreal` | `@epochreal()` | Current time in seconds since the Epoch as a floating-point number |
-| `@inc`       | `@inc()`       | Increment current field value                                      |
+| Function     | Syntax                | Description                                                        |
+| ------------ | --------------------- | ------------------------------------------------------------------ |
+| `@abs`       | `@abs[(FIELD)]`       | Absolute value of current field                                    |
+| `@dec`       | `@dec[(FIELD)]`       | Decrement current field value                                      |
+| `@epoch`     | `@epoch[(FIELD)]`     | Current time in seconds since the Epoch                            |
+| `@epochreal` | `@epochreal[(FIELD)]` | Current time in seconds since the Epoch as a floating-point number |
+| `@inc`       | `@inc[(FIELD)]`       | Increment current field value                                      |
 
 ### Examples
 
 ```
 QQ stat album:title=1999
-W @recall(stat) lastplayed @epochreal() playcount @inc()
+W @recall(stat) lastplayed @epochreal playcount @inc
 ```
 > → Update last played time and playcount for the "1999" album.
 
@@ -276,8 +277,12 @@ W @recall(stat) lastplayed @epochreal() playcount @inc()
 QQ stat album:title=1999
 W !@recall(stat) lastplayed null playcount 0
 ```
-
 > → Set last played time to null and playcount to 0 for all album excepted "1999"
+
+```
+Q song:1 title stat:@epoch(lastplayed)
+```
+> → Convert `lastplayed` date to a Unix timestamp.
 
 ## CLI
 
