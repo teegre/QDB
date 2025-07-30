@@ -272,7 +272,7 @@ Functions used in field values.
 
 ```
 QQ stat album:title=1999
-W @recall(stat) lastplayed @epochreal playcount @inc
+W @recall(stat) lastplayed @now playcount @inc
 ```
 > → Update last played time and playcount for the "1999" album.
 
