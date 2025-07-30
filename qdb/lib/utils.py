@@ -276,13 +276,13 @@ def unwrap_function(expr: str, extract_func: bool=False) -> str:
   '''
   Return base field from function or function if 'extract_func' is True.
   '''
-  while match := re.match(r'(@?\w+)\(([^()]+)\)', expr):
+  while match := re.match(r'(?P<sort>\+\+|--)?(@?\w+)\(([^()]+)\)', expr):
     if extract_func:
-      func = match.group(1)
+      func = match.group(2)
       if func in FUNCTIONS:
         expr = func
       else:
         return expr
     else:
-      expr = match.group(2)
+      expr = match.group(3)
   return expr.strip()

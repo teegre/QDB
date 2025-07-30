@@ -155,6 +155,8 @@ class QDBClient:
 
     readline.set_completer(QDBCompleter(self.qdb).complete)
     readline.parse_and_bind('tab: complete')
+    readline.parse_and_bind(r'"[" "\C-v[]\e[D"')
+    readline.parse_and_bind(r'"(" "\C-v()\e[D"')
 
     while True:
       try:
@@ -229,7 +231,7 @@ def main() -> int:
   try:
     return client.process_commands(args.command, args.pipe)
   except QDBError as e:
-    if args.pipe and not os.getenv('__QDB_QUIET__'):
+    if has_piped_input() and not os.getenv('__QDB_QUIET__'):
       print()
     print(e, file=sys.stderr)
     sys.stderr.close()
