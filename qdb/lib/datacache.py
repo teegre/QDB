@@ -57,7 +57,6 @@ class QDBCache:
         for k, v in json.loads(cache_data.decode()).items()
     }
 
-
   @property
   def size(self):
     return len(self.__cache)
