@@ -39,7 +39,7 @@ class QDBCompleter:
 class QDBClient:
   def __init__(self, name: str, username: str=None, password: str=None, command: str=None):
     self.qdb = QDB(name, load=QDB.do_load_database(command))
-    if not self.qdb.users.hasusers and (username or password):
+    if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
       raise QDBError(f'Error: `{username}`, unknown user.')
     if self.qdb.users.hasusers:
       authorize(self.qdb.users, username, password)
@@ -229,7 +229,7 @@ def main() -> int:
   try:
     return client.process_commands(args.command, args.pipe)
   except QDBError as e:
-    if not os.getenv('__QDB_QUIET__'):
+    if args.pipe and not os.getenv('__QDB_QUIET__'):
       print()
     print(e, file=sys.stderr)
     sys.stderr.close()
