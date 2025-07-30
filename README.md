@@ -257,13 +257,15 @@ Q artist name(autechre,"the cure") song:++title
 
 Functions used in field values.
 
-| Function     | Syntax                | Description                                                        |
-| ------------ | --------------------- | ------------------------------------------------------------------ |
-| `@abs`       | `@abs[(FIELD)]`       | Absolute value of current field                                    |
-| `@dec`       | `@dec[(FIELD)]`       | Decrement current field value                                      |
-| `@epoch`     | `@epoch[(FIELD)]`     | Current time in seconds since the Epoch                            |
-| `@epochreal` | `@epochreal[(FIELD)]` | Current time in seconds since the Epoch as a floating-point number |
-| `@inc`       | `@inc[(FIELD)]`       | Increment current field value                                      |
+| Function     | Syntax                | Description                                                             |
+| ------------ | --------------------- | ----------------------------------------------------------------------- |
+| `@abs`       | `@abs[(FIELD)]`       | Absolute value of current field                                         |
+| `@dec`       | `@dec[(FIELD)]`       | Decrement current field value                                           |
+| `@epoch`     | `@epoch[(FIELD)]`     | Convert date to seconds since the Epoch                                 |
+| `@epochreal` | `@epochreal[(FIELD)]` | Convert date to seconds since the Epoch as a floating-point number      |
+| `@now`       | `@now`                | Current date/time in seconds since the Epoch as a floating-point number |
+| `@nowiso`    | `@nowiso`             | Current date/time as a string                                           |
+| `@inc`       | `@inc[(FIELD)]`       | Increment current field value                                           |
 
 ### Examples
 
