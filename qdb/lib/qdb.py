@@ -445,8 +445,9 @@ class QDB:
         if row_meta.get('sort_value') is None and sort_data:
           for rule in sort_data:
             for f in fields:
+              field = unwrap_function(f)
               if rule['field'] == f:
-                row_meta['sort_value'] = data[f]
+                row_meta['sort_value'] = expand(f, data[field])
                 break
 
       if node and not is_aggregation:
@@ -594,7 +595,7 @@ class QDB:
     try:
       hkeys = self.Q.query(index, *exprs, only_root_hkeys=True)
     except QDBError as e:
-      if not os.getenv('__QDB_QUIET'):
+      if not os.getenv('__QDB_QUIET__') and not os.getenv('__QDB_REPL__'):
         print()
       print(f'QQ: {e}', file=sys.stderr)
       return 1
