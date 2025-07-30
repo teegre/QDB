@@ -198,7 +198,7 @@ class QDBStore:
     hkeys = self.last_hkey.pop(index, None)
     if hkeys is None:
       raise QDBHkeyError(f'Error: no HKEYS to recall for index `{index}`.')
-    return hkeys
+    return sorted(hkeys)
 
   def dump(self) -> None:
     ''' Dump current database in json format '''

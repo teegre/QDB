@@ -54,12 +54,13 @@ class QDBParser:
 
   def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
     # IN-style syntax: optional sort, field(value1[, ..., valueN])
+
     in_match = re.match(
-        r'^(?P<sort>\+\+|--)?(?P<field>[^@\s:!()]+)'
+        r'^(?P<sort>\+\+|--)?(?P<field>[^\s:!()]+)'
         r'(?P<neg>!)?\((?P<values>[^\)]*)\)$', part
     )
 
-    if in_match:
+    if in_match and part == unwrap_function(part, extract_func=True):
       field = in_match.group('field').strip()
 
       values_raw = in_match.group('values')

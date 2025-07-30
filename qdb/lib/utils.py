@@ -223,6 +223,18 @@ def epoch(value: str=None, real: bool=False) -> str:
 def epochreal(value: str=None) -> str:
   return epoch(value=value, real=True)
 
+def now(dummy: str=None) -> str:
+  return epochreal(value=None)
+
+def nowiso(dummy: str=None) -> str:
+  return datetime.now().isoformat()
+
+def todatetime(value: str):
+  try:
+    return datetime.fromtimestamp(float(value)).isoformat()
+  except ValueError:
+    raise QDBError(f'QDB: Error: `{value}`, invalid timestamp.')
+
 def inc(value: str) -> str:
   value = coerce_number(value)
   if isinstance(value, (int, float)):
@@ -237,10 +249,13 @@ def dec(value: str) -> str:
 
 FUNCTIONS = {
     '@abs':       abs_,
+    '@datetime':  todatetime,
     '@dec':       dec,
     '@epoch':     epoch,
     '@epochreal': epochreal,
     '@inc':       inc,
+    '@now':       now,
+    '@nowiso':    nowiso,
 }
 
 def unquote(expr: str):
@@ -249,7 +264,8 @@ def unquote(expr: str):
   return unescaped
 
 def expand(expr: str, value: str=None, write: bool=False) -> str:
-  expanded = unquote(expr)
+  expanded = expr = unquote(expr)
+  value = unquote(value) if value is not None else value
   func = unwrap_function(expr, extract_func=True)
   if func in FUNCTIONS:
     expanded = FUNCTIONS[func](value)
@@ -257,10 +273,16 @@ def expand(expr: str, value: str=None, write: bool=False) -> str:
   return expr if write else value
 
 def unwrap_function(expr: str, extract_func: bool=False) -> str:
-  '''Return base field from nested function.'''
+  '''
+  Return base field from function or function if 'extract_func' is True.
+  '''
   while match := re.match(r'(@?\w+)\(([^()]+)\)', expr):
     if extract_func:
-      expr = match.group(1)
+      func = match.group(1)
+      if func in FUNCTIONS:
+        expr = func
+      else:
+        return expr
     else:
       expr = match.group(2)
   return expr.strip()

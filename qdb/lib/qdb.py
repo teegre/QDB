@@ -529,7 +529,7 @@ class QDB:
       if keys is not None:
         exprs = (f'@hkey{neg}(' + ','.join(keys) + ')',) + exprs
     except QDBError as e:
-      print(f'W: {e}')
+      print(f'Q: {e}', file=sys.stderr)
       return 1
 
     try:
