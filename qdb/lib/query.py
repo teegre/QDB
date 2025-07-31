@@ -239,20 +239,23 @@ class QDBQuery:
         continue
 
       idx, op, f = k.split(':')
-      match op:
-        case 'avg':
-          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(round(sum(clean_values) / len(clean_values), 2))): {} }
-        case 'sum':
-          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(round(sum(clean_values), 2))): {} }
-        case 'min':
-          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(min(clean_values))): {} }
-        case 'max':
-          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(max(clean_values))): {} }
-        case 'count':
-          count_value = (
-              len(set(clean_values)) if f != '*' else len(clean_values)
-          )
-          reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(count_value): {} }
+      try:
+        match op:
+          case 'avg':
+            reduced[f'{idx}:{op}:{f}'] = { expand(f, str(round(sum(clean_values) / len(clean_values), 2))): {} }
+          case 'sum':
+            reduced[f'{idx}:{op}:{f}'] = { expand(f, str(round(sum(clean_values), 2))): {} }
+          case 'min':
+            reduced[f'{idx}:{op}:{f}'] = { expand(f, str(min(clean_values))): {} }
+          case 'max':
+            reduced[f'{idx}:{op}:{f}'] = { expand(f, str(max(clean_values))): {} }
+          case 'count':
+            count_value = (
+                len(set(clean_values)) if f != '*' else len(clean_values)
+            )
+            reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(count_value): {} }
+      except TypeError:
+        raise QDBQueryError(f'Error: mixed value types in `{unwrap_function(f)}`.')
 
     return reduced
 
