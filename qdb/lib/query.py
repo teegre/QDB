@@ -195,7 +195,7 @@ class QDBQuery:
 
               for agg in agg_exprs[idx]:
                 op, f = agg['op'], unwrap_function(agg['field'])
-                val = data.get(f.replace('*', '@id'))
+                val = data.get(f.replace('*', '$id'))
                 val = coerce_number(val) if not is_virtual(f) else val
                 grouped[group_key][f'{idx}:{op}:{agg["field"]}'].append(val)
 
@@ -299,9 +299,9 @@ class QDBQuery:
 
         for v in values:
           match f:
-            case '@id':
+            case '$id':
               hkey = f'{index}:{v}'
-            case '@hkey':
+            case '$hkey':
               hkey = v
           if not self.store.exists(hkey):
             raise QDBQueryError(f'Error: `{hkey}`, no such hkey.')
@@ -422,9 +422,9 @@ class QDBQuery:
     # Fields
     selected_fields = {}
 
-    # Assuming '@hkey' when no fields are selected for the main index,
+    # Assuming '$hkey' when no fields are selected for the main index,
     if root_index not in selected_indexes:
-      selected_fields = {root_index: {'fields': ['@hkey'], 'sort': None }}
+      selected_fields = {root_index: {'fields': ['$hkey'], 'sort': None }}
       selected_indexes.append(root_index)
 
     for d in parsed_exprs:

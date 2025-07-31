@@ -88,7 +88,7 @@ class QDBParser:
       }
 
     match = re.match(
-        r'^(?P<sort>\+\+|--)?(?P<field>@?\w+(?:\([^\)]+\))?)'
+        r'^(?P<sort>\+\+|--)?(?P<field>[$@]?\w+(?:\([^\)]+\))?)'
         r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
         r'(?P<value>.+)?$', part
     )
@@ -228,7 +228,7 @@ class QDBParser:
         if not aggs:
           raise QDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
 
-        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>@?\w+(?:\([^\)]+\))?|\*)'
+        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[$@]?\w+(?:\([^\)]+\))?|\*)'
 
         items = aggs.split(',')
 

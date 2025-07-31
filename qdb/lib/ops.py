@@ -52,8 +52,8 @@ SORTPREFIX = {
 }
 
 VIRTUAL = (
-    '@id',
-    '@hkey',
+    '$hkey',
+    '$id',
 )
 
 OTHER = (
@@ -63,5 +63,6 @@ OTHER = (
 
 OPTIONS = (
   '@QDB_USERS',
+  '@QDB_FLOATPRECISION',
 )
 

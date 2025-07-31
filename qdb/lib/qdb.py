@@ -528,7 +528,7 @@ class QDB:
     try:
       index_or_key, keys, neg = self._recall(index_or_key)
       if keys is not None:
-        exprs = (f'@hkey{neg}(' + ','.join(keys) + ')',) + exprs
+        exprs = (f'$hkey{neg}(' + ','.join(keys) + ')',) + exprs
     except QDBError as e:
       print(f'Q: {e}', file=sys.stderr)
       return 1
@@ -655,14 +655,14 @@ class QDB:
     if self.store.exists(hkey):
       value = self.store.read_hash_field(hkey, field)
       if value == '?NOFIELD?':
-        print(f'GETF: Error: `{field}`, no such field in `{hkey}`.', file=sys.stderr)
+        print(f'QF: Error: `{field}`, no such field in `{hkey}`.', file=sys.stderr)
         return 1
       if value:
         print(value)
         return 0
-      print(f'GETF: {hkey}: no data.', file=sys.stderr)
+      print(f'QF: {hkey}: no data.', file=sys.stderr)
       return 0
-    print(f'GETF: Error: `{hkey}`, no such hkey.', file=sys.stderr)
+    print(f'QF: Error: `{hkey}`, no such hkey.', file=sys.stderr)
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])

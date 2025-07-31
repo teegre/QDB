@@ -135,8 +135,8 @@ class QDBStore:
 
     if value and not dump:
       ID = hkey.split(':')[1]
-      value['@hkey'] = hkey
-      value['@id'] = ID
+      value['$hkey'] = hkey
+      value['$id'] = ID
 
     return value
 

@@ -217,7 +217,13 @@ def abs_(value: str) -> str:
 def epoch(value: str=None, real: bool=False) -> str:
   if value is None:
     return str(time.time()) if real else str(int(time.time()))
-  dt = datetime.fromisoformat(value)
+  try:
+    dt = datetime.fromisoformat(value)
+  except ValueError:
+    raise QDBError(
+        f'QDB: {"@epochreal" if real else "@epoch"} error: invalid value `{value}`.'
+        '\nISO date/time string expected.'
+    )
   return str(int(dt.timestamp())) if not real else str(dt.timestamp())
 
 def epochreal(value: str=None) -> str:
@@ -237,13 +243,13 @@ def todate(value: str) -> str:
 
 def todatetime(value: str) -> str:
   try:
-    return datetime.fromtimestamp(coerce_number(value)).isoformat()
+    return datetime.fromtimestamp(coerce_number(value)).date().isoformat()
   except ValueError:
     raise QDBError(f'QDB: @datetime error: `{value}`, invalid timestamp.')
 
 def totime(value: str):
   try:
-    return datetime.fromtimestamp(coerce_number(value)).time().isoformat()
+    return str(timedelta(seconds=coerce_number(value))).replace('0:', '')
   except ValueError:
     raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
 
@@ -295,8 +301,11 @@ def unwrap_function(expr: str, extract_func: bool=False) -> str:
       func = match.group(2)
       if func in FUNCTIONS:
         expr = func
+        break
+      if func[0] == '@':
+        raise QDBError(f'Error: `{func}`, no such function.')
       else:
-        return expr
+        break
     else:
       expr = match.group(3)
   return expr.strip()
