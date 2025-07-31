@@ -112,8 +112,8 @@ These are *convenience* fields that can be used to display and/or filter data in
 
 | Virtual field | Description                              |
 | ------------- | ---------------------------------------- |
-| `@hkey`       | The full **HKEY**, e.g. `artist:83`      |
-| `@id`         | The **ID** part of a **HKEY**, e.g. `83` |
+| `$hkey`       | The full **HKEY**, e.g. `artist:83`      |
+| `$id`         | The **ID** part of a **HKEY**, e.g. `83` |
 
 ### Condition operators
 
@@ -143,7 +143,7 @@ These are *convenience* fields that can be used to display and/or filter data in
 | `min`    | Minimum     |
 | `sum`    | Sum         |
 
-> Note: the sorting prefix must be added before the aggregation function e.g. `Q artist @id=83:name song:@[--count:*]`.
+> Note: the sorting prefix must be added before the aggregation function e.g. `Q artist:83 name album:date:title song:@[--count:*]`.
 
 #### Examples
 
@@ -207,8 +207,8 @@ Q artist name(autechre,"the cure") song:++title
 
 | Command  | Syntax                                       | Description                                                     |
 | -------- | -------------------------------------------- | --------------------------------------------------------------- |
-| `QF`     | `QF <HKEY> <FIELD>`                          | Display the value of a field for a specific **HKEY**            |
-| `QQ`     | `QQ <INDEX> <EXPR>`                          | Store HKEYS matching the given expression                       |
+| `QF`     | `QF <HKEY> <FIELD>`                          | Display the value of a specific field for a given **HKEY**      |
+| `QQ`     | `QQ <INDEX> <EXPR>`                          | Store **HKEY**S matching the given expression                   |
 | `HDEL`   | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY** |
 | `HLEN`   | `HLEN <INDEX>`                               | Display the number of **HKEY**S for a specific index            |
 | `IDX`    | `IDX`                                        | Display existing indexes                                        |
@@ -247,26 +247,30 @@ Q artist name(autechre,"the cure") song:++title
 
 ### Root Index Functions
 
-| Function  | Syntax               | Description                               | Applies to |
-| --------- | -------------------- | ----------------------------------------- | ---------- |
-| `@autoid` | `@autoid(<INDEX>)`   | Generate a HKEY for the given index       | `W`        |
-| `@recall` | `@recall(<INDEX>)`   | Recall HKEYS previously stored with `QQ`  | `Q`, `W`   |
-
+| Function   | Syntax              | Description                                                        | Applies to |
+| ---------- | ------------------- | ------------------------------------------------------------------ | ---------- |
+| `@autoid`  | `@autoid(<INDEX>)`  | Generate a **HKEY** for the given index                            | `W`        |
+| `@recall`  | `@recall(<INDEX>)`  | Recall **HKEY**S previously stored with `QQ`                       | `Q`, `W`   |
+| `!@recall` | `!@recall(<INDEX>)` | Recall all **HKEY**S excepted the ones previously stored with `QQ` | `Q`, `W`   |
 
 ### Expression Functions
 
 Functions used in field values.
 
-| Function     | Syntax                | Description                                                             |
-| ------------ | --------------------- | ----------------------------------------------------------------------- |
-| `@abs`       | `@abs[(FIELD)]`       | Absolute value of current field                                         |
-| `@datetime`  | `@datetime(<FIELD>)`  | Convert a timestamp to date/time string
-| `@dec`       | `@dec[(FIELD)]`       | Decrement current field value                                           |
-| `@epoch`     | `@epoch[(FIELD)]`     | Convert date to seconds since the Epoch                                 |
-| `@epochreal` | `@epochreal[(FIELD)]` | Convert date to seconds since the Epoch as a floating-point number      |
-| `@now`       | `@now`                | Current date/time in seconds since the Epoch as a floating-point number |
-| `@nowiso`    | `@nowiso`             | Current date/time as a string                                           |
-| `@inc`       | `@inc[(FIELD)]`       | Increment current field value                                           |
+| Function     | Syntax                | Description                                                     |
+| ------------ | --------------------- | ----------------------------------------------------------------|
+| `@abs`       | `@abs[(FIELD)]`       | Absolute value of current field                                 |
+| `@date`      | `@date(<FIELD>)`      | Convert a timestamp to a date string                            |
+| `@datetime`  | `@datetime(<FIELD>)`  | Convert a timestamp to a date/time string                       |
+| `@dec`       | `@dec[(FIELD)]`       | Decrement current field value                                   |
+| `@epoch`     | `@epoch[(FIELD)]`     | Convert a date string to a timestamp                            |
+| `@epochreal` | `@epochreal[(FIELD)]` | Convert a date string to a timestamp as a floating-point number |
+| `@inc`       | `@inc[(FIELD)]`       | Increment current field value                                   |
+| `@now`       | `@now`                | Current date/time as a floating-point number timestamp          |
+| `@nowiso`    | `@nowiso`             | Current date/time as a string                                   |
+| `@time`      | `@time(<FIELD>)`      | Convert a timestamp to a time string                            |
+
+> → A *timestamp* is a number of seconds since the Epoch.
 
 ### Examples
 
