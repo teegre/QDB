@@ -196,7 +196,6 @@ class QDBQuery:
               for agg in agg_exprs[idx]:
                 op, f = agg['op'], unwrap_function(agg['field'])
                 val = data.get(f.replace('*', '@id'))
-                val = expand(agg['field'], val)
                 val = coerce_number(val) if not is_virtual(f) else val
                 grouped[group_key][f'{idx}:{op}:{agg["field"]}'].append(val)
 
@@ -242,13 +241,13 @@ class QDBQuery:
       idx, op, f = k.split(':')
       match op:
         case 'avg':
-          reduced[f'{idx}:{op}:{f}'] = { str(round(sum(clean_values) / len(clean_values), 2)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(round(sum(clean_values) / len(clean_values), 2))): {} }
         case 'sum':
-          reduced[f'{idx}:{op}:{f}'] = { str(round(sum(clean_values), 2)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(round(sum(clean_values), 2))): {} }
         case 'min':
-          reduced[f'{idx}:{op}:{f}'] = { str(min(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(min(clean_values))): {} }
         case 'max':
-          reduced[f'{idx}:{op}:{f}'] = { str(max(clean_values)): {} }
+          reduced[f'{idx}:{op}:{f}'] = { expand(f, str(max(clean_values))): {} }
         case 'count':
           count_value = (
               len(set(clean_values)) if f != '*' else len(clean_values)

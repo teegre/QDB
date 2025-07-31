@@ -228,7 +228,7 @@ class QDBParser:
         if not aggs:
           raise QDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
 
-        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>@?\w+(?:\([^\)]+\))?)'
+        item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>@?\w+(?:\([^\)]+\))?|\*)'
 
         items = aggs.split(',')
 

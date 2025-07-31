@@ -5,7 +5,7 @@ import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from getpass import getpass
 from typing import Any
@@ -229,11 +229,21 @@ def now(dummy: str=None) -> str:
 def nowiso(dummy: str=None) -> str:
   return datetime.now().isoformat()
 
-def todatetime(value: str):
+def todate(value: str) -> str:
+  return value
+
+def todatetime(value: str) -> str:
   try:
     return datetime.fromtimestamp(float(value)).isoformat()
   except ValueError:
-    raise QDBError(f'QDB: Error: `{value}`, invalid timestamp.')
+    raise QDBError(f'QDB: @datetime error: `{value}`, invalid timestamp.')
+
+def totime(value: str):
+  try:
+    td = timedelta(seconds=coerce_number(value))
+  except ValueError:
+    raise QDBError(f'QDB: @time error: `value`, invalid value')
+  return str(td)
 
 def inc(value: str) -> str:
   value = coerce_number(value)
@@ -256,6 +266,7 @@ FUNCTIONS = {
     '@inc':       inc,
     '@now':       now,
     '@nowiso':    nowiso,
+    '@time':      totime,
 }
 
 def unquote(expr: str):
