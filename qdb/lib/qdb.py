@@ -224,7 +224,7 @@ class QDB:
     if self.store.is_index(hkey_or_index):
       if keys is not None:
         if neg:
-          keys = sorted(self.store.get_index_keys(hkey_or_index) ^ keys)
+          keys = sorted(self.store.get_index_keys(hkey_or_index) ^ set(keys))
       else:
         keys = sorted(self.store.get_index_keys(hkey_or_index))
     else:
