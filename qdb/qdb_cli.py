@@ -114,7 +114,9 @@ class QDBClient:
       print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
       interrupted = True
 
-    QDBClient.show_cursor()
+    if not os.getenv('__QDB_QUIET__'):
+      print()
+      QDBClient.show_cursor()
     return 0
 
   def _set_prompt(self) -> str:
