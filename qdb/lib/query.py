@@ -106,31 +106,28 @@ class QDBQuery:
       cond_num  = float(condition_value)
       return OPFUNC[op](field_num, cond_num)
 
-    field_value = coerce_number(field_value) if not is_virtual(field) else field_value
-    condition_value = coerce_number(condition_value) if not is_virtual(field) else condition_value
-
     if op not in ('sw', 'ns', 'dw', 'nd', 'ct', 'nc', 'in', 'ni'):
+      field_value = coerce_number(field_value) if not is_virtual(field) else field_value
+      condition_value = coerce_number(condition_value) if not is_virtual(field) else condition_value
       return OPFUNC[op](field_value, condition_value)
-
-    strval = str(field_value)
 
     match op:
       case 'sw':
-        return strval.startswith(condition_value)
+        return field_value.startswith(condition_value)
       case 'ns':
-        return not strval.startswith(condition_value)
+        return not field_value.startswith(condition_value)
       case 'dw':
-        return strval.endswith(condition_value)
+        return field_value.endswith(condition_value)
       case 'nd':
-        return not strval.endswith(condition_value)
+        return not field_value.endswith(condition_value)
       case 'ct':
-        return condition_value in strval
+        return condition_value in field_value
       case 'nc':
-        return condition_value not in strval
+        return condition_value not in field_value
       case 'in':
-        return strval in condition_value
+        return field_value in condition_value
       case 'ni':
-        return strval not in condition_value
+        return field_value not in condition_value
     return False
 
   def _find_prm_index(self, indexes: list) -> str:
@@ -325,7 +322,10 @@ class QDBQuery:
         if kv is None:
           continue
 
-        if self._eval_cond(op, kv.get(f), val, f):
+        field = unwrap_function(f)
+        field_value = expand(f, kv.get(field))
+
+        if self._eval_cond(op, field_value, val, field):
           valid_keys.add(k)
 
       return valid_keys

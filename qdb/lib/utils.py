@@ -238,19 +238,19 @@ def nowiso(dummy: str=None) -> str:
 def todate(value: str) -> str:
   try:
     return datetime.fromtimestamp(coerce_number(value)).date().isoformat()
-  except ValueError:
+  except (ValueError, TypeError):
     raise QDBError(f'QDB: @date error: `{value}`, invalid value.')
 
 def todatetime(value: str) -> str:
   try:
     return datetime.fromtimestamp(coerce_number(value)).date().isoformat()
-  except ValueError:
+  except (ValueError, TypeError):
     raise QDBError(f'QDB: @datetime error: `{value}`, invalid timestamp.')
 
 def totime(value: str):
   try:
     return str(timedelta(seconds=coerce_number(value))).replace('0:', '')
-  except ValueError:
+  except (ValueError, TypeError):
     raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
 
 def inc(value: str) -> str:
