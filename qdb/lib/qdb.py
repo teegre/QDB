@@ -276,7 +276,7 @@ class QDB:
 
       # Write on disk
       if haschanged:
-        self.store.write(key, kv, refs)
+        self.store.write(key, kv, old_values=old_kv, refs=refs)
 
     return 1 if err > 0 else 0
 

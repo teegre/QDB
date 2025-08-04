@@ -14,6 +14,7 @@ from qdb.lib.storage import QDBStore
 from qdb.lib.utils import (
     coerce_number,
     expand,
+    has_function,
     is_numeric,
     is_virtual,
     performance_measurement,
@@ -257,7 +258,7 @@ class QDBQuery:
     return reduced
 
   @performance_measurement(message='Fetched')
-  def query(self, index_or_key: str, *exprs: str, only_root_hkeys: bool=False) -> tuple[dict, list[dict]] | set:
+  def query(self, index_or_key: str, *exprs: str, qq: bool=False) -> tuple[dict, list[dict]] | set:
     limit = None
     random = False
 
@@ -314,6 +315,14 @@ class QDBQuery:
 
       valid_keys = set()
 
+      is_func = has_function(f)
+      field = unwrap_function(f) if is_func else f
+
+      if op in ('eq', 'in'):
+        return  self.store.get_hkey_by_field_value(index, field, *val if op == 'in' else (val,))
+      if op in ('ne', 'ni'):
+        return keys ^ self.store.get_hkey_by_field_value(index, field, *val if op == 'in' else (val,))
+
       for k in keys:
         if limit and len(valid_keys) >= limit:
           break
@@ -321,9 +330,8 @@ class QDBQuery:
         kv = self.store.read_hash(k)
         if kv is None:
           continue
-
-        field = unwrap_function(f)
-        field_value = expand(f, kv.get(field))
+        value = kv.get(field)
+        field_value = expand(f, value) if is_func else value
 
         if self._eval_cond(op, field_value, val, field):
           valid_keys.add(k)
@@ -410,6 +418,8 @@ class QDBQuery:
     self.parser = QDBParser(self.store, root_index)
     parsed_exprs = self._dispatch_parse(root_index, exprs)
     condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
+    cond_matches = {}
+    cond_indexes = set()
     agg_exprs = { e['index']: e['aggregations'] for e in parsed_exprs if e['aggregations'] }
     agg_indexes = list(agg_exprs.keys()) if agg_exprs else []
 
@@ -456,9 +466,6 @@ class QDBQuery:
     else:
       prm_index = root_index
 
-    # Precompute matched keys
-    cond_matches = get_condition_matches(condition_exprs)
-
     # Query is based on a particular hkey...
     if self.store.has_index(index_or_key):
       if root_index != prm_index:
@@ -470,6 +477,8 @@ class QDBQuery:
       all_keys = set(self.store.get_index_keys(prm_index))
 
     if condition_exprs:
+      cond_matches = get_condition_matches(condition_exprs)
+
       best_expr = select_best_filter(condition_exprs)
 
       # Primary condition
@@ -485,7 +494,7 @@ class QDBQuery:
 
     # Stop here if nothing was found
     if not all_keys:
-      raise QDBQueryNoData(f'No data.')
+      raise QDBQueryNoData('No data.')
 
     if root_index != prm_index:
       root_keys = (
@@ -493,7 +502,7 @@ class QDBQuery:
           else self.store.get_index_keys(root_index)
       )
 
-      if root_index != prm_index and agg_exprs:
+      if agg_exprs:
         # Get all root keys from store
         if root_index in cond_matches:
           root_keys &= cond_matches[root_index]
@@ -526,12 +535,12 @@ class QDBQuery:
       if limit:
         all_keys = all_keys[:limit] if random else sorted(all_keys)[:limit]
 
-    if only_root_hkeys and agg_exprs:
+    if qq and agg_exprs:
       raise QDBQueryError(f'Error: aggregation not supported.')
 
     # Unique index query, no expressions: build tree and return it
     if not parsed_exprs and len(selected_indexes) == 1:
-      if only_root_hkeys:
+      if qq:
         return all_keys
       for key in sorted(all_keys) if not random else all_keys:
         data_tree[root_index][key] = {}
@@ -552,7 +561,7 @@ class QDBQuery:
     # Build references map
     refs_map = defaultdict(lambda: defaultdict(set))
 
-    cond_indexes = set(cond_matches.keys())
+    cond_indexes = set(cond_matches.keys()) if cond_matches else set()
 
     if agg_exprs:
       for key in all_keys.copy():
@@ -617,7 +626,7 @@ class QDBQuery:
                 node[index][ref][agg_index] = dataset
 
     elif set(selected_indexes) - cond_indexes - {root_index} or not refs_map:
-      if only_root_hkeys:
+      if qq:
         root_keys = set()
       for key in all_keys:
         for idx in selected_indexes:
@@ -627,12 +636,12 @@ class QDBQuery:
           refs = self.store.get_refs(key, idx)
           if not refs:
             raise QDBQueryError(f'Error: no references: `{prm_index}` → `{idx}`.')
-          if only_root_hkeys:
+          if qq:
             root_keys.update(refs)
             continue
           refs_map[key][idx].update(refs)
 
-    if only_root_hkeys:
+    if qq:
       if prm_index == root_index:
         return all_keys
       return root_keys if root_keys else all_keys

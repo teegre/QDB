@@ -309,11 +309,13 @@ class QDBIO:
     self._active_refs.seek(0, os.SEEK_END)
     self._active_refs_size = self._active_refs.tell()
 
-  def save_cache(self, cache_data: BytesIO):
+  def save_cache(self, cache_data: BytesIO, indexed_fields: BytesIO):
     if not self._archive:
       return
     if '.cache' in self._archive.getnames():
       self._remove('.cache')
+    if '.idx' in self._archive.getnames():
+      self._remove('.idx')
     with tarfile.open(self._database_path, 'a') as tar:
       cacheinfo = tarfile.TarInfo('.cache')
       QDBUsers.set_user_info(cacheinfo)
@@ -322,14 +324,25 @@ class QDBIO:
       cacheinfo.mtime = time.time()
       tar.addfile(cacheinfo, cache_data)
 
-  def load_cache(self) -> bytes:
+      fieldsinfo = tarfile.TarInfo('.idx')
+      QDBUsers.set_user_info(fieldsinfo)
+      fieldsinfo.size = indexed_fields.seek(0, os.SEEK_END)
+      indexed_fields.seek(0)
+      fieldsinfo.mtime = cacheinfo.mtime
+      tar.addfile(fieldsinfo, indexed_fields)
+
+  def load_cache(self) -> tuple[bytes, bytes]:
     if not self._archive:
       return
     try:
       cache_data = self._archive.extractfile('.cache')
     except KeyError:
       cache_data = None
-    return cache_data.read() if cache_data else b'{}'
+    try:
+      indexed_fields = self._archive.extractfile('.idx')
+    except KeyError:
+      indexed_fields = None
+    return cache_data.read() if cache_data else b'{}', indexed_fields.read() if indexed_fields else b'{}'
 
   def flush(self, refs: dict=None, quiet: bool=False) -> str:
     if self._active_file:
@@ -515,7 +528,8 @@ class QDBIO:
 
     if references:
       tmprefs = self._new_tmp_file(origin=logname)
-      refs = self.load_refs()
+      if not refs:
+        refs = self.load_refs()
       self.save_refs(refs, ref_file=tmprefs)
       tmprefs.seek(0)
       inforefs = tarfile.TarInfo(name=tmprefs.name)
@@ -534,6 +548,9 @@ class QDBIO:
       if '.cache' in self._archive.getnames():
         cacheinfo = self._archive.getmember('.cache')
         new.addfile(cacheinfo, self._archive.extractfile('.cache'))
+      if '.idx' in self._archive.getnames():
+        idxinfo = self._archive.getmember('.idx')
+        new.addfile(idxinfo, self._archive.extractfile('.idx'))
     except IOError as e:
       new.close()
       os.remove(new.name)

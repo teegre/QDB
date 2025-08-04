@@ -54,18 +54,22 @@ class QDBStore:
     self.build_indexes_map()
     self.update_reverse_refs()
     self.precompute_paths()
-    cache = self.io.load_cache()
-    self.datacache.load(cache)
+    if self.io.isdatabase:
+      cache, indexed_fields = self.io.load_cache()
+      self.datacache.load(cache, indexed_fields)
+      if not self.datacache.isindexed:
+        self.build_indexed_fields()
 
   def deinitialize(self):
-    if self.io.haschanged or (self.haschanged and not os.getenv('__QDB_REPL__')):
+    if self.io.haschanged or (self.haschanged and not isset('repl')):
       self.io.flush(self._refs_ops)
     if self.users.unsaved:
       self.users._save()
       self.io._archive.close()
       self.io._load()
-    if self.datacache.haschanged:
-      self.io.save_cache(self.datacache.dump())
+    if self.datacache.haschanged and not isset('pipe'):
+      self.build_indexed_fields()
+      self.io.save_cache(*self.datacache.dump())
     self.io.compact()
 
   def commit(self, quiet: bool=False):
@@ -76,14 +80,14 @@ class QDBStore:
     self.haschanged = False
 
   def compact(self, force: bool=False):
-    self.keystore = self.io.compact(force=force)
+    self.keystore = self.io.compact(refs=self.refs, force=force)
 
   def list_files(self):
     if not self.io.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
     self.io.list()
 
-  def write(self, key: str, value: str|dict, refs: list=[])  -> int:
+  def write(self, key: str, value: str|dict, old_values: dict=None, refs: list=[])  -> int:
     ''' Write data to file, update keystore, indexes and refs '''
     entry = self.io.write(key, value)
     self.keystore[key] = self.io.write(key, value)
@@ -103,9 +107,9 @@ class QDBStore:
       self.indexes_map.setdefault(index, set()).add(key)
       self.last_hkey[index] = key
 
-      if not os.getenv('__QDB_PIPE__'):
+      if not isset('pipe'):
         if entry.timestamp > self.datacache.get_key_timestamp(key):
-          self.datacache.write(key, value)
+          self.datacache.write(key, value, old_data=old_values)
 
     return 0
 
@@ -142,6 +146,9 @@ class QDBStore:
     if data:
       return(data.get(field, '?NOFIELD?'))
     return None
+
+  def get_hkey_by_field_value(self, index: str, field: str, *values: str) -> set:
+    return self.datacache.get_key(index, field, *values)
 
   # TODO: Database options
   # def get_opt(self, option: str) -> str | None:
@@ -276,8 +283,30 @@ class QDBStore:
   def build_indexes_map(self):
     for index in self.indexes:
       self.indexes_map.setdefault(index, set())
+      fields = self.get_fields_from_index(index)
       for key in self.get_index_keys(index):
         self.indexes_map[index].add(key)
+
+  def build_indexed_fields(self):
+    if not isset('quiet'):
+      print('QDB: Indexing...', file=sys.stderr)
+    indexed_fields = {}
+    for index in self.indexes:
+      fields = self.get_fields_from_index(index)
+      hkeys = self.get_index_keys(index)
+      for hkey in hkeys:
+        if hkey in VIRTUAL:
+          continue
+        values = self.read_hash(hkey)
+        for field in fields:
+          k = f'{index}:{field}={values.get(field)}'
+          if k in indexed_fields:
+            indexed_fields[k].add(hkey)
+          else:
+            indexed_fields.setdefault(k, {hkey})
+    self.datacache.set_indexed_fields(indexed_fields)
+    if not isset('quiet'):
+      print('QDB: Done.', file=sys.stderr)
 
   def precompute_paths(self):
     for x1 in self.indexes:

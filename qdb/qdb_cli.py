@@ -6,6 +6,7 @@ import stat
 import sys
 
 from pathlib import Path
+from time import perf_counter
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -95,6 +96,8 @@ class QDBClient:
 
     line_count = 1
 
+    t1 = perf_counter()
+
     try:
       for line in sys.stdin:
         if line[0] == '#': # Comment
@@ -115,7 +118,9 @@ class QDBClient:
       interrupted = True
 
     if not os.getenv('__QDB_QUIET__'):
+      t2 = perf_counter()
       print()
+      print(f'\nProcessed: {(t2-t1):.4f}s')
       QDBClient.show_cursor()
     return 0
 
