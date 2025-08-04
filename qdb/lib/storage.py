@@ -7,17 +7,14 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from collections import defaultdict, deque
-from glob import glob
-from shutil import move
-from sys import stdin, stdout, stderr
-from time import time, strftime
-from zlib import crc32
+from functools import cache
+from io import BytesIO
 
 from qdb.lib.datacache import QDBCache
 from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError, QDBHkeyError
 from qdb.lib.io import QDBIO, QDBInfo
 from qdb.lib.ops import OPTIONS
-from qdb.lib.utils import coerce_number
+from qdb.lib.utils import isset, VIRTUAL
 
 # Terminology:
 # key: a key in simple key/value pair
@@ -165,7 +162,7 @@ class QDBStore:
 
     if key in self.keystore:
       if self.has_ref(key):
-        print(f'Error: key `{key}` is referenced.', file=stderr)
+        print(f'Error: key `{key}` is referenced.', file=sys.stderr)
         return 1
       self.io.write(key, None, delete=True)
       if self.has_index(key):
@@ -224,7 +221,7 @@ class QDBStore:
     except ValueError:
       index = None
     if not index or index.isdigit():
-      print(f'Error: invalid hkey name: `{index}`', file=stderr)
+      print(f'Error: invalid hkey name: `{index}`', file=sys.stderr)
       return 1
     self.indexes.add(index)
     return 0
@@ -255,7 +252,7 @@ class QDBStore:
     keys = self.indexes_map.get(index)
     if keys:
       return keys
-    return [k for k in self.keystore.keys() if k.startswith(index + ':')]
+    return [k for k in self.keystore.keys() if k.split(':')[0] == index]
 
   def create_ref(self, hkey: str, ref: str) -> int:
     '''
@@ -266,10 +263,10 @@ class QDBStore:
       return 0
 
     if hkey == ref:
-      print(f'Error: `{hkey}` references itself! (ignored).', file=stderr)
+      print(f'Error: `{hkey}` references itself! (ignored).', file=sys.stderr)
       return 1
 
-    if not os.getenv('__QDB_PIPE__'):
+    if not isset('pipe'):
       self.refs.setdefault(hkey, set()).add(ref)
       self.reverse_refs.setdefault(ref, set()).add(hkey)
     self._refs_ops.setdefault(hkey, {}).setdefault('add', []).append(ref)
@@ -540,11 +537,11 @@ class QDBStore:
     vsz = 0
     hkey = None
     for hk in hkeys:
-       ks_entry: KeyStoreEntry = self.keystore.get(hk)
-       if ks_entry.timestamp > ts and ks_entry.value_size > vsz:
-         ts = ks_entry.timestamp
-         vsz = ks_entry.value_size
-         hkey = hk
+      ks_entry: KeyStoreEntry = self.keystore.get(hk)
+      if ks_entry.timestamp > ts and ks_entry.value_size > vsz:
+        ts = ks_entry.timestamp
+        vsz = ks_entry.value_size
+        hkey = hk
     return hkey
 
   def get_fields_from_index(self, index: str) -> list[str]:

@@ -10,7 +10,6 @@ import time
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from enum import Enum, auto
-from functools import wraps
 from io import BytesIO
 from tarfile import TarInfo
 
@@ -86,7 +85,7 @@ class QDBUsers:
     uid = os.getuid()
     gid = os.getgid()
 
-    current_user = os.getenv('__QDB_USER__')
+    current_user = self.getuser()
     if current_user:
       uname = gname = current_user
     else:
@@ -115,7 +114,7 @@ class QDBUsers:
     self._users_ops[username] = {'add': self.users[username]}
 
   def remove_user(self, username: str):
-    if os.getenv('__QDB_USER__') == username:
+    if self.getuser() == username:
       raise QDBNoAdminError('Forbidden: cannot delete current user.')
     user_info = self.users.pop(username, None)
     if user_info:
@@ -133,6 +132,9 @@ class QDBUsers:
 
   def get_auth(self, username: str) -> str:
     return self.users.get(username, {}).get('auth', QDBAuthType.QDB_FORBIDDEN)
+
+  def getuser(self) -> str:
+    return os.getenv('__QDB_USER__')
 
   def list_users(self):
     return ' | '.join(n + f' ({AUTH_TYPE[a["auth"]]})' for n, a in self.users.items())

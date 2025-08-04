@@ -21,15 +21,27 @@ from qdb.lib.exception import (
 from qdb.lib.ops import VIRTUAL
 from qdb.lib.users import QDBUsers, QDBAuthType
 
+__ENV__ = {
+    'debug': '__QDB_DEBUG__',
+    'quiet': '__QDB_QUIET__',
+    'user' : '__QDB_USER__',
+    'repl' : '__QDB_REPL__',
+    'pipe' : '__QDB_PIPE__',
+}
+
+def isset(var: str) -> bool:
+  envvar = __ENV__.get(var, None)
+  return os.getenv(envvar) is not None if envvar else False
+
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
       t1 = time.perf_counter()
-      if os.getenv('__QDB_QUIET__'):
+      if isset('quiet'):
         return func(*args, **kwargs)
       result = func(*args, **kwargs)
-      if not os.getenv('__QDB_DEBUG__'):
+      if isset('debug'):
         if result == 1:
           return result
       t2 = time.perf_counter()
@@ -53,10 +65,10 @@ def authorization(auth_types: list[QDBAuthType]):
     def wrap(self, *args, **kwargs):
       if self.users is None or not self.users.users:
         return func(self, *args, **kwargs)
-      user = os.getenv('__QDB_USER__')
+      user = self.users.getuser()
       if not user:
         authorize(self.users)
-        user = os.getenv('__QDB_USER__')
+        user = self.users.getuser()
       auth = self.users.get_auth(user)
       if QDBAuthType(auth) in auth_types:
         return func(self, *args, **kwargs)
@@ -89,6 +101,7 @@ def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change
 def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None, change: bool=False):
   try:
     if not username:
+      print('[New user]')
       username = input('Username: ')
       if not username:
         raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
@@ -309,3 +322,8 @@ def unwrap_function(expr: str, extract_func: bool=False) -> str:
     else:
       expr = match.group(3)
   return expr.strip()
+
+def has_function(expr: str) -> bool:
+  if match := re.match(r'(?P<sort>\+\+|--)?(@?\w+)\(([^()]+\))', expr):
+    return match.group(2) in FUNCTIONS
+  return False

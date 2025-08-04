@@ -26,6 +26,7 @@ from qdb.lib.utils import (
     coerce_number,
     expand,
     is_numeric,
+    isset,
     is_virtual,
     performance_measurement,
     user_add,
@@ -249,12 +250,14 @@ class QDB:
         kv = self.store.read_hash(key) or {}
       except QDBNoDatabaseError:
         kv = {}
+
+      old_kv = kv
       subkv = {k: v for k, v in zip(members[::2], members[1::2])}
       refs: list[str] = []
 
       for field, new_value in subkv.items():
         old_value = kv.get(field)
-        if new_value == old_value: # and not is_new:
+        if new_value == old_value:
           continue
 
         haschanged = True
@@ -358,7 +361,7 @@ class QDB:
       except BrokenPipeError:
         raise QDBError('Q: Error: broken pipe.')
 
-    if not os.getenv('__QDB_QUIET__'):
+    if not isset('quiet'):
       print(file=sys.stderr)
       print(len(rows), 'rows' if len(rows) > 1 else 'row', 'found.', file=sys.stderr)
 
@@ -516,7 +519,7 @@ class QDB:
   @performance_measurement(message='Processed')
   def q(self, index_or_key: str, *exprs: str) -> int:
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -537,7 +540,7 @@ class QDB:
       tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
     except QDBError as e:
       print(f'Q: {e}', file=sys.stderr)
-      if os.getenv('__QDB_DEBUG__'):
+      if isset('debug'):
         raise
       return 1
 
@@ -557,7 +560,7 @@ class QDB:
       all_rows = self._walk_tree(tree, root_index, fields_data)
     except QDBError as e:
       print(e, file=sys.stderr)
-      if os.getenv('__QDB_DEBUG__'):
+      if isset('debug'):
         raise
       return 1
 
@@ -578,7 +581,7 @@ class QDB:
       except BrokenPipeError:
         raise QDBError('Q: Error: broken pipe.')
 
-    if not os.getenv('__QDB_QUIET__'):
+    if not isset('quiet'):
       print(' ', file=sys.stderr)
       print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
 
@@ -587,16 +590,16 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def qq(self, index: str, *exprs) -> int:
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     try:
-      hkeys = self.Q.query(index, *exprs, only_root_hkeys=True)
+      hkeys = self.Q.query(index, *exprs, qq=True)
     except QDBError as e:
-      if not os.getenv('__QDB_QUIET__') and not os.getenv('__QDB_REPL__'):
-        print()
+      # if not isset('quiet') and not isset('repl'):
+      #   print()
       print(f'QQ: {e}', file=sys.stderr)
       return 1
 
@@ -608,7 +611,7 @@ class QDB:
   def hdel(self, index_or_key: str, *fields: str) -> int:
     ''' Delete a hash or an index or fields in a hash or in an index '''
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -647,7 +650,7 @@ class QDB:
   def get_field(self, hkey: str, field: str) -> int:
     ''' Return the value of a field in a hash. '''
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -672,7 +675,7 @@ class QDB:
     or for all indexes if none is provided.
     '''
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -707,7 +710,7 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idx(self) -> None:
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -719,7 +722,7 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idxf(self, index: str) -> None:
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -738,7 +741,7 @@ class QDB:
     Return 0 on success, 1 if index does not exist.
     '''
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -775,7 +778,7 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN])
   def purge(self):
     self.store.datacache.purge()
-    if not os.getenv('__QDB_QUIET__'):
+    if not isset('quiet'):
       print('QDB: cache is purged.', file=sys.stderr)
     return 0
 
@@ -809,7 +812,7 @@ class QDB:
     if not self.users.hasusers:
       print('Error: No current user.')
       return 1
-    user = os.getenv('__QDB_USER__')
+    user = self.users.getuser()
     auth = 'admin' if QDBAuthType(self.users.get_auth(user)) == QDBAuthType.QDB_ADMIN else 'readonly'
     try:
       authorize(self.users, username=user, change=True)
@@ -825,7 +828,7 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN])
   def list_files(self) -> int:
     if not self.store.isdatabase:
-      if os.getenv('__QDB_REPL__'):
+      if isset('repl'):
         msg = 'QDB: No file.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
@@ -842,7 +845,7 @@ class QDB:
     return 0
 
   def whoami(self):
-    user = os.getenv('__QDB_USER__')
+    user = self.users.getuser()
     print(f'You are {user if user else "nobody"}.')
 
   def is_db_empty(self) -> bool:

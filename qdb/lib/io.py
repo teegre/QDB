@@ -16,7 +16,7 @@ from zlib import crc32
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb.lib.users import QDBUsers
-from qdb.lib.utils import validate_hkey
+from qdb.lib.utils import isset
 
 from qdb.lib.exception import (
     QDBIOReadError, 
@@ -338,7 +338,7 @@ class QDBIO:
       if self._archive:
         self._archive.close()
 
-      if not os.getenv('__QDB_QUIET__') and not quiet:
+      if not isset('quiet') and not quiet:
         print(f'QDB: Committing changes...', file=sys.stderr)
 
       self._archive = tarfile.open(self._database_path, 'a')
@@ -383,12 +383,12 @@ class QDBIO:
 
       self.haschanged = True
 
-      if not os.getenv('__QDB_QUIET__') and not quiet:
+      if not isset('quiet') and not quiet:
         print(f'QDB: Done.', file=sys.stderr)
 
       return new_file
 
-  def compact(self, force: bool=False) -> dict:
+  def compact(self, refs: dict=None, force: bool=False) -> dict:
     if not self.isdatabase and not self.users.haschanged:
       return
 
@@ -409,7 +409,7 @@ class QDBIO:
     if (not files or not self.haschanged) and not force:
       return
 
-    if not os.getenv('__QDB_QUIET__'):
+    if not isset('quiet'):
       print('QDB: Compacting database...', file=sys.stderr)
 
     latest = {}
@@ -548,10 +548,10 @@ class QDBIO:
     os.replace(new.name, self._database_path)
     self._load()
 
-    if not os.getenv('__QDB_QUIET__'):
+    if not isset('quiet'):
       print('QDB: Done.', file=sys.stderr)
 
-    if self._archive and not os.getenv('__QDB_REPL__'):
+    if self._archive and not isset('repl'):
       self._archive.close()
 
     self.haschanged = False
@@ -674,7 +674,7 @@ class QDBIO:
         info = keystore.get(key, None)
         if info is None or header.timestamp > info.timestamp:
           keystore[key] = QDBInfo(log.name, header.value_size, position, header.timestamp)
-        if header.value_type == b'+' and validate_hkey(key, confirm=True):
+        if header.value_type == b'+':
           indexes.add(key.split(':')[0])
       position = log.tell()
 
@@ -706,8 +706,11 @@ class QDBIO:
               header.timestamp
           )
 
-          if validate_hkey(key, confirm=True):
-            indexes.add(key.split(':')[0])
+          try:
+            index, _ = key.split(':')
+            indexes.add(index)
+          except ValueError:
+            continue
 
     return keystore, indexes
 
