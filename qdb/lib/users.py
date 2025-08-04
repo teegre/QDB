@@ -85,7 +85,7 @@ class QDBUsers:
     uid = os.getuid()
     gid = os.getgid()
 
-    current_user = self.getuser()
+    current_user = cls.getuser()
     if current_user:
       uname = gname = current_user
     else:
@@ -96,6 +96,10 @@ class QDBUsers:
     info.gid = gid
     info.uname = uname
     info.gname = gname
+
+  @classmethod
+  def getuser(cls) -> str:
+    return os.getenv('__QDB_USER__')
 
   @property
   def hasadmin(self) -> bool:
@@ -132,9 +136,6 @@ class QDBUsers:
 
   def get_auth(self, username: str) -> str:
     return self.users.get(username, {}).get('auth', QDBAuthType.QDB_FORBIDDEN)
-
-  def getuser(self) -> str:
-    return os.getenv('__QDB_USER__')
 
   def list_users(self):
     return ' | '.join(n + f' ({AUTH_TYPE[a["auth"]]})' for n, a in self.users.items())
