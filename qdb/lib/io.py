@@ -194,9 +194,9 @@ class QDBIO:
       raise QDBIOMissingLogError(f'IO Error: missing log entry: `{name}`.')
 
     logfile.seek(position)
-    header = logfile.read(QDBIO.LOG_HEADER_SIZE)
+    header = logfile.read(self.LOG_HEADER_SIZE)
     value_type = self._deserialize_header(header).value_type
-    logfile.seek(position + QDBIO.LOG_HEADER_SIZE + key_size)
+    logfile.seek(position + self.LOG_HEADER_SIZE + key_size)
     value = logfile.read(value_size)
 
     if value_type == b'+': # Hash
@@ -251,7 +251,7 @@ class QDBIO:
         continue
 
       ref_file = self._get(entry)
-      header = ref_file.read(QDBIO.REFS_HEADER_SIZE)
+      header = ref_file.read(self.REFS_HEADER_SIZE)
       tag, size = struct.unpack('<12sI', header)
 
       if tag != b'__QDB_REFS__':
@@ -449,7 +449,7 @@ class QDBIO:
       log = self._get(file)
 
       while True:
-        header = log.read(QDBIO.LOG_HEADER_SIZE)
+        header = log.read(self.LOG_HEADER_SIZE)
 
         if not header:
           break
@@ -500,7 +500,7 @@ class QDBIO:
         continue
 
       oldlog = self._get(oldfile)
-      oldlog.seek(oldpos + QDBIO.LOG_HEADER_SIZE + ksz)
+      oldlog.seek(oldpos + self.LOG_HEADER_SIZE + ksz)
       val = oldlog.read(vsz)
       oldlog.close()
 
@@ -519,7 +519,7 @@ class QDBIO:
       hintsize = tmphint.tell()
 
       keystore[key] = QDBInfo(logname, vsz, position, ts)
-      position += QDBIO.LOG_HEADER_SIZE + ksz + vsz
+      position += self.LOG_HEADER_SIZE + ksz + vsz
 
       oldref = oldlog.name.replace('.log', '.ref')
       if oldref in self._archive.getnames():
@@ -683,7 +683,7 @@ class QDBIO:
 
     log = self._get(name)
     while True:
-      header = log.read(QDBIO.LOG_HEADER_SIZE)
+      header = log.read(self.LOG_HEADER_SIZE)
       
       if not header:
         break
