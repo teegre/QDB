@@ -45,20 +45,18 @@ class QDBStore:
     if load:
       self.initialize()
     else:
-      self.keystore, self.indexes, self.refs = self.io.rebuild(partial=True)
+      self.keystore, self.indexes, self.refs, self.indexes_map, self.reverse_refs = self.io.rebuild(partial=True)
 
   def initialize(self):
-    self.keystore, self.indexes, self.refs = self.io.rebuild()
-    if not self.users.hasusers and '@QDB_USERS' in self.keystore:
-      raise QDBNoAdminError('Access denied.')
-    self.build_indexes_map()
-    self.update_reverse_refs()
-    self.precompute_paths()
     if self.io.isdatabase:
       cache, indexed_fields = self.io.load_cache()
       self.datacache.load(cache, indexed_fields)
       if not self.datacache.isindexed:
         self.build_indexed_fields()
+    self.keystore, self.indexes, self.indexes_map, self.refs, self.reverse_refs = self.io.rebuild()
+    if not self.users.hasusers and '@QDB_USERS' in self.keystore:
+      raise QDBNoAdminError('Access denied.')
+    self.precompute_paths()
 
   def deinitialize(self):
     if self.io.haschanged or (self.haschanged and not isset('repl')):
@@ -135,7 +133,7 @@ class QDBStore:
     value = self.read(hkey, read_hash=True)
 
     if value and not dump:
-      ID = hkey.split(':')[1]
+      ID  = hkey.partition(':')[2]
       value['$hkey'] = hkey
       value['$id'] = ID
 
@@ -259,7 +257,7 @@ class QDBStore:
     keys = self.indexes_map.get(index)
     if keys:
       return keys
-    return [k for k in self.keystore.keys() if k.split(':')[0] == index]
+    return [k for k in self.keystore.keys() if k.partition(':')[0] == index]
 
   def create_ref(self, hkey: str, ref: str) -> int:
     '''
@@ -283,9 +281,7 @@ class QDBStore:
   def build_indexes_map(self):
     for index in self.indexes:
       self.indexes_map.setdefault(index, set())
-      fields = self.get_fields_from_index(index)
-      for key in self.get_index_keys(index):
-        self.indexes_map[index].add(key)
+      self.indexes_map[index] = set(self.get_index_keys(index))
 
   def build_indexed_fields(self):
     if not isset('quiet'):
@@ -329,13 +325,6 @@ class QDBStore:
       if key in keys:
         return ref
     return None
-
-  def update_reverse_refs(self):
-    reverse_refs = {}
-    for k, refs in self.refs.items():
-      for ref in refs:
-        reverse_refs.setdefault(ref, set()).add(k)
-    self.reverse_refs = reverse_refs
 
   def get_refs_with_index(self, key: str, index: str) -> set:
     '''
@@ -548,11 +537,11 @@ class QDBStore:
     for key, refs in self.refs.copy().items():
       if ref in refs:
         self.refs[key].discard(ref)
-        update = True
+        self.reverse_refs[ref].discard(key)
         if len(refs) == 0:
           del self.refs[key]
-    if update:
-      self.update_reverse_refs()
+        if len(self.reverse_refs[ref]) == 0:
+          del self.reverse_refs[ref]
 
   def _get_most_recent_hkey_from_index(self, index: str) -> str:
     '''
@@ -594,7 +583,7 @@ class QDBStore:
 
   def is_index_empty(self, index_or_key: str) -> bool:
     ''' Return True if index or key of index is empty. '''
-    index = index_or_key.split(':')[0]
+    index = index_or_key.partition(':')[0]
     if self.is_index(index):
       return len(self.get_index_keys(index)) == 0
     return False

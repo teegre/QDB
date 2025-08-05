@@ -34,19 +34,16 @@ class QDBInfo:
   timestamp: int
 
 @dataclass
-class QDBHint:
+class QDBIOHintHeader:
   timestamp: int
   key_size: int
   value_size: int
   position: int
-  key: bytes
 
 @dataclass
-class QDBHintHeader:
-  timestamp: int
-  key_size: int
-  value_size: int
-  position: int
+class QDBHint:
+  header: QDBIOHintHeader
+  key: bytes
 
 @dataclass
 class QDBIOHeader:
@@ -84,6 +81,9 @@ class QDBIO:
   LOG_HEADER_SIZE = 4 + 8 + 1 + 4 + 4
   HINT_HEADER_SIZE = LOG_HEADER_SIZE - 1
   REFS_HEADER_SIZE = LOG_HEADER_SIZE - 5
+
+  HEADER_INFO_STRUCT = struct.Struct('<LQ1sII')
+  HEADER_HINT_STRUCT = struct.Struct('<QIII')
 
   def __init__(self, database_path: str):
     self._database_path = database_path
@@ -155,20 +155,17 @@ class QDBIO:
     return QDBData(header, data)
 
   def _deserialize_header(self, header: bytes) -> QDBIOHeader:
-    return QDBIOHeader(*struct.unpack('<LQ1sII', header))
+    return QDBIOHeader(*self.HEADER_INFO_STRUCT.unpack(header))
 
   def _serialize_hint(self, qdbhint: QDBHint):
     return struct.pack(
-        f'<QIII{qdbhint.key_size}s',
-        qdbhint.timestamp,
-        qdbhint.key_size,
-        qdbhint.value_size,
-        qdbhint.position,
+        f'<QIII{qdbhint.header.key_size}s',
+        qdbhint.header.timestamp,
+        qdbhint.header.key_size,
+        qdbhint.header.value_size,
+        qdbhint.header.position,
         qdbhint.key
     )
-
-  def _deserialize_hint_header(self, header: bytes) -> QDBHintHeader:
-    return QDBHintHeader(*struct.unpack('<QIII', header))
 
   def _validate_crc(self, key: str, qdbdata: QDBData) -> bool:
     xcrc = crc32(struct.pack(
@@ -244,12 +241,15 @@ class QDBIO:
 
     os.replace(temp, self._database_path)
 
-  def load_refs(self) -> dict:
+  def load_refs(self) -> tuple[dict, dict]:
     refs = {}
+    reverse = {}
     empty = []
-    reflist = [f for f in self._archive.getnames() if f.endswith('.ref')]
 
-    for entry in reflist:
+    for entry in self._archive.getnames():
+      if not entry.endswith('.ref'):
+        continue
+
       ref_file = self._get(entry)
       header = ref_file.read(QDBIO.REFS_HEADER_SIZE)
       tag, size = struct.unpack('<12sI', header)
@@ -258,26 +258,40 @@ class QDBIO:
         raise QDBIOWriteError(f'IO Error: invalid references: {ref_file.name}.')
       data = json.loads(ref_file.read(size).decode())
 
-      if not data:
-        empty.add(ref_file)
+      if size == 0:
+        empty.add(ref_file.name)
         continue
 
       for hkey, ops in data.items():
         if isinstance(ops, list): # Compacted version
-          refs.setdefault(hkey, set()).update(ops)
+          rset = refs.get(hkey)
+          if rset is None:
+            refs[hkey] = set()
+          for ref in ops:
+            refs[hkey].add(ref)
+            reverse.setdefault(ref, set()).add(hkey)
           continue
+
         if 'add' in ops:
-          refs.setdefault(hkey, set()).update(ops['add'])
+          rset = refs.get(hkey)
+          if rset is None:
+            refs[hkey] = set()
+          for ref in ops['add']:
+            refs[hkey].add(ref)
+            reverse.setdefault(hkey, set()).add(ref)
         if 'del' in ops:
           if ops['del'] == '__all__':
+            for ref in refs.get(hkey, ()):
+              reverse.get(ref, set()).discard(hkey)
             refs.pop(hkey, None)
           else:
-            for r in ops['del']:
-              refs[hkey].discard(r)
+            for ref in ops['del']:
+              refs.get(hkey, set()).discard(ref)
+              reverse.get(ref, set()).discard(hkey)
 
     self._remove(*empty)
 
-    return refs
+    return refs, reverse
 
   def save_refs(self, refs: dict, ref_file: TemporaryFile=None):
     if not refs:
@@ -331,7 +345,7 @@ class QDBIO:
       fieldsinfo.mtime = cacheinfo.mtime
       tar.addfile(fieldsinfo, indexed_fields)
 
-  def load_cache(self) -> tuple[bytes, bytes]:
+  def load_cache(self) -> tuple[bytes, BytesIO]:
     if not self._archive:
       return
     try:
@@ -342,7 +356,7 @@ class QDBIO:
       indexed_fields = self._archive.extractfile('.idx')
     except KeyError:
       indexed_fields = None
-    return cache_data.read() if cache_data else b'{}', indexed_fields.read() if indexed_fields else b'{}'
+    return cache_data.read() if cache_data else b'{}', indexed_fields if indexed_fields else None
 
   def flush(self, refs: dict=None, quiet: bool=False) -> str:
     if self._active_file:
@@ -495,7 +509,7 @@ class QDBIO:
           val.decode() if vt == b'-' else json.loads(val.decode())
       )
       tmplog.write(qdbdata.data)
-      hint = self._serialize_hint(QDBHint(ts, ksz, vsz, position, key.encode()))
+      hint = self._serialize_hint(QDBHint(QDBIOHintHeader(ts, ksz, vsz, position), key.encode()))
       tmphint.write(hint)
       tmplog.flush()
       tmphint.flush()
@@ -529,7 +543,7 @@ class QDBIO:
     if references:
       tmprefs = self._new_tmp_file(origin=logname)
       if not refs:
-        refs = self.load_refs()
+        refs = self.load_refs()[0]
       self.save_refs(refs, ref_file=tmprefs)
       tmprefs.seek(0)
       inforefs = tarfile.TarInfo(name=tmprefs.name)
@@ -629,7 +643,9 @@ class QDBIO:
   def rebuild(self, partial: bool=False):
     keystore = {}
     indexes = set()
+    idx_map = {}
     refs = {}
+    reverse = {}
 
     empty = []
 
@@ -653,16 +669,16 @@ class QDBIO:
           empty.append(ref)
         continue
       if hint in self._archive.getnames():
-        self._rebuild_from_hint(hint, keystore, indexes)
+        self._rebuild_from_hint(hint, keystore, indexes, idx_map)
         continue
-      self._rebuild_keystore(log, keystore, indexes, partial)
-    refs = self.load_refs()
+      self._rebuild_keystore(log, keystore, indexes, idx_map, partial)
+    refs, reverse = self.load_refs()
 
     self._remove(*empty)
 
-    return keystore, indexes, refs
+    return keystore, indexes, idx_map, refs, reverse
 
-  def _rebuild_keystore(self, name: str, keystore: dict, indexes: set, partial: bool=False):
+  def _rebuild_keystore(self, name: str, keystore: dict, indexes: set, idx_map: dict, partial: bool=False):
     position = 0
 
     log = self._get(name)
@@ -692,30 +708,36 @@ class QDBIO:
         if info is None or header.timestamp > info.timestamp:
           keystore[key] = QDBInfo(log.name, header.value_size, position, header.timestamp)
         if header.value_type == b'+':
-          indexes.add(key.split(':')[0])
+          index = key.partition(':')[0]
+          if index not in indexes:
+            indexes.add(index)
+          if index in idx_map:
+            idx_map[index].add(key)
+          else:
+            idx_map[index] = {key}
       position = log.tell()
 
-  def _rebuild_from_hint(self, name: str, keystore: dict, indexes: set, partial: bool=False):
+  def _rebuild_from_hint(self, name: str, keystore: dict, indexes: set, idx_map: dict, partial: bool=False):
     hint = self._get(name)
 
-    while True:
-      header = hint.read(QDBIO.HINT_HEADER_SIZE)
+    buf = hint.read()
+    pos = 0
 
-      if not header:
+    while pos < len(buf):
+      header = QDBIOHintHeader(*self.HEADER_HINT_STRUCT.unpack_from(buf, pos))
+      pos += self.HINT_HEADER_SIZE
+      key = buf[pos:pos+header.key_size]
+      pos += header.key_size
+
+      if partial and key[0] != b'@':
         break
 
-      header = self._deserialize_hint_header(header)
-      key = hint.read(header.key_size)
-      key = key.decode()
-
-      if partial and not key.startswith('@'):
-        break
 
       if header.value_size == 0:
-        keystore.pop(key, None)
+        keystore.pop(key.decode(), None)
       else:
-        info = keystore.get(key, None)
-        if info is None or header.timestamp > info.timestamp:
+        key = key.decode()
+        if keystore.get(key) is None or header.timestamp > info.timestamp:
           keystore[key] = QDBInfo(
               hint.name.replace('.hint', '.log'),
               header.value_size,
@@ -723,13 +745,17 @@ class QDBIO:
               header.timestamp
           )
 
-          try:
-            index, _ = key.split(':')
-            indexes.add(index)
-          except ValueError:
+          if key[0] == '@':
             continue
+          index = key.partition(':')[0]
+          if index not in indexes:
+            indexes.add(index)
+          if index in idx_map:
+            idx_map[index].add(key)
+          else:
+            idx_map[index] = {key}
 
-    return keystore, indexes
+    return keystore, indexes, idx_map
 
   def list(self):
     if not self._archive:

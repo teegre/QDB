@@ -41,9 +41,8 @@ def performance_measurement(_func=None, *, message: str='Executed'):
       if isset('quiet'):
         return func(*args, **kwargs)
       result = func(*args, **kwargs)
-      if isset('debug'):
-        if result == 1:
-          return result
+      if result == 1:
+        return result
       t2 = time.perf_counter()
       d = t2 - t1
       if hasattr(args[0], 'parent') and hasattr(args[0].parent, '_perf_info'):
@@ -261,10 +260,11 @@ def todatetime(value: str) -> str:
     raise QDBError(f'QDB: @datetime error: `{value}`, invalid timestamp.')
 
 def totime(value: str):
-  return value
-
-  # except (ValueError, TypeError):
-  #   raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
+  try:
+    dt = timedelta(seconds=int(float(value)))
+    return str(dt)
+  except (ValueError, TypeError):
+    raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
 
 def inc(value: str) -> str:
   value = coerce_number(value)
