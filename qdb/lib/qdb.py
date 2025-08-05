@@ -219,7 +219,7 @@ class QDB:
     try:
       hkey_or_index, keys, neg = self._recall(hkey_or_index)
     except QDBError as e:
-      print(f'W: {e}')
+      print(f'W: {e}', file=sys.stderr)
       return 1
 
     if self.store.is_index(hkey_or_index):
