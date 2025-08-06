@@ -235,13 +235,13 @@ Q artist name(autechre,"the cure") song:++title
 
 ## Other Commands
 
-| Command   | Syntax    | Description           |
-| --------- | --------- | --------------------- |
-| `COMPACT` | `COMPACT` | Compact the database  |
-| `LIST`    | `LIST`    | List database files   |
-| `PURGE`   | `PURGE`   | Purge persisted cache |
-| `SIZE`    | `SIZE`    | Display database size |
-
+| Command   | Syntax          | Description            |
+| --------- | --------------- | ---------------------- |
+| `COMPACT` | `COMPACT`       | Compact the database   |
+| `ECHO`    | `ECHO <STRING>` | Print the given string |
+| `LIST`    | `LIST`          | List database files    |
+| `PURGE`   | `PURGE`         | Purge persisted cache  |
+| `SIZE`    | `SIZE`          | Display database size  |
 
 ## Functions
 
@@ -281,13 +281,13 @@ Functions used in field values.
 QQ stat album:title=1999 song:title="little red corvette"
 W @recall(stat) lastplayed @now playcount @inc
 ```
-> → Update last played time and playcount for the "little red corvette" song.
+> → Update last played time and playcount for the song "little red corvette".
 
 ```
 QQ stat album:title=1999
 W !@recall(stat) lastplayed null playcount 0
 ```
-> → Set last played time to null and playcount to 0 for all album excepted "1999"
+> → Set last played time to null and playcount to 0 for all albums excepted "1999"
 
 ```
 Q song:1 title stat:@epoch(lastplayed)
