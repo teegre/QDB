@@ -30,6 +30,7 @@ from qdb.lib.utils import (
     is_virtual,
     performance_measurement,
     user_add,
+    unquote,
     unwrap_function,
     validate_hkey,
     validate_key,
@@ -49,6 +50,7 @@ class QDB:
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
         'DEL' :    self.delete,
+        'ECHO':    self.echo,
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'HLEN':    self.hlen,
@@ -187,21 +189,23 @@ class QDB:
     return f'{index}:{self.store.autoid(index)}'
 
   def _recall(self, expr: str) -> tuple[str, list, str]:
-    RECALL_RE = re.compile(r'(?P<neg>!)?@recall\((?P<index>[a-zA-Z_]+)\)$')
-    m = RECALL_RE.match(expr.lower())
+    expr = expr.lower()
+    RECALL_RE = re.compile(r'(?P<neg>!)?(?P<command>@recall|@peek)\((?P<index>[a-zA-Z_]+)\)$')
+    m = RECALL_RE.match(expr)
 
     if not m:
-      if expr.lower().startswith('@recall') or expr.lower().startswith('!@recall'):
+      if expr.startswith(('@recall', '!@recall', '@peek', '!@peek')):
         raise QDBError(
-            f'Error: invalid @recall expression: `{expr}`.\n'
-             'Syntax: @recall(index)'
+            f'Error: invalid @recall/@peek expression: `{expr}`.\n'
+             'Syntax: @recall(index) | @peek(index)'
         )
 
       return expr, None, ''
 
     neg = '!' if m.groupdict()['neg'] == '!' else ''
     index = m.groupdict()['index']
-    return index, self.store.recall_hkeys(index), neg
+    peek = m.groupdict()['command'] == '@peek'
+    return index, self.store.recall_hkeys(index, peek=peek), neg
 
   @authorization([QDBAuthType.QDB_ADMIN])
   # @performance_measurement(message='Written')
@@ -842,6 +846,10 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_size(self):
     print(str(self.store.database_size))
+    return 0
+
+  def echo(self, msg: str) -> int:
+    print(unquote(msg))
     return 0
 
   def whoami(self):

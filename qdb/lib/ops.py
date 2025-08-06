@@ -58,6 +58,7 @@ VIRTUAL = (
 
 OTHER = (
     '@autoid',
+    '@peeq',
     '@recall',
 )
 

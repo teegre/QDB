@@ -241,11 +241,14 @@ def epoch(value: str=None, real: bool=False) -> str:
 def epochreal(value: str=None) -> str:
   return epoch(value=value, real=True)
 
-def now(dummy: str=None) -> str:
-  return epochreal(value=None)
+def now(dummy: str=None, real: bool=False) -> str:
+  return epochreal() if real else epoch()
 
 def nowiso(dummy: str=None) -> str:
   return datetime.now().isoformat()
+
+def nowreal(dummy: str=None) -> str:
+  return now(real=True)
 
 def todate(value: str) -> str:
   try:
@@ -278,6 +281,12 @@ def dec(value: str) -> str:
     return str(value - 1)
   return str(value)
 
+def neg(value: str) -> str:
+  value = coerce_number(value)
+  if isinstance(value, (int, float)):
+    return str(-value)
+  return str(value)
+
 FUNCTIONS = {
     '@abs':       abs_,
     '@date':      todate,
@@ -286,8 +295,10 @@ FUNCTIONS = {
     '@epoch':     epoch,
     '@epochreal': epochreal,
     '@inc':       inc,
+    '@neg':       neg,
     '@now':       now,
     '@nowiso':    nowiso,
+    '@nowreal':   nowreal,
     '@time':      totime,
 }
 
@@ -300,6 +311,11 @@ def expand(expr: str, value: str=None, write: bool=False) -> str:
   expanded = expr = unquote(expr)
   value = unquote(value) if value is not None else value
   func = unwrap_function(expr, extract_func=True)
+
+  if write:
+    if (arg := unwrap_function(expr)) != expr:
+      value = unquote(arg)
+
   if func in FUNCTIONS:
     expanded = FUNCTIONS[func](value)
     return expanded

@@ -195,8 +195,8 @@ class QDBStore:
   def store_hkeys(self, hkeys: list):
     self.last_hkey[self.get_index(hkeys[0])] = set(hkeys)
 
-  def recall_hkeys(self, index: str) -> list:
-    hkeys = self.last_hkey.pop(index, None)
+  def recall_hkeys(self, index: str, peek: bool=False) -> list:
+    hkeys =  self.last_hkey.get(index) if peek else self.last_hkey.pop(index, None)
     if hkeys is None:
       raise QDBHkeyError(f'Error: no HKEYS to recall for index `{index}`.')
     return sorted(hkeys)
