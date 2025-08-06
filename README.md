@@ -250,35 +250,38 @@ Q artist name(autechre,"the cure") song:++title
 | Function   | Syntax              | Description                                                        | Applies to |
 | ---------- | ------------------- | ------------------------------------------------------------------ | ---------- |
 | `@autoid`  | `@autoid(<INDEX>)`  | Generate a **HKEY** for the given index                            | `W`        |
-| `@recall`  | `@recall(<INDEX>)`  | Recall **HKEY**S previously stored with `QQ`                       | `Q`, `W`   |
+| `@recall`  | `@recall(<INDEX>)`  | Recall **HKEY**S previously stored with `QQ` (cleared after usage) | `Q`, `W`   |
 | `!@recall` | `!@recall(<INDEX>)` | Recall all **HKEY**S excepted the ones previously stored with `QQ` | `Q`, `W`   |
+| `@peeq`    | `@peeq(<INDEX>)`    | Same as `@recall` but keeps **HKEY**S in memory                    | `Q`, `W`   |
 
 ### Expression Functions
 
 Functions used in field values.
 
-| Function     | Syntax                | Description                                                     |
-| ------------ | --------------------- | ----------------------------------------------------------------|
-| `@abs`       | `@abs[(FIELD)]`       | Absolute value of current field                                 |
-| `@date`      | `@date(<FIELD>)`      | Convert a timestamp to a date string                            |
-| `@datetime`  | `@datetime(<FIELD>)`  | Convert a timestamp to a date/time string                       |
-| `@dec`       | `@dec[(FIELD)]`       | Decrement current field value                                   |
-| `@epoch`     | `@epoch[(FIELD)]`     | Convert a date string to a timestamp                            |
-| `@epochreal` | `@epochreal[(FIELD)]` | Convert a date string to a timestamp as a floating-point number |
-| `@inc`       | `@inc[(FIELD)]`       | Increment current field value                                   |
-| `@now`       | `@now`                | Current date/time as a floating-point number timestamp          |
-| `@nowiso`    | `@nowiso`             | Current date/time as a string                                   |
-| `@time`      | `@time(<FIELD>)`      | Convert a timestamp to a time string                            |
+| Function     | Syntax                      | Description                                                     |
+| ------------ | ------------------------    | ----------------------------------------------------------------|
+| `@abs`       | `@abs[(FIELD)]`             | Absolute value of current field                                 |
+| `@date`      | `@date(<FIELD>)`            | Convert a timestamp to a date string                            |
+| `@datetime`  | `@datetime(<FIELD>)`        | Convert a timestamp to a date/time string                       |
+| `@dec`       | `@dec[(FIELD)]`             | Decrement current field value                                   |
+| `@epoch`     | `@epoch[(FIELD|VALUE)]`     | Convert a date string to a timestamp                            |
+| `@epochreal` | `@epochreal[(FIELD|VALUE)]` | Convert a date string to a timestamp as a floating-point number |
+| `@inc`       | `@inc[(FIELD)]`             | Increment current field value                                   |
+| `@neg`       | `@neg[(FIELD)]`             | Negate current field value                                      |
+| `@now`       | `@now`                      | Current date/time timestamp                                     |
+| `@nowreal`   | `@nowreal`                  | Current date/time as a floating-point number timestamp          |
+| `@nowiso`    | `@nowiso`                   | Current date/time as a string                                   |
+| `@time`      | `@time(<FIELD>)`            | Convert a timestamp to a time string                            |
 
 > → A *timestamp* is a number of seconds since the Epoch.
 
 ### Examples
 
 ```
-QQ stat album:title=1999
+QQ stat album:title=1999 song:title="little red corvette"
 W @recall(stat) lastplayed @now playcount @inc
 ```
-> → Update last played time and playcount for the "1999" album.
+> → Update last played time and playcount for the "little red corvette" song.
 
 ```
 QQ stat album:title=1999
@@ -290,6 +293,18 @@ W !@recall(stat) lastplayed null playcount 0
 Q song:1 title stat:@epoch(lastplayed)
 ```
 > → Convert `lastplayed` date to a Unix timestamp.
+
+```
+W transaction:5765 date @epoch(2025-08-06) amount 738.92
+```
+
+> → Convert "2025-08-06" to a Unix timestamp.
+
+```
+Q transaction @date(date)^2025-08 @[sum:amount]
+```
+
+> → Show all transactions for August 2025.
 
 ## CLI
 
