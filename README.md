@@ -264,8 +264,8 @@ Functions used in field values.
 | `@date`      | `@date(<FIELD>)`            | Convert a timestamp to a date string                            |
 | `@datetime`  | `@datetime(<FIELD>)`        | Convert a timestamp to a date/time string                       |
 | `@dec`       | `@dec[(FIELD)]`             | Decrement current field value                                   |
-| `@epoch`     | `@epoch[(FIELD|VALUE)]`     | Convert a date string to a timestamp                            |
-| `@epochreal` | `@epochreal[(FIELD|VALUE)]` | Convert a date string to a timestamp as a floating-point number |
+| `@epoch`     | `@epoch[(FIELD/VALUE)]`     | Convert a date string to a timestamp                            |
+| `@epochreal` | `@epochreal[(FIELD/VALUE)]` | Convert a date string to a timestamp as a floating-point number |
 | `@inc`       | `@inc[(FIELD)]`             | Increment current field value                                   |
 | `@neg`       | `@neg[(FIELD)]`             | Negate current field value                                      |
 | `@now`       | `@now`                      | Current date/time timestamp                                     |
