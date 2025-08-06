@@ -251,7 +251,7 @@ class QDB:
       except QDBNoDatabaseError:
         kv = {}
 
-      old_kv = kv
+      old_kv = kv.copy()
       subkv = {k: v for k, v in zip(members[::2], members[1::2])}
       refs: list[str] = []
 
