@@ -650,7 +650,7 @@ class QDBIO:
     empty = []
 
     if not self._archive:
-      return keystore, indexes, refs
+      return keystore, indexes, idx_map, refs, reverse
 
     files = [f for f in self._archive.getnames() if f.endswith('.log')]
 
