@@ -65,7 +65,7 @@ class QDBStore:
       self.users._save()
       self.io._archive.close()
       self.io._load()
-    if self.datacache.haschanged and not isset('pipe'):
+    if self.datacache.haschanged and (not isset('pipe') and not isset('repl')):
       self.build_indexed_fields()
       self.io.save_cache(*self.datacache.dump())
     self.io.compact()
@@ -103,7 +103,6 @@ class QDBStore:
       # add new hkey to the indexes map
       index = self.get_index(key)
       self.indexes_map.setdefault(index, set()).add(key)
-      self.last_hkey[index] = key
 
       if not isset('pipe'):
         if entry.timestamp > self.datacache.get_key_timestamp(key):
