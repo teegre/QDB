@@ -319,9 +319,9 @@ class QDBQuery:
       field = unwrap_function(f) if is_func else f
 
       if op in ('eq', 'in'):
-        return  self.store.get_hkey_by_field_value(index, field, *val if op == 'in' else (val,))
+        return self.store.get_indexed(index, field, *val if op == 'in' else (val,))
       if op in ('ne', 'ni'):
-        return keys ^ self.store.get_hkey_by_field_value(index, field, *val if op == 'in' else (val,))
+        return keys ^ self.store.get_indexed(index, field, *val if op == 'ni' else (val,))
 
       for k in keys:
         if limit and len(valid_keys) >= limit:

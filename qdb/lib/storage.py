@@ -144,7 +144,7 @@ class QDBStore:
       return(data.get(field, '?NOFIELD?'))
     return None
 
-  def get_hkey_by_field_value(self, index: str, field: str, *values: str) -> set:
+  def get_indexed(self, index: str, field: str, *values: str) -> set:
     return self.datacache.get_key(index, field, *values)
 
   # TODO: Database options
