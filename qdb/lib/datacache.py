@@ -53,7 +53,7 @@ class QDBCache:
   def read(self, key: str) -> dict[str] | str | None:
     entry = self.__cache.get(key)
     if entry:
-      return entry.data
+      return entry.data.copy() if isinstance(entry.data, dict) else entry.data
     return None
 
   def get_key(self, index: str, field: str, *values: str) -> set:
