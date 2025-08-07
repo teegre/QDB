@@ -308,11 +308,9 @@ class QDBStore:
       for x2 in self.indexes:
         if x1 == x2:
           continue
-        if (x1, x2) in self.__paths__:
-          continue
         if (x2, x1) in self.__paths__:
           continue
-        self.__paths__[(x1, x2)] = self.find_index_path(x1, x2)
+        _ = self.find_index_path(x1, x2)
 
   def get_all_ref_hkeys(self, index: str) -> list[str]:
     ''' Return all referenced hkeys'''
