@@ -27,7 +27,6 @@ class QDBAuthType(Enum):
 AUTH_TYPE = {
     1: 'admin',
     2: 'readonly',
-    3: 'forbidden'
 }
 
 class QDBUsers:
