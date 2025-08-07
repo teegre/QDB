@@ -363,7 +363,7 @@ class QDB:
 
     for row in rows:
       try:
-        print(' | '.join(row['row']), flush=True)
+        print('|'.join(row['row']), flush=True)
       except BrokenPipeError:
         raise QDBError('Q: Error: broken pipe.')
 
@@ -583,7 +583,7 @@ class QDB:
 
     for row in all_rows:
       try:
-        print(' | '.join(row['row']), flush=True)
+        print('|'.join(row['row']), flush=True)
       except BrokenPipeError:
         raise QDBError('Q: Error: broken pipe.')
 
@@ -735,7 +735,7 @@ class QDB:
       raise QDBNoDatabaseError(msg)
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
-      print(f'{index}: {' | '.join([f for f in fields if not is_virtual(f)])}')
+      print(f'{index}: {'|'.join([f for f in fields if not is_virtual(f)])}')
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
     return 1
