@@ -106,10 +106,7 @@ FUNCTIONS = {
     '@year':      year,
 }
 
-
 def expand(expr: str, value: str=None, write: bool=False) -> str:
-  if not has_function(expr) and expr[0] == '@':
-    raise QDBError(f'QDB: Error: `{unwrap(expr, True)}`, no such function.')
   expanded = expr = unquote(expr)
   value = unquote(value) if value is not None else value
   func = unwrap(expr, extract_func=True)
