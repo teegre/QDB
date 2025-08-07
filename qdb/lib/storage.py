@@ -308,6 +308,10 @@ class QDBStore:
       for x2 in self.indexes:
         if x1 == x2:
           continue
+        if (x1, x2) in self.__paths__:
+          continue
+        if (x2, x1) in self.__paths__:
+          continue
         self.__paths__[(x1, x2)] = self.find_index_path(x1, x2)
 
   def get_all_ref_hkeys(self, index: str) -> list[str]:
@@ -403,11 +407,13 @@ class QDBStore:
     if not self.is_index(idx1) or not self.is_index(idx2):
       # Remove from cache
       self.__paths__.pop((idx1, idx2), None)
-      self.__paths__.pop((idx2, idx1), None)
+      # self.__paths__.pop((idx2, idx1), None)
       return []
 
     if (idx1, idx2) in self.__paths__:
       return self.__paths__[(idx1, idx2)]
+    if (idx2, idx1) in self.__paths__:
+      return list(reversed(self.__paths__[(idx2, idx1)]))
 
     max_depth = len(self.indexes)
 
@@ -439,7 +445,6 @@ class QDBStore:
     if result:
       # Add to cache
       self.__paths__[(idx1, idx2)] = result
-      self.__paths__[(idx2, idx1)] = list(reversed(result))
 
     return result
 
