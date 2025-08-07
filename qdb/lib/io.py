@@ -732,7 +732,6 @@ class QDBIO:
       if partial and key[0] != b'@':
         break
 
-
       if header.value_size == 0:
         keystore.pop(key.decode(), None)
       else:
@@ -747,7 +746,9 @@ class QDBIO:
 
           if key[0] == '@':
             continue
-          index = key.partition(':')[0]
+          index, _, ID = key.partition(':')
+          if not ID:
+            continue
           if index not in indexes:
             indexes.add(index)
           if index in idx_map:
