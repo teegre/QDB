@@ -32,6 +32,11 @@ def isset(var: str) -> bool:
   envvar = __ENV__.get(var, None)
   return os.getenv(envvar) is not None if envvar else False
 
+def setenv(var: str, value: str):
+  if (envvar := __ENV__.get(var, None)) is None:
+    return
+  os.environ[envvar] = value
+
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
     @wraps(func)

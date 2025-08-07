@@ -13,7 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
-from qdb.lib.utils import authorize, spinner, splitcmd
+from qdb.lib.utils import authorize, isset, setenv, spinner, splitcmd
 
 def has_piped_input():
   mode = os.fstat(0).st_mode
@@ -86,7 +86,7 @@ class QDBClient:
     if self.qdb.auth_required and not os.getenv('__QDB_USER__'):
       authorize(self.qdb.users)
 
-    os.environ['__QDB_PIPE__'] = '1'
+    setenv('pipe', '1')
     interrupted = False
 
     if not os.getenv('__QDB_QUIET__'):
@@ -153,7 +153,7 @@ class QDBClient:
         print('** New database.')
       print()
 
-    os.environ['__QDB_REPL__'] = '1'
+    setenv('repl', '1')
 
     try:
       readline.read_history_file(self.history_file)
@@ -219,7 +219,7 @@ def main() -> int:
     return 1
 
   if args.quiet:
-    os.environ['__QDB_QUIET__'] = '1'
+    setenv('quiet', '1')
 
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
