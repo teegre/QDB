@@ -8,17 +8,19 @@ from collections import defaultdict
 from random import shuffle
 
 from qdb.lib.exception import QDBParseError, QDBQueryError, QDBQueryNoData
+from qdb.lib.functions import (
+    expand,
+    has_function,
+    unwrap,
+)
 from qdb.lib.ops import OPFUNC, AGGFUNC, BINOP, REVOP
 from qdb.lib.parser import QDBParser
 from qdb.lib.storage import QDBStore
 from qdb.lib.utils import (
     coerce_number,
-    expand,
-    has_function,
     is_numeric,
     is_virtual,
     performance_measurement,
-    unwrap_function,
 )
 
 class QDBQuery:
@@ -79,7 +81,7 @@ class QDBQuery:
         (e['index'], f)
         for e in parsed_exprs
         for f in e['fields']
-        if (e['index'], f) not in agg_fields and (e['index'], f) not in condition_fields
+        if (e['index'], unwrap(f)) not in agg_fields and (e['index'], unwrap(f)) not in condition_fields
     ]
 
     for i, f in explicit_fields:
@@ -88,9 +90,9 @@ class QDBQuery:
           grouped[i].append(f)
         else:
           grouped[i] = [f]
-      if is_grouped(i) and f not in fields.get(i, []):
+      if is_grouped(i) and unwrap(f) not in fields.get(i, []):
         continue
-      if unwrap_function(f) not in fields.get(i, []) and f != '*':
+      if unwrap(f) not in fields.get(i, []) and f != '*':
         raise QDBQueryError(
             f'Error: field `{i}:{f}` is not used in any condition or aggregation.\n'
             f'Consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
@@ -189,10 +191,11 @@ class QDBQuery:
 
             for ref in child_node.keys():
               data = self.store.read_hash(ref)
-              group_key = tuple(data.get(f) for f in group_fields) if group else ('__all__',)
+              group_key = tuple(
+                  expand(f, data.get(unwrap(f))) for f in group_fields) if group else ('__all__',)
 
               for agg in agg_exprs[idx]:
-                op, f = agg['op'], unwrap_function(agg['field'])
+                op, f = agg['op'], unwrap(agg['field'])
                 val = data.get(f.replace('*', '$id'))
                 val = coerce_number(val) if not is_virtual(f) else val
                 grouped[group_key][f'{idx}:{op}:{agg["field"]}'].append(val)
@@ -253,7 +256,7 @@ class QDBQuery:
             )
             reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(count_value): {} }
       except TypeError:
-        raise QDBQueryError(f'Error: mixed value types in `{unwrap_function(f)}`.')
+        raise QDBQueryError(f'Error: mixed value types in `{unwrap(f)}`.')
 
     return reduced
 
@@ -316,12 +319,16 @@ class QDBQuery:
       valid_keys = set()
 
       is_func = has_function(f)
-      field = unwrap_function(f) if is_func else f
+      field = unwrap(f) if is_func else f
 
       if op in ('eq', 'in'):
-        return self.store.get_indexed(index, field, *val if op == 'in' else (val,))
+        key_set = self.store.get_indexed(index, field, *val if op == 'in' else (val,))
+        if key_set:
+          return key_set
       if op in ('ne', 'ni'):
-        return keys ^ self.store.get_indexed(index, field, *val if op == 'ni' else (val,))
+        key_set = self.store.get_indexed(index, field, *val if op == 'ni' else (val,))
+        if key_set:
+          return keys ^ key_set
 
       for k in keys:
         if limit and len(valid_keys) >= limit:

@@ -8,9 +8,10 @@ from typing import Optional
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb.lib.exception import QDBParseError
+from qdb.lib.functions import  unwrap
 from qdb.lib.ops import OP, SORTPREFIX, AGGFUNC
 from qdb.lib.storage import QDBStore
-from qdb.lib.utils import coerce_number, is_virtual, unwrap_function
+from qdb.lib.utils import coerce_number, is_virtual
 
 class QDBParser:
   def __init__(self, store: QDBStore, main_index: str=None):
@@ -19,7 +20,7 @@ class QDBParser:
 
   def validate_field(self, index: str, field: str, excepted: list=[], context: str=None) -> None:
     valid_fields = self.store.get_fields_from_index(index)
-    if unwrap_function(field) not in valid_fields + excepted:
+    if unwrap(field) not in valid_fields + excepted:
       suggestions = difflib.get_close_matches(field, valid_fields, n=3, cutoff=0.5)
 
       msg = f'Error: `{field}` is not a valid field for `{index}`'
@@ -60,7 +61,7 @@ class QDBParser:
         r'(?P<neg>!)?\((?P<values>[^\)]*)\)$', part
     )
 
-    if in_match and part == unwrap_function(part, extract_func=True):
+    if in_match and part == unwrap(part, extract_func=True):
       field = in_match.group('field').strip()
 
       values_raw = in_match.group('values')
@@ -105,7 +106,7 @@ class QDBParser:
     groups = match.groupdict()
     field = groups['field'].strip()
 
-    if unwrap_function(field) not in fields and not field.startswith('@['):
+    if unwrap(field) not in fields and not field.startswith('@['):
       fields.append(field)
 
     if groups['sort']:

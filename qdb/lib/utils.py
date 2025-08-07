@@ -5,7 +5,6 @@ import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from datetime import datetime, timedelta
 from functools import wraps
 from getpass import getpass
 from typing import Any
@@ -220,126 +219,7 @@ def splitcmd(cmd: str) -> list[str]:
 
   return tokens
 
-def abs_(value: str) -> str:
-  value = coerce_number(value)
-  if isinstance(value, (int, float)):
-    return str(abs(value))
-  raise QDBError(f'@abs: Type error: `{value}`.')
-
-def epoch(value: str=None, real: bool=False) -> str:
-  if value is None:
-    return str(time.time()) if real else str(int(time.time()))
-  try:
-    dt = datetime.fromisoformat(value)
-  except ValueError:
-    raise QDBError(
-        f'QDB: {"@epochreal" if real else "@epoch"} error: invalid value `{value}`.'
-        '\nISO date/time string expected.'
-    )
-  return str(int(dt.timestamp())) if not real else str(dt.timestamp())
-
-def epochreal(value: str=None) -> str:
-  return epoch(value=value, real=True)
-
-def now(dummy: str=None, real: bool=False) -> str:
-  return epochreal() if real else epoch()
-
-def nowiso(dummy: str=None) -> str:
-  return datetime.now().isoformat()
-
-def nowreal(dummy: str=None) -> str:
-  return now(real=True)
-
-def todate(value: str) -> str:
-  try:
-    return datetime.fromtimestamp(coerce_number(value)).date().isoformat()
-  except (ValueError, TypeError):
-    raise QDBError(f'QDB: @date error: `{value}`, invalid value.')
-
-def todatetime(value: str) -> str:
-  try:
-    return datetime.fromtimestamp(coerce_number(value)).isoformat()
-  except (ValueError, TypeError):
-    raise QDBError(f'QDB: @datetime error: `{value}`, invalid timestamp.')
-
-def totime(value: str):
-  try:
-    dt = timedelta(seconds=int(float(value)))
-    return str(dt)
-  except (ValueError, TypeError):
-    raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
-
-def inc(value: str) -> str:
-  value = coerce_number(value)
-  if isinstance(value, (int, float)):
-    return str(value + 1)
-  return str(value)
-
-def dec(value: str) -> str:
-  value = coerce_number(value)
-  if isinstance(value, (int, float)):
-    return str(value - 1)
-  return str(value)
-
-def neg(value: str) -> str:
-  value = coerce_number(value)
-  if isinstance(value, (int, float)):
-    return str(-value)
-  return str(value)
-
-FUNCTIONS = {
-    '@abs':       abs_,
-    '@date':      todate,
-    '@datetime':  todatetime,
-    '@dec':       dec,
-    '@epoch':     epoch,
-    '@epochreal': epochreal,
-    '@inc':       inc,
-    '@neg':       neg,
-    '@now':       now,
-    '@nowiso':    nowiso,
-    '@nowreal':   nowreal,
-    '@time':      totime,
-}
-
 def unquote(expr: str):
   quoted = re.sub(r'''(?<!\\)"(.*?)(?<!\\)"''', r'\1', expr)
   unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode()
   return unescaped
-
-def expand(expr: str, value: str=None, write: bool=False) -> str:
-  expanded = expr = unquote(expr)
-  value = unquote(value) if value is not None else value
-  func = unwrap_function(expr, extract_func=True)
-
-  if write:
-    if (arg := unwrap_function(expr)) != expr:
-      value = unquote(arg)
-
-  if func in FUNCTIONS:
-    expanded = FUNCTIONS[func](value)
-    return expanded
-  return expr if write else value
-
-def unwrap_function(expr: str, extract_func: bool=False) -> str:
-  '''
-  Return base field from function or function if 'extract_func' is True.
-  '''
-  while match := re.match(r'(?P<sort>\+\+|--)?(@?\w+)\(([^()]+)\)', expr):
-    if extract_func:
-      func = match.group(2)
-      if func in FUNCTIONS:
-        expr = func
-        break
-      if func[0] == '@':
-        raise QDBError(f'Error: `{func}`, no such function.')
-      else:
-        break
-    else:
-      expr = match.group(3)
-  return expr.strip()
-
-def has_function(expr: str) -> bool:
-  if match := re.match(r'(?P<sort>\+\+|--)?(@?\w+)\(([^()]+\))', expr):
-    return match.group(2) in FUNCTIONS
-  return False

@@ -17,6 +17,10 @@ from qdb.lib.exception import (
     QDBError,
     QDBNoDatabaseError,
 )
+from qdb.lib.functions import (
+    expand,
+    unwrap,
+)
 from qdb.lib.query import QDBQuery
 from qdb.lib.storage import QDBStore
 from qdb.lib.users import QDBAuthType
@@ -24,14 +28,12 @@ from qdb.lib.utils import (
     authorization,
     authorize,
     coerce_number,
-    expand,
     is_numeric,
     isset,
     is_virtual,
     performance_measurement,
     user_add,
     unquote,
-    unwrap_function,
     validate_hkey,
     validate_key,
 )
@@ -328,7 +330,7 @@ class QDB:
       if index_fields:
         row.append(key)
         for f in index_fields:
-          field = unwrap_function(f)
+          field = unwrap(f)
           if not is_virtual(f):
             v = expand(f, data.get(field, '?NOFIELD?'))
             row.append(f'{f}={v}')
@@ -342,7 +344,7 @@ class QDB:
                 row.append(f'{f}={v}')
           else:
             for f in fields:
-              field = unwrap_function(f)
+              field = unwrap(f)
               val = expand(f, data.get(field, '?NOFIELD?'))
               row.append(val)
               sort_data = fields_data[root_index]['sort']
@@ -444,7 +446,7 @@ class QDB:
             current_values[(index, f)] = v
       else:
         for f in fields:
-          field = unwrap_function(f)
+          field = unwrap(f)
           try:
             current_values[(index, f)] = expand(f, data[field])
           except (KeyError, TypeError):
@@ -452,7 +454,7 @@ class QDB:
         if row_meta.get('sort_value') is None and sort_data:
           for rule in sort_data:
             for f in fields:
-              field = unwrap_function(f)
+              field = unwrap(f)
               if rule['field'] == f:
                 row_meta['sort_value'] = expand(f, data[field])
                 break
