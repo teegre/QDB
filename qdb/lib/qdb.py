@@ -192,21 +192,21 @@ class QDB:
 
   def _recall(self, expr: str) -> tuple[str, list, str]:
     expr = expr.lower()
-    RECALL_RE = re.compile(r'(?P<neg>!)?(?P<command>@recall|@peek)\((?P<index>[a-zA-Z_]+)\)$')
+    RECALL_RE = re.compile(r'(?P<neg>!)?(?P<command>@recall|@peeq)\((?P<index>[a-zA-Z_]+)\)$')
     m = RECALL_RE.match(expr)
 
     if not m:
-      if expr.startswith(('@recall', '!@recall', '@peek', '!@peek')):
+      if expr.startswith(('@recall', '!@recall', '@peeq', '!@peeq')):
         raise QDBError(
-            f'Error: invalid @recall/@peek expression: `{expr}`.\n'
-             'Syntax: @recall(index) | @peek(index)'
+            f'Error: invalid @recall/@peeq expression: `{expr}`.\n'
+             'Syntax: @recall(index) | @peeq(index)'
         )
 
       return expr, None, ''
 
     neg = '!' if m.groupdict()['neg'] == '!' else ''
     index = m.groupdict()['index']
-    peek = m.groupdict()['command'] == '@peek'
+    peek = m.groupdict()['command'] == '@peeq'
     return index, self.store.recall_hkeys(index, peek=peek), neg
 
   @authorization([QDBAuthType.QDB_ADMIN])
