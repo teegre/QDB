@@ -267,11 +267,13 @@ Functions used in field values.
 | `@epoch`     | `@epoch[(FIELD/VALUE)]`     | Convert a date string to a timestamp                            |
 | `@epochreal` | `@epochreal[(FIELD/VALUE)]` | Convert a date string to a timestamp as a floating-point number |
 | `@inc`       | `@inc[(FIELD)]`             | Increment current field value                                   |
+| `@month`     | `@month[(FIELD/VALUE)]`     | Extract the month as a two-digit string from a timestamp        |
 | `@neg`       | `@neg[(FIELD)]`             | Negate current field value                                      |
 | `@now`       | `@now`                      | Current date/time timestamp                                     |
 | `@nowreal`   | `@nowreal`                  | Current date/time as a floating-point number timestamp          |
 | `@nowiso`    | `@nowiso`                   | Current date/time as a string                                   |
 | `@time`      | `@time(<FIELD>)`            | Convert a timestamp to a time string                            |
+| `@year`      | `@year[(FIELD/VALUE)]`      | Extract the year as a four-digit string from a timestamp        |
 
 > → A *timestamp* is a number of seconds since the Epoch.
 
