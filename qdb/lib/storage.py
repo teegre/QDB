@@ -625,13 +625,20 @@ class QDBStore:
     all_children = set()
     unrelated = set()
 
-    for indexes, path in self.__paths__.items():
-      if not path:
-        unrelated.update(indexes)
-        continue
-      for a, b in zip(path, path[1:]):
-        graph[a].add(b)
-        all_children.add(b)
+    indexes = sorted(self.indexes, key=lambda idx: self.index_len(idx), reverse=True)
+
+    for idx1, idx2 in zip(indexes, indexes[1:]):
+      path = self.find_index_path(idx1, idx2)
+      if path:
+        for a, b in zip(path, path[1:]):
+          if b in graph:
+            continue
+          graph[a].add(b)
+          all_children.add(b)
+      else:
+        unrelated.update((idx1, idx2))
+
+    print(graph)
 
     unrelated -= all_children
     roots = sorted(self.indexes - unrelated, key=lambda idx: len(self.get_index_keys(idx)), reverse=True)
@@ -642,10 +649,6 @@ class QDBStore:
     def print_tree(node, prefix='', is_last=True, not_related=False):
       connector = '└─ ' if is_last else '├─ '
       line = prefix + connector + node
-      if node in visited:
-        line += ' (↻)'
-        print(line)
-        return
 
       if not_related:
         print(line + ' (x)')
