@@ -120,6 +120,7 @@ class QDBIO:
 
   def _new_tmp_file(self, origin: str=None, hint: bool=False, user: bool=False):
     tmp = tempfile.NamedTemporaryFile(prefix='qdb')
+    tmp.mode = 0o600
 
     if origin and hint:
       tmp.name = origin.replace('.log', '.hint')
@@ -332,6 +333,7 @@ class QDBIO:
       self._remove('.idx')
     with tarfile.open(self._database_path, 'a') as tar:
       cacheinfo = tarfile.TarInfo('.cache')
+      cacheinfo.mode = 0o600
       QDBUsers.set_user_info(cacheinfo)
       cacheinfo.size = cache_data.seek(0, os.SEEK_END)
       cache_data.seek(0)
@@ -339,6 +341,7 @@ class QDBIO:
       tar.addfile(cacheinfo, cache_data)
 
       fieldsinfo = tarfile.TarInfo('.idx')
+      fieldsinfo.mode = 0o600
       QDBUsers.set_user_info(fieldsinfo)
       fieldsinfo.size = indexed_fields.seek(0, os.SEEK_END)
       indexed_fields.seek(0)
@@ -371,6 +374,7 @@ class QDBIO:
       self._archive = tarfile.open(self._database_path, 'a')
 
       info = tarfile.TarInfo(name=os.path.basename(self._active_file.name))
+      info.mode = 0o600
       QDBUsers.set_user_info(info)
       info.size = self._active_file_size
       info.mtime = time.time()
@@ -379,6 +383,7 @@ class QDBIO:
       if refs:
         self.save_refs(refs)
         inforefs = tarfile.TarInfo(name=os.path.basename(self._active_refs.name))
+        inforefs.mode = 0o600
         QDBUsers.set_user_info(inforefs)
         inforefs.size = self._active_refs_size
         inforefs.mtime = info.mtime
@@ -534,6 +539,8 @@ class QDBIO:
 
     infolog = tarfile.TarInfo(name=logname)
     infohint = tarfile.TarInfo(name=hintname)
+    infolog.mode = 0o600
+    infohint.mode = 0o600
     QDBUsers.set_user_info(infolog)
     QDBUsers.set_user_info(infohint)
     infolog.size = logsize
@@ -547,6 +554,7 @@ class QDBIO:
       self.save_refs(refs, ref_file=tmprefs)
       tmprefs.seek(0)
       inforefs = tarfile.TarInfo(name=tmprefs.name)
+      inforefs.mode = 0o600
       QDBUsers.set_user_info(inforefs)
       inforefs.size = self._active_refs_size
       inforefs.mtime = infolog.mtime
@@ -558,12 +566,14 @@ class QDBIO:
         new.addfile(inforefs, tmprefs)
       if self.users.filename in self._archive.getnames():
         usersinfo = self._archive.getmember(self.users.filename)
+        usersinfo.mode = 0o600
         new.addfile(usersinfo, self._archive.extractfile(self.users.filename))
       if '.cache' in self._archive.getnames():
         cacheinfo = self._archive.getmember('.cache')
         new.addfile(cacheinfo, self._archive.extractfile('.cache'))
       if '.idx' in self._archive.getnames():
         idxinfo = self._archive.getmember('.idx')
+        idxinfo.mode = 0o600
         new.addfile(idxinfo, self._archive.extractfile('.idx'))
     except IOError as e:
       new.close()
@@ -613,6 +623,7 @@ class QDBIO:
     tmpuser.seek(0)
 
     infouser = tarfile.TarInfo(name=self.users.filename)
+    infouser.mode = 0o600
     QDBUsers.set_user_info(infouser)
     infouser.size = usersize
     infouser.mtime = time.time()
