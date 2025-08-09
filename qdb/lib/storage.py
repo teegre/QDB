@@ -638,8 +638,6 @@ class QDBStore:
       else:
         unrelated.update((idx1, idx2))
 
-    print(graph)
-
     unrelated -= all_children
     roots = sorted(self.indexes - unrelated, key=lambda idx: len(self.get_index_keys(idx)), reverse=True)
     starting_points = roots or indexes
