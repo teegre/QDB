@@ -707,10 +707,10 @@ class QDBIO:
       if not self._validate_crc(key, qdbdata):
         raise QDBIODataIntegrityError(f'IO Error: bad CRC: `{log.name}:{position}`')
 
-      key = key.decode()
-
-      if partial and not key.startswith('@'):
+      if partial and not key.startswith(b'@'):
         break
+
+      key = key.decode()
       
       if header.value_size == 0:
         keystore.pop(key, None)
@@ -743,10 +743,11 @@ class QDBIO:
       if partial and key[0] != b'@':
         break
 
+      key = key.decode()
+
       if header.value_size == 0:
-        keystore.pop(key.decode(), None)
+        keystore.pop(key, None)
       else:
-        key = key.decode()
         if keystore.get(key) is None or header.timestamp > info.timestamp:
           keystore[key] = QDBInfo(
               hint.name.replace('.hint', '.log'),
