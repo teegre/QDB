@@ -411,14 +411,10 @@ The database schema should look similar to:
 
 ```
 ├─ person
-│  ├─ address
-│  │  ├─ city
-│  │  │  ├─ country
-│  │  │  │  └─ city (↻)
-│  │  │  └─ address (↻)
-│  │  └─ person (↻)
-│  └─ astro
-│     └─ person (↻)
+│  ├─ astro
+│  └─ address
+│     └─ city
+│        └─ country
 ```
 
 To build the example database, run:
