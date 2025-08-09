@@ -32,6 +32,7 @@ from qdb.lib.utils import (
     isset,
     is_virtual,
     performance_measurement,
+    setenv,
     user_add,
     unquote,
     validate_hkey,
@@ -56,6 +57,7 @@ class QDB:
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'HLEN':    self.hlen,
+        'HUSH':    self.hush,
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEYS':    self.keys,
@@ -852,6 +854,10 @@ class QDB:
 
   def echo(self, msg: str) -> int:
     print(unquote(msg))
+    return 0
+
+  def hush(self) -> int:
+    setenv('quiet')
     return 0
 
   def whoami(self):

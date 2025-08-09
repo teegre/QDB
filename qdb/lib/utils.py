@@ -32,7 +32,7 @@ def isset(var: str) -> bool:
   envvar = __ENV__.get(var, None)
   return os.getenv(envvar) is not None if envvar else False
 
-def setenv(var: str, value: str):
+def setenv(var: str, value: str='1'):
   if (envvar := __ENV__.get(var, None)) is None:
     return
   os.environ[envvar] = value

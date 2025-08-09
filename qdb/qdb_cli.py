@@ -31,7 +31,7 @@ class QDBCompleter:
     if text:
       self.matches = [c for c in self.commands if c.startswith(text)]
     else:
-      self.matches = []
+      self.matches = self.commands
     try:
       return self.matches[state]
     except IndexError:
@@ -83,14 +83,14 @@ class QDBClient:
         return 1
 
   def pipe_commands(self) -> int:
-    if self.qdb.auth_required and not os.getenv('__QDB_USER__'):
+    if self.qdb.auth_required and not isset('user'):
       authorize(self.qdb.users)
 
-    setenv('pipe', '1')
+    setenv('pipe')
     interrupted = False
 
-    if not os.getenv('__QDB_QUIET__'):
-      print('QDB: Processing commands...', file=sys.stderr)
+    if not isset('quiet'):
+      # print('QDB: Processing commands...', file=sys.stderr)
       self.hide_cursor()
       spin = iter(spinner())
 
@@ -109,7 +109,7 @@ class QDBClient:
         if ret != 0:
           print(f'QDB: Line {line_count}: command failed: `{line.strip("\n")}`.`', file=sys.stderr)
           return 1
-        if not os.getenv('__QDB_QUIET__'):
+        if not isset('quiet'):
           print(f'\r{next(spin)} {line_count}', end='', file=sys.stderr)
         line_count += 1
     except KeyboardInterrupt:
@@ -117,11 +117,11 @@ class QDBClient:
       print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
       interrupted = True
 
-    if not os.getenv('__QDB_QUIET__'):
+    if not isset('quiet'):
       t2 = perf_counter()
       print()
       print(f'\nProcessed: {(t2-t1):.4f}s')
-      QDBClient.show_cursor()
+    QDBClient.show_cursor()
     return 0
 
   def _set_prompt(self) -> str:
@@ -153,7 +153,7 @@ class QDBClient:
         print('** New database.')
       print()
 
-    setenv('repl', '1')
+    setenv('repl')
 
     try:
       readline.read_history_file(self.history_file)
@@ -219,7 +219,7 @@ def main() -> int:
     return 1
 
   if args.quiet:
-    setenv('quiet', '1')
+    setenv('quiet')
 
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
@@ -238,7 +238,7 @@ def main() -> int:
   try:
     return client.process_commands(args.command, args.pipe)
   except QDBError as e:
-    if has_piped_input() and not os.getenv('__QDB_QUIET__'):
+    if has_piped_input() and not isset('quiet'):
       print()
     print(e, file=sys.stderr)
     sys.stderr.close()
