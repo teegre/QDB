@@ -72,18 +72,12 @@ Create/modify fields and values in a hashmap.
 
 `W <INDEX>|<HKEY> <FIELD1> <VALUE1> ... <FIELDN> <VALUEN>`
 
-#### Examples
+#### Example
 
 **Create `song:1258`:**
 
 ```
 W song:1258 album album:133 artist artist:83 track 10 title "reniform puls"
-```
-
-**With `@autoid`:**
-
-```
-W @autoid(artist) name autechre
 ```
 
 ### Q
@@ -252,8 +246,9 @@ Q artist name(autechre,"the cure") song:++title
 | ---------- | ------------------- | ------------------------------------------------------------------ | ---------- |
 | `@autoid`  | `@autoid(<INDEX>)`  | Generate a **HKEY** for the given index                            | `W`        |
 | `@recall`  | `@recall(<INDEX>)`  | Recall **HKEY**S previously stored with `QQ` (cleared after usage) | `Q`, `W`   |
-| `!@recall` | `!@recall(<INDEX>)` | Recall all **HKEY**S excepted the ones previously stored with `QQ` | `Q`, `W`   |
 | `@peeq`    | `@peeq(<INDEX>)`    | Same as `@recall` but keeps **HKEY**S in memory                    | `Q`, `W`   |
+
+> → Prepending `!` operator to `@recall` or `@peeq` negates the results.
 
 ### Expression Functions
 
