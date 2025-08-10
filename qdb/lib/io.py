@@ -41,7 +41,7 @@ class QDBIOHintHeader:
   position: int
 
 @dataclass
-class QDBHint:
+class QDBIOHint:
   header: QDBIOHintHeader
   key: bytes
 
@@ -158,7 +158,7 @@ class QDBIO:
   def _deserialize_header(self, header: bytes) -> QDBIOHeader:
     return QDBIOHeader(*self.HEADER_INFO_STRUCT.unpack(header))
 
-  def _serialize_hint(self, qdbhint: QDBHint):
+  def _serialize_hint(self, qdbhint: QDBIOHint):
     return struct.pack(
         f'<QIII{qdbhint.header.key_size}s',
         qdbhint.header.timestamp,
@@ -514,7 +514,7 @@ class QDBIO:
           val.decode() if vt == b'-' else json.loads(val.decode())
       )
       tmplog.write(qdbdata.data)
-      hint = self._serialize_hint(QDBHint(QDBIOHintHeader(ts, ksz, vsz, position), key.encode()))
+      hint = self._serialize_hint(QDBIOHint(QDBIOHintHeader(ts, ksz, vsz, position), key.encode()))
       tmphint.write(hint)
       tmplog.flush()
       tmphint.flush()
