@@ -291,15 +291,19 @@ class QDBQuery:
       return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
 
     def filter_keys(index: str, expr: dict, base: set=None, limit: int=None) -> set:
+
       keys = base if base else self.store.get_index_keys(index)
       f, op, val = expr.get('field'), expr['op'], expr.get('value')
 
-      if is_virtual(f):
+      is_func = has_function(f)
+      field = unwrap(f) if is_func else f
+
+      if is_virtual(field):
         values = val if isinstance(val, list) else [val]
         hkeys = set()
 
         for v in values:
-          match f:
+          match field:
             case '$id':
               hkey = f'{index}:{v}'
             case '$hkey':
