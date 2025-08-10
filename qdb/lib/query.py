@@ -316,11 +316,6 @@ class QDBQuery:
           case _:
             raise QDBQueryError(f'Error: `{REVOP[op]}` not supported for virtual field `{f}` .')
 
-      valid_keys = set()
-
-      is_func = has_function(f)
-      field = unwrap(f) if is_func else f
-
       if op in ('eq', 'in'):
         key_set = self.store.get_indexed(index, field, *val if op == 'in' else (val,))
         if key_set:
@@ -329,6 +324,9 @@ class QDBQuery:
         key_set = self.store.get_indexed(index, field, *val if op == 'ni' else (val,))
         if key_set:
           return keys ^ key_set
+
+
+      valid_keys = set()
 
       for k in keys:
         if limit and len(valid_keys) >= limit:
