@@ -65,7 +65,7 @@ class QDBStore:
       self.users._save()
       self.io._archive.close()
       self.io._load()
-    if self.datacache.haschanged and (not isset('pipe') and not isset('repl')):
+    if self.datacache.haschanged and not (self.haschanged and not isset('repl')):
       self.build_indexed_fields()
       self.io.save_cache(*self.datacache.dump())
     self.io.compact()
