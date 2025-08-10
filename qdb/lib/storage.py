@@ -214,6 +214,8 @@ class QDBStore:
     ), flush=True)
 
   def dump_cmds(self):
+    if isset('quiet'):
+      print('HUSH')
     for index in self.indexes:
       for hkey in self.get_index_keys(index):
         data = self.read_hash(hkey, dump=True)
@@ -221,7 +223,7 @@ class QDBStore:
     for key in self.keystore:
       if not self.isoption(key) and not self.has_index(key):
         value = self.read(key)
-        print(f'W {key} {quote(value)}')
+        print(f'SET {key} {quote(value)}')
 
   def keystore_dump(self) -> None:
     ''' Dump keystore content '''

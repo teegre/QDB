@@ -53,7 +53,7 @@ class QDB:
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
         'DEL' :    self.delete,
-        'DUMP':    self.store.dump_cmds,
+        'DUMP':    self.dump,
         'ECHO':    self.echo,
         'GET' :    self.get,
         'HDEL':    self.hdel,
@@ -819,7 +819,7 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def chpw(self):
     if not self.users.hasusers:
-      print('Error: No current user.')
+      print('Error: no current user.')
       return 1
     user = self.users.getuser()
     auth = 'admin' if QDBAuthType(self.users.get_auth(user)) == QDBAuthType.QDB_ADMIN else 'readonly'
@@ -838,19 +838,33 @@ class QDB:
   def list_files(self) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No file.'
+        msg = 'LIST: No file.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'LIST: Error: `{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     try:
       self.store.list_files()
     except QDBError as e:
-      print(f'QDB: {e}', file=sys.stderr)
+      print(f'LIST: {e}', file=sys.stderr)
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_size(self):
     print(str(self.store.database_size))
+    return 0
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def dump(self) -> int:
+    if not self.store.isdatabase:
+      if isset('repl'):
+        msg = 'DUMP: No data'
+      else:
+        msg = f'DUMP: Error: `{self.store.database_name}`, no such database.'
+      raise QDBNoDatabaseError(msg)
+    try:
+      self.store.dump_cmds()
+    except BrokenPipeError:
+      raise QDBError('DUMP: Error: broken pipe.')
     return 0
 
   def echo(self, msg: str) -> int:
