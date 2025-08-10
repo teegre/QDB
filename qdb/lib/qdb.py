@@ -53,6 +53,7 @@ class QDB:
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
         'DEL' :    self.delete,
+        'DUMP':    self.store.dump_cmds,
         'ECHO':    self.echo,
         'GET' :    self.get,
         'HDEL':    self.hdel,
@@ -641,17 +642,17 @@ class QDB:
          continue
       # Delete fields
       kv = self.store.read_hash(key)
+      old_kv = kv.copy()
       for field in fields:
         try:
           v = kv.pop(field)
           if self.store.is_refd_by(key, v):
-            # print(f'HDEL: deleting {v} referenced by {key}...')
             self.store.delete_ref_of_key(ref=v, hkey=key)
         except KeyError:
           print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)
           continue
       if fields:
-        self.store.write(key, kv)
+        self.store.write(key, kv, old_kv)
     return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])

@@ -54,11 +54,11 @@ class QDBClient:
 
   @classmethod
   def hide_cursor(cls):
-    print('\x1b[?25l', end='', flush=True)
+    print('\x1b[?25l', end='', flush=True, file=sys.stderr)
 
   @classmethod
   def show_cursor(cls):
-    print('\x1b[?25h', end='', flush=True)
+    print('\x1b[?25h', end='', flush=True, file=sys.stderr)
 
   def execute(self, command: str) -> int:
     try:

@@ -14,7 +14,7 @@ from qdb.lib.datacache import QDBCache
 from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError, QDBHkeyError
 from qdb.lib.io import QDBIO, QDBInfo
 from qdb.lib.ops import OPTIONS
-from qdb.lib.utils import isset, VIRTUAL
+from qdb.lib.utils import isset, quote, is_virtual
 
 # Terminology:
 # key: a key in simple key/value pair
@@ -213,6 +213,16 @@ class QDBStore:
        { key: self.read_hash(key, dump=True) if self.has_index(key) else self.read(key) }
     ), flush=True)
 
+  def dump_cmds(self):
+    for index in self.indexes:
+      for hkey in self.get_index_keys(index):
+        data = self.read_hash(hkey, dump=True)
+        print(f'W {hkey} {" ".join(f + chr(32) + quote(v) for f, v in zip(data.keys(), data.values()) if not is_virtual(f))}')
+    for key in self.keystore:
+      if not self.isoption(key) and not self.has_index(key):
+        value = self.read(key)
+        print(f'W {key} {quote(value)}')
+
   def keystore_dump(self) -> None:
     ''' Dump keystore content '''
     for k, v in self.keystore.items():
@@ -290,10 +300,10 @@ class QDBStore:
       fields = self.get_fields_from_index(index)
       hkeys = self.get_index_keys(index)
       for hkey in hkeys:
-        if hkey in VIRTUAL:
-          continue
-        values = self.read_hash(hkey)
+        values = self.read_hash(hkey, dump=True)
         for field in fields:
+          if is_virtual(field):
+            continue
           k = f'{index}:{field}={values.get(field)}'
           if k in indexed_fields:
             indexed_fields[k].add(hkey)

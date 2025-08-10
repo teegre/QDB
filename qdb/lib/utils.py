@@ -28,14 +28,18 @@ __ENV__ = {
     'pipe' : '__QDB_PIPE__',
 }
 
-def isset(var: str) -> bool:
-  envvar = __ENV__.get(var, None)
-  return os.getenv(envvar) is not None if envvar else False
-
 def setenv(var: str, value: str='1'):
   if (envvar := __ENV__.get(var, None)) is None:
     return
   os.environ[envvar] = value
+
+def unsetenv(var: str):
+  if (envvar := __ENV__.get(var)) is not None:
+    os.environ.pop(envvar, None)
+
+def isset(var: str) -> bool:
+  envvar = __ENV__.get(var, None)
+  return os.getenv(envvar) is not None if envvar else False
 
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
@@ -224,7 +228,11 @@ def splitcmd(cmd: str) -> list[str]:
 
   return tokens
 
-def unquote(expr: str):
+def unquote(expr: str) -> str:
   quoted = re.sub(r'''(?<!\\)"(.*?)(?<!\\)"''', r'\1', expr)
   unescaped = bytes(quoted, 'utf-8').decode('unicode_escape').encode('latin-1').decode()
   return unescaped
+
+def quote(value: str) -> str:
+  quoted = value.replace('"', '\\"').replace("'", "\\'")
+  return f'"{quoted}"'
