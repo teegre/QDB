@@ -57,7 +57,7 @@ class QDBParser:
     # IN-style syntax: optional sort, field(value1[, ..., valueN])
 
     in_match = re.match(
-        r'^(?P<sort>\+\+|--)?(?P<field>[^\s:!()]+)'
+        r'^(?P<sort>\+\+|--)?(?P<field>[^@\s:!()]+)'
         r'(?P<neg>!)?\((?P<values>[^\)]*)\)$', part
     )
 

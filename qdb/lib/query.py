@@ -298,6 +298,11 @@ class QDBQuery:
       is_func = has_function(f)
       field = unwrap(f) if is_func else f
 
+      if not isinstance(val, list) and has_function(val):
+        func = unwrap(val, extract_func=True)
+        value = unwrap(val)
+        val = expand(func, value)
+
       if is_virtual(field):
         values = val if isinstance(val, list) else [val]
         hkeys = set()
