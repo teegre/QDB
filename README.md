@@ -395,7 +395,7 @@ Before proceeding, ensure **python** (version 3.13 or higher), **python-setuptoo
 
 ## Try QDB
 
-To give **QDB** a try, a `persons.qs` script is provided.
+To give **QDB** a try, a `persons.qdbs` script is provided.
 
 It generates a *persons* database with random fake data:
 
@@ -417,7 +417,7 @@ The database schema should look similar to:
 
 To build the example database, run:
 
-`qdb persons.qdb --pipe < persons.qs`
+`qdb persons.qdb --pipe < persons.qdbs`
 
 ## Uninstall
 
