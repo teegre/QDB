@@ -119,7 +119,7 @@ class QDBStore:
       return None
     if not read_hash:
       return self.io.read(entry, key)
-    if entry.timestamp < self.datacache.get_key_timestamp(key):
+    if entry.timestamp <= self.datacache.get_key_timestamp(key):
       return self.datacache.read(key)
     value = self.io.read(entry, key)
     self.datacache.write(key, value)
