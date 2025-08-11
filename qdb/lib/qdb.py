@@ -59,6 +59,7 @@ class QDB:
         'HDEL':    self.hdel,
         'HLEN':    self.hlen,
         'HUSH':    self.hush,
+        'HUSHF':   self.hushf,
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEYS':    self.keys,
@@ -336,7 +337,10 @@ class QDB:
           field = unwrap(f)
           if not is_virtual(f):
             v = expand(f, data.get(field, '?NOFIELD?'))
-            row.append(f'{f}={v}')
+            if isset('hushf'):
+              row.append(str(v))
+            else:
+              row.append(f'{f}={v}')
         rows.append({'row': row, 'sort_value': None})
       else:
         for index, spec in fields_data.items():
@@ -344,7 +348,10 @@ class QDB:
           if fields == ['*']:
             for f, v in data.items():
               if not is_virtual(f):
-                row.append(f'{f}={v}')
+                if isset('hushf'):
+                  row.append(str(v))
+                else:
+                  row.append(f'{f}={v}')
           else:
             for f in fields:
               field = unwrap(f)
@@ -383,7 +390,10 @@ class QDB:
         if field == '*':
           star_fields = [k[1] for k in result_value.keys() if k[0] == index]
           for star_field in star_fields:
-            row.append(f'{star_field}={result_value[(index, star_field)]}')
+            if isset('hushf'):
+              row.append(result_value[(index, star_field)])
+            else:
+              row.append(f'{star_field}={result_value[(index, star_field)]}')
         else:
           row.append(result_value[(index, field)])
     return row
@@ -438,7 +448,10 @@ class QDB:
       sort_data = fields_data[index]['sort']
 
       if key == '@[aggregate]':
-        data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
+        if isset('hushf'):
+          data = {af: list(v.keys())[0] for af, v in node.items()}
+        else:
+          data = {af: f'{af}={list(v.keys())[0]}' for af, v in node.items()}
         is_aggregation = True
       else:
         data = self.store.read_hash(key)
@@ -867,12 +880,16 @@ class QDB:
       raise QDBError('DUMP: Error: broken pipe.')
     return 0
 
-  def echo(self, msg: str) -> int:
+  def echo(self, msg: str='') -> int:
     print(unquote(msg))
     return 0
 
   def hush(self) -> int:
     setenv('quiet')
+    return 0
+
+  def hushf(self) -> int:
+    setenv('hushf')
     return 0
 
   def whoami(self):

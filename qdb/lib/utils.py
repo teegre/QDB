@@ -22,10 +22,11 @@ from qdb.lib.users import QDBUsers, QDBAuthType
 
 __ENV__ = {
     'debug': '__QDB_DEBUG__',
-    'quiet': '__QDB_QUIET__',
-    'user' : '__QDB_USER__',
-    'repl' : '__QDB_REPL__',
+    'hushf': '__QDB_HUSHF__',
     'pipe' : '__QDB_PIPE__',
+    'quiet': '__QDB_QUIET__',
+    'repl' : '__QDB_REPL__',
+    'user' : '__QDB_USER__',
 }
 
 def setenv(var: str, value: str='1'):
