@@ -201,6 +201,7 @@ Q artist name(autechre,"the cure") song:++title
 
 | Command  | Syntax                                       | Description                                                     |
 | -------- | -------------------------------------------- | --------------------------------------------------------------- |
+| `CARD`   | `CARD <INDEX_A> <INDEX_B>`                   | Show estimated cardinalities between the given indexes          |
 | `QF`     | `QF <HKEY> <FIELD>`                          | Display the value of a specific field for a given **HKEY**      |
 | `QQ`     | `QQ <INDEX> <EXPR>`                          | Store **HKEY**S matching the given expression                   |
 | `HDEL`   | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY** |
@@ -234,6 +235,7 @@ Q artist name(autechre,"the cure") song:++title
 | `COMPACT` | `COMPACT`       | Compact the database   |
 | `ECHO`    | `ECHO <STRING>` | Print the given string |
 | `HUSH`    | `HUSH`          | Quiet mode             |
+| `HUSHF`   | `HUSHF`         | Never show field names |
 | `LIST`    | `LIST`          | List database files    |
 | `PURGE`   | `PURGE`         | Purge persisted cache  |
 | `SIZE`    | `SIZE`          | Display database size  |
@@ -393,7 +395,7 @@ Before proceeding, ensure **python** (version 3.13 or higher), **python-setuptoo
 
 ## Try QDB
 
-To give **QDB** a try, a `persons.q` script is provided.
+To give **QDB** a try, a `persons.qs` script is provided.
 
 It generates a *persons* database with random fake data:
 
@@ -415,7 +417,7 @@ The database schema should look similar to:
 
 To build the example database, run:
 
-`qdb persons.qdb --pipe < persons.q`
+`qdb persons.qdb --pipe < persons.qs`
 
 ## Uninstall
 
