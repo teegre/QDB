@@ -49,6 +49,7 @@ class QDB:
     self._perf_info = {}
 
     self.commands = {
+        'CARD':    self.card,
         'CHPW':    self.chpw,
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
@@ -878,6 +879,25 @@ class QDB:
       self.store.dump_cmds()
     except BrokenPipeError:
       raise QDBError('DUMP: Error: broken pipe.')
+    return 0
+
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  def card(self, A: str, B: str) -> int:
+    if not self.store.isdatabase:
+      if isset('repl'):
+        msg = 'CARD: No data'
+      else:
+        msg = f'CARD: Error: `{self.store.database_name}`, no such database.'
+      raise QDBNoDatabaseError(msg)
+    if not self.store.is_index(A):
+      raise QDBError(f'CARD: Error: `{A}`, no such index.')
+    if not self.store.is_index(B):
+      raise QDBError(f'CARD: Error: `{B}`, no such index.')
+    c = self.store.cardinality(A, B)
+    l, r = str(int(c / 10)), str(c % 10)
+    l = l.replace('1', '\x1b[1mone\x1b[0m').replace('2', '\x1b[1mmany\x1b[0m')
+    r = r.replace('1', '\x1b[1mone\x1b[0m').replace('2', '\x1b[1mmany\x1b[0m')
+    print(l, A, '→', r, B)
     return 0
 
   def echo(self, msg: str='') -> int:
