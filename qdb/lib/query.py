@@ -156,11 +156,12 @@ class QDBQuery:
           relation = self.store.cardinality(A, B)
           scores.append(relation)
 
+      oto_c = scores.count(11) # one-to-one
       otm_c = scores.count(12) # one-to-many
       mto_c = scores.count(21) # many-to-one
       mtm_c = scores.count(22) # many-to-many
 
-      candidates.append((otm_c, mto_c, mtm_c, A))
+      candidates.append((oto_c, otm_c, mto_c, mtm_c, A))
 
     candidates.sort(reverse=True)
     return candidates[0][3]
