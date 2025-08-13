@@ -208,6 +208,7 @@ def main() -> int:
   parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
+  parser.add_argument('-f', '--hushf', help='never show field names', action='store_true')
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
   parser.add_argument('-v', '--version', action='version', version=f'QDB version {__version__}')
@@ -220,6 +221,9 @@ def main() -> int:
 
   if args.quiet:
     setenv('quiet')
+
+  if args.hushf:
+    setenv('hushf')
 
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
