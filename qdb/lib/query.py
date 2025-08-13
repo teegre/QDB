@@ -187,7 +187,7 @@ class QDBQuery:
         results = {}
         for key, child_node in node.items():
           if key == '@[aggregate]':
-            group_fields = group.get(idx) if group else []
+            group_fields = group.get(idx, []) if group else []
             grouped = defaultdict(lambda: defaultdict(list))
 
             for ref in child_node.keys():
