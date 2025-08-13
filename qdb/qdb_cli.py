@@ -205,7 +205,7 @@ def main() -> int:
       epilog='If no option is provided, starts an interactive shell.'
   )
   parser.add_argument('database', help='path to the QDB database')
-  parser.add_argument('-d', '--dump', help='dump database as JSON', action='store_true')
+  parser.add_argument('-d', '--dump', help='dump database as QDB commands', action='store_true')
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
   parser.add_argument('-f', '--hushf', help='never show field names', action='store_true')

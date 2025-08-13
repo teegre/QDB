@@ -54,7 +54,6 @@ class QDB:
         'COMMIT':  self.store.commit,
         'COMPACT': self.compact,
         'DEL' :    self.delete,
-        'DUMP':    self.dump,
         'ECHO':    self.echo,
         'GET' :    self.get,
         'HDEL':    self.hdel,
@@ -795,7 +794,7 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def dump(self):
-    self.store.dump()
+    self.store.dump_cmds()
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
