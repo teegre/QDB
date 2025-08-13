@@ -35,6 +35,7 @@ class QDBStore:
     self._pending_keys = set()
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
+    self.index_fields: Dict[str: set[str]] = {}
     self.last_hkey: Dict[str: str] = {}
     self.refs: Dict[str: set[str]] = {}
     self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
@@ -565,7 +566,7 @@ class QDBStore:
     Get the most recent hkey containing the most data
     from a given index
     '''
-    hkeys = self.get_index_keys(index)
+    hkeys = sorted(self.get_index_keys(index))
     if not hkeys:
       return None
     ts = 0
@@ -581,10 +582,13 @@ class QDBStore:
 
   def get_fields_from_index(self, index: str) -> list[str]:
     ''' Get fields of a given index. '''
+    if index in self.index_fields:
+      return self.index_fields[index]
     hkey = self._get_most_recent_hkey_from_index(index)
     if not hkey:
       return []
-    return list(self.read_hash(hkey).keys())
+    self.index_fields[index] = list(self.read_hash(hkey).keys())
+    return self.index_fields[index]
 
   def has_index(self, key: str) -> bool:
     ''' Return True if a given key has an index, False otherwise. '''
