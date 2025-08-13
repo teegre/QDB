@@ -3,6 +3,7 @@ import os
 import re
 import sys
 
+from dataclasses import dataclass
 from typing import Optional
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -12,6 +13,25 @@ from qdb.lib.functions import  unwrap
 from qdb.lib.ops import OP, SORTPREFIX, AGGFUNC
 from qdb.lib.storage import QDBStore
 from qdb.lib.utils import coerce_number, is_virtual
+
+@dataclass
+class QDBParserCond:
+  field: str
+  op: str
+  value: str|list
+
+@dataclass
+class QDBParserAgg:
+  op: str
+  field: str
+
+@dataclass
+class QDBParserExpr:
+  index: str
+  fields: list[str]
+  conditions: list[QDBParserCond]
+  sort: str
+  aggregations: list[QDBParserAgg]
 
 class QDBParser:
   def __init__(self, store: QDBStore, main_index: str=None):
@@ -53,7 +73,7 @@ class QDBParser:
             f'\nAvailable aggregate functions: {', '.join(sorted(AGGFUNC))}'
         )
 
-  def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[dict]:
+  def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[QDBParserCond]:
     # IN-style syntax: optional sort, field(value1[, ..., valueN])
 
     in_match = re.match(
@@ -82,11 +102,11 @@ class QDBParser:
       if in_match.group('sort'):
         sort.append({'order': SORTPREFIX[in_match.group('sort')], 'field': field})
 
-      return {
-          'field': field,
-          'op': 'ni' if in_match.group('neg') else 'in',
-          'value': values
-      }
+      return QDBParserCond(
+          field,
+          'ni' if in_match.group('neg') else 'in',
+          values
+      )
 
     match = re.match(
         r'^(?P<sort>\+\+|--)?(?P<field>[$@]?\w+(?:\([^\)]+\))?)'
@@ -116,11 +136,11 @@ class QDBParser:
       raise QDBParseError(f'Error: missing value in condition: `{part}`')
 
     if groups['op']:
-      return {
-          'field': field,
-          'op': OP[groups['op']],
-          'value': groups['value'].strip() if groups['value'] else ''
-      }
+      return QDBParserCond(
+          field,
+          OP[groups['op']],
+          groups['value'].strip() if groups['value'] else ''
+      )
 
     return None
 
@@ -199,13 +219,13 @@ class QDBParser:
       raise QDBParseError('Error: `*` only allowed after an index.')
 
     if parts == ['*']:
-      return {
-          'index': index,
-          'fields': ['*'],
-          'conditions': [],
-          'sort': None,
-          'aggregations': None
-      }
+      return QDBParserExpr(
+          index,
+          ['*'],
+          [],
+          None,
+          None
+      )
 
     if '*' in parts:
       raise QDBParseError('Error: `*` only allowed after an index.')
@@ -244,10 +264,7 @@ class QDBParser:
             self.validate_aggregate(index, op, f)
             self.validate_field(index, f, context=f'{index}:@[{item}]', excepted=['*'] if op == 'count' else [])
 
-            aggregations.append({
-              'op': op,
-              'field': f
-            })
+            aggregations.append(QDBParserAgg(op, f))
 
             composite_field = f'{index}:{op}{':'+f if f != '*' else ''}'
             if composite_field not in agg_fields:
@@ -266,10 +283,10 @@ class QDBParser:
       if field in agg_fields:
         continue
 
-    return {
-        'index': index,
-        'fields': fields + agg_fields,
-        'conditions': conditions,
-        'sort': sort_info if sort_info else None,
-        'aggregations': aggregations if aggregations else None
-    }
+    return QDBParserExpr(
+        index,
+        fields + agg_fields,
+        conditions,
+        sort_info if sort_info else None,
+        aggregations if aggregations else None
+    )

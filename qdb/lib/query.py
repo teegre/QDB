@@ -50,38 +50,38 @@ class QDBQuery:
     for cond in conditions:
       if cond is None:
         continue
-      if cond['op'] in BINOP:
+      if cond.op in BINOP:
           yield self._get_condition_fields(cond['conditions'])
       else:
-        yield cond['field']
+        yield cond.field
 
   def _validate_fields_and_group(self, parsed_exprs: dict, agg_exprs: dict, fields: dict) -> dict:
     def is_grouped(index: str):
       return any(
-          v['op'] in AGGFUNC or (v['op'] == 'count' and v['field'] == '*')
+          v.op in AGGFUNC or (v.op == 'count' and v.field == '*')
           for v in agg_exprs.get(index, [])
-      )
+      ) or self._query_looks_grouped(index, agg_exprs, parsed_exprs)
 
     grouped = {}
 
     condition_fields = {
-        (e['index'], v)
+        (e.index, v)
         for e in parsed_exprs
-        for v in self._get_condition_fields(e['conditions'])
+        for v in self._get_condition_fields(e.conditions)
         if v is not None
     }
 
     agg_fields = [
-        (i, f'{i}:{v["op"]}{":"+v["field"] if v["field"] != "*" else ""}')
+        (i, f'{i}:{v.op}{":"+v.field if v.field != "*" else ""}')
         for i, e in agg_exprs.items()
         for v in e
     ]
 
     explicit_fields = [
-        (e['index'], f)
+        (e.index, f)
         for e in parsed_exprs
-        for f in e['fields']
-        if (e['index'], unwrap(f)) not in agg_fields and (e['index'], unwrap(f)) not in condition_fields
+        for f in e.fields
+        if (e.index, unwrap(f)) not in agg_fields and (e.index, unwrap(f)) not in condition_fields
     ]
 
     for i, f in explicit_fields:
@@ -168,7 +168,7 @@ class QDBQuery:
 
   def _query_looks_grouped(self, A: str, agg_exprs: list, parsed_exprs: list) -> bool:
     for expr in parsed_exprs:
-      B = expr['index']
+      B = expr.index
       if B != A and B in agg_exprs:
         return self.store.cardinality(A, B) != 0
     return False
@@ -196,10 +196,10 @@ class QDBQuery:
                   expand(f, data.get(unwrap(f))) for f in group_fields) if group else ('__all__',)
 
               for agg in agg_exprs[idx]:
-                op, f = agg['op'], unwrap(agg['field'])
+                op, f = agg.op, unwrap(agg.field)
                 val = data.get(f.replace('*', '$id'))
                 val = coerce_number(val) if not is_virtual(f) else val
-                grouped[group_key][f'{idx}:{op}:{agg["field"]}'].append(val)
+                grouped[group_key][f'{idx}:{op}:{agg.field}'].append(val)
 
             for group_key, agg_vals in grouped.items():
               pointer = results
@@ -289,12 +289,12 @@ class QDBQuery:
       raise QDBQueryError(f'Error: `{index_or_key}`, no such index or hkey.')
     
     def select_best_filter(exprs: list) -> dict:
-      return min(exprs, key=lambda e: self.store.index_len(e['index']), default={})
+      return min(exprs, key=lambda e: self.store.index_len(e.index), default={})
 
     def filter_keys(index: str, expr: dict, base: set=None, limit: int=None) -> set:
 
       keys = base if base else self.store.get_index_keys(index)
-      f, op, val = expr.get('field'), expr['op'], expr.get('value')
+      f, op, val = expr.field, expr.op, expr.value
 
       is_func = has_function(f)
       field = unwrap(f) if is_func else f
@@ -330,11 +330,10 @@ class QDBQuery:
         key_set = self.store.get_indexed(index, field, *val if op == 'in' else (val,))
         if key_set:
           return key_set
-      if op in ('ne', 'ni'):
+      elif op in ('ne', 'ni'):
         key_set = self.store.get_indexed(index, field, *val if op == 'ni' else (val,))
         if key_set:
           return keys ^ key_set
-
 
       valid_keys = set()
 
@@ -342,10 +341,7 @@ class QDBQuery:
         if limit and len(valid_keys) >= limit:
           break
 
-        kv = self.store.read_hash(k)
-        if kv is None:
-          continue
-        value = kv.get(field)
+        value = self.store.read_hash_field(k, field)
         field_value = expand(f, value) if is_func else value
 
         if self._eval_cond(op, field_value, val, field):
@@ -356,8 +352,8 @@ class QDBQuery:
     def get_condition_matches(exprs: dict, limit: int=None) -> dict[set]:
       matches = {}
       for expr in exprs:
-        index = expr['index']
-        for cond in expr['conditions']:
+        index = expr.index
+        for cond in expr.conditions:
           if cond is None:
             continue
           base = matches.get(index, None)
@@ -370,14 +366,14 @@ class QDBQuery:
 
     def filter_dataset(dataset: set, index: str, key: str, condition_matches: dict) -> set:
       for i, m in condition_matches.items():
-        if self.store.is_index_of(key, i):
+        if self.store.is_index_of(key, i) or i != index:
           continue
         dataset &= m
       return dataset
 
     def resolve_to_primary(expr: dict) -> set:
       result = set()
-      for match_key in cond_matches.get(expr.get('index'), []):
+      for match_key in cond_matches.get(expr.index, []):
         if self.store.is_index_of(match_key, prm_index):
           result.add(match_key)
         else:
@@ -386,11 +382,11 @@ class QDBQuery:
 
     def remove_agg_filters():
       for entry in condition_exprs:
-        index = entry['index']
+        index = entry.index
         if index in agg_indexes:
-          for cond in entry['conditions']:
+          for cond in entry.conditions:
             if cond is not None:
-              f = cond['field']
+              f = cond.field
               if f in group_fields:
                 continue
               try:
@@ -432,17 +428,17 @@ class QDBQuery:
     # Parse expressions
     self.parser = QDBParser(self.store, root_index)
     parsed_exprs = self._dispatch_parse(root_index, exprs)
-    condition_exprs = [e for e in parsed_exprs for c in e['conditions'] if c]
+    condition_exprs = [e for e in parsed_exprs for c in e.conditions if c]
     cond_matches = {}
     cond_indexes = set()
-    agg_exprs = { e['index']: e['aggregations'] for e in parsed_exprs if e['aggregations'] }
+    agg_exprs = { e.index: e.aggregations for e in parsed_exprs if e.aggregations }
     agg_indexes = list(agg_exprs.keys()) if agg_exprs else []
 
     data_tree = {root_index: {}}
     all_keys = None
 
     # Gather used indexes
-    selected_indexes = list(dict.fromkeys(e['index'] for e in parsed_exprs))
+    selected_indexes = list(dict.fromkeys(e.index for e in parsed_exprs))
 
     # Fields
     selected_fields = {}
@@ -453,10 +449,10 @@ class QDBQuery:
       selected_indexes.append(root_index)
 
     for d in parsed_exprs:
-      i = d['index']
+      i = d.index
       if i not in selected_fields:
-        selected_fields[i] = {'fields': [], 'sort': d['sort']}
-      for f in d['fields']:
+        selected_fields[i] = {'fields': [], 'sort': d.sort}
+      for f in d.fields:
         if f not in selected_fields[i]['fields']:
           selected_fields[i]['fields'].append(f)
 
