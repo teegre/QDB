@@ -36,6 +36,7 @@ class QDBStore:
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
     self.index_fields: Dict[str: set[str]] = {}
+    self.index_max_id: Dict[str: int] = {}
     self.last_hkey: Dict[str: str] = {}
     self.refs: Dict[str: set[str]] = {}
     self._refs_cache: Dict[tuple[str, str]: set[str]] = {}
@@ -690,8 +691,16 @@ class QDBStore:
 
   def autoid(self, index: str) -> str:
     ''' Return current greatest ID + 1 in index '''
-    # TODO: MAKE IT SMARTER
-    return str(self.index_len(index) + 1)
+    size = self.index_len(index)
+    if size == 0:
+      self.index_max_id[index] = 1
+      return '1'
+    ID = self.index_max_id.get(index)
+    if ID is None or size > ID:
+      ID = int(max(self.get_index_keys(index), key=lambda i: int(i.partition(':')[2])).partition(':')[2])
+      return str(ID + 1)
+    self.index_max_id[index] = ID + 1
+    return str(ID + 1)
 
   def isoption(self, key: str) -> bool:
     return key in OPTIONS
