@@ -139,6 +139,9 @@ class QDBStore:
     return value
 
   def read_hash_field(self, key: str, field: str) -> int:
+    value = self.datacache.read(key, field)
+    if value:
+      return value
     data = self.read_hash(key)
     if data:
       return(data.get(field, '?NOFIELD?'))

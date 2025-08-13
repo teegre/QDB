@@ -50,9 +50,11 @@ class QDBCache:
 
     self.haschanged = True
 
-  def read(self, key: str) -> dict[str] | str | None:
-    entry = self.__cache.get(key)
+  def read(self, key: str, field: str=None) -> dict[str] | str | None:
+    entry: QDBCacheEntry = self.__cache.get(key)
     if entry:
+      if field:
+        return entry.data.get(field)
       return entry.data.copy() if isinstance(entry.data, dict) else entry.data
     return None
 
