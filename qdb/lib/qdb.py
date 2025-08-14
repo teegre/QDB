@@ -55,6 +55,7 @@ class QDB:
         'COMPACT': self.compact,
         'DEL' :    self.delete,
         'ECHO':    self.echo,
+        'EXISTS':  self.exists,
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'HLEN':    self.hlen,
@@ -87,7 +88,9 @@ class QDB:
     command = command.split(maxsplit=1)[0] if command is not None else None
     return command.upper() not in [
         'COMPACT',
+        'ENDSESSION',
         'LIST',
+        'PING',
         'PURGE',
         'USERADD',
         'USERDEL',
@@ -95,10 +98,10 @@ class QDB:
     ] if command is not None else True
 
   def error(self, cmd: str=None, *args: str) -> int:
-    if cmd not in self.commands:
-      print('Error: invalid command.', file=sys.stderr)
-    else:
+    if cmd is not None:
       print(f'{cmd}: arguments missing.', file=sys.stderr)
+    else:
+      print('Error: invalid command.')
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -755,6 +758,18 @@ class QDB:
       return 0
     print(f'Error: `{index}`, no such index.', file=sys.stderr)
     return 1
+
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  def exists(self, index: str, field: str, value: str) -> int:
+    if not self.store.isdatabase:
+      if isset('repl'):
+        msg = 'QDB: No data.'
+      else:
+        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+      raise QDBNoDatabaseError(msg)
+    if not self.store.is_index(index):
+      return 1
+    return 0 if self.store.get_indexed(index, field, unquote(value)) else 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:

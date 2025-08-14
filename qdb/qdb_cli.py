@@ -2,7 +2,9 @@ import argparse
 import os
 import readline
 import shlex
+import socket
 import stat
+import subprocess
 import sys
 
 from pathlib import Path
@@ -13,12 +15,36 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
+from qdb.lib.session import runserver, isserver, getsockpath
 from qdb.lib.utils import authorize, isset, setenv, spinner, splitcmd
 
 def has_piped_input():
   mode = os.fstat(0).st_mode
   return not stat.S_ISCHR(mode)
 
+def dbname(db_path) -> str:
+  return os.path.splitext(os.path.basename(db_path))[0]
+
+def sendcommand(sock_path, command) -> int:
+  try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+      client.connect(sock_path)
+      client.sendall((command.strip() + '\n').encode())
+      response = client.recv(4)
+      return int(response)
+  except ConnectionRefusedError:
+    raise QDBError('Error: unable to connect to server.')
+
+def opensession(db_path: str):
+  db_name = dbname(db_path)
+  if isserver(db_name):
+    raise QDBError(f'QDB: Error: session already opened for `{db_name}`.')
+
+  subprocess.Popen(
+      [sys.executable, __file__, db_path, '__QDB_RUNSERVER__'],
+  )
+
+  print(f'QDB: `{db_name}`, session now opened.')
 
 class QDBCompleter:
   def __init__(self, qdb: QDB):
@@ -39,18 +65,19 @@ class QDBCompleter:
 
 class QDBClient:
   def __init__(self, name: str, username: str=None, password: str=None, command: str=None):
-    self.qdb = QDB(name, load=QDB.do_load_database(command))
-    if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
-      raise QDBError(f'Error: `{username}`, unknown user.')
-    if self.qdb.users.hasusers:
-      authorize(self.qdb.users, username, password)
-    if password:
-      del password
-    self.database_name = self.qdb.store.database_name
-    self.history_file = os.path.join(
-        os.path.expanduser('~'),
-        '.qdb_hist'
-    )
+    self.db_name = dbname(name)
+    if not isserver(self.db_name):
+      self.qdb = QDB(name, load=QDB.do_load_database(command))
+      if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
+        raise QDBError(f'Error: `{username}`, unknown user.')
+      if self.qdb.users.hasusers:
+        authorize(self.qdb.users, username, password)
+      if password:
+        del password
+      self.history_file = os.path.join(
+          os.path.expanduser('~'),
+          '.qdb_hist'
+      )
 
   @classmethod
   def hide_cursor(cls):
@@ -82,12 +109,17 @@ class QDBClient:
         print(f'{cmd.upper()}: arguments missing.', file=sys.stderr)
         return 1
 
+  def runserver(self) -> int:
+    return runserver(self.db_name, self)
+
+  def stopserver(self, db_name: str):
+    stopserver(db_name)
+
   def pipe_commands(self) -> int:
     if self.qdb.auth_required and not isset('user'):
       authorize(self.qdb.users)
 
     setenv('pipe')
-    interrupted = False
 
     if not isset('quiet'):
       # print('QDB: Processing commands...', file=sys.stderr)
@@ -115,7 +147,6 @@ class QDBClient:
     except KeyboardInterrupt:
       print()
       print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
-      interrupted = True
 
     if not isset('quiet'):
       t2 = perf_counter()
@@ -125,8 +156,8 @@ class QDBClient:
     return 0
 
   def _set_prompt(self) -> str:
-    indicator = f'[{self.database_name}](-)' if self.qdb.store.is_db_empty else f'[{self.database_name}](+)'
-    indicator = f'[{self.database_name}](!)' if self.qdb.store.haschanged else indicator
+    indicator = f'[{self.db_name}](-)' if self.qdb.store.is_db_empty else f'[{self.db_name}](+)'
+    indicator = f'[{self.db_name}](!)' if self.qdb.store.haschanged else indicator
     prompt = f'{indicator} > '
     return prompt
 
@@ -208,7 +239,7 @@ def main() -> int:
   parser.add_argument('-d', '--dump', help='dump database as QDB commands', action='store_true')
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
-  parser.add_argument('-f', '--hushf', help='never show field names', action='store_true')
+  parser.add_argument('-f', '--nofield', help='never show field names', action='store_true')
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
   parser.add_argument('-v', '--version', action='version', version=f'QDB version {__version__}')
@@ -222,7 +253,7 @@ def main() -> int:
   if args.quiet:
     setenv('quiet')
 
-  if args.hushf:
+  if args.nofield:
     setenv('hushf')
 
   try:
@@ -230,6 +261,29 @@ def main() -> int:
   except QDBError as e:
     print('QDB:', e, file=sys.stderr)
     return 1
+
+  if args.command:
+
+    if args.command.upper() == 'OPENSESSION':
+      opensession(args.database)
+      return 0
+
+    if args.command == '__QDB_RUNSERVER__':
+      runserver(dbname(args.database), client)
+      return 0
+
+    if args.command.upper() in ('ENDSESSION', 'PING'):
+      if not isserver(client.db_name):
+        print(f'QDB: Error: no opened session for `{client.db_name}`.', file=sys.stderr)
+        return 1
+
+    if isserver(client.db_name):
+      sock_path = getsockpath(client.db_name)
+      try:
+        ret = sendcommand(sock_path, args.command)
+        return int(ret)
+      except QDBError as e:
+        print(f'QDB: {e}', file=sys.stderr)
 
   if args.dump:
     try:
