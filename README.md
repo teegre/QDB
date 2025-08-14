@@ -340,41 +340,66 @@ qdb music.qdb 'Q artist name=kraftwerk album:++date:title'
 ### Pipe commands from a file
 
 ```
-qdb --pipe music.qdb < data.q
+qdb --pipe music.qdb < data.qdbs
 ```
 
-→ *Assuming `data.q` contains valid QDB commands*.
+→ *Assuming `data.qdbs` contains valid QDB commands*.
 
 ### Start an interactive shell
 
 ```
 qdb music.qdb
-QDB version 0.0.1
+
+QDB version 0.0.2
 This program is free software.
 It is distributed AS IS with no WARRANTY.
 
 (c) 2025 Stéphane MEYER (Teegre)
 
--- 43933 hkeys.
--- 23805 references.
--- 42110 referenced hkeys.
+** 44002 keys.
+** 23850 references.
+** 42185 referenced hkeys.
 
 [music](+) > Q artist name=kraftwerk album:++date:title
-kraftwerk | 1974 | autobahn
-kraftwerk | 1975 | radioactivity
-kraftwerk | 1977 | trans-europe express
-kraftwerk | 1978 | the man machine
-kraftwerk | 1981 | computer world
-kraftwerk | 1986 | electric café
-kraftwerk | 1991 | the mix
-kraftwerk | 2003 | tour de france
-kraftwerk | 2005 | minimum-maximum
-kraftwerk | 2017 | 3-d the catalogue
+kraftwerk|1974|autobahn
+kraftwerk|1975|radioactivity
+kraftwerk|1977|trans-europe express
+kraftwerk|1978|the man machine
+kraftwerk|1981|computer world
+kraftwerk|1986|electric café
+kraftwerk|1991|the mix
+kraftwerk|2003|tour de france
+kraftwerk|2005|minimum-maximum
+kraftwerk|2017|3-d the catalogue
 
 10 rows found.
-Fetched:   0.0987s.
-Processed: 0.0017s.
-Total:     0.1004s.
+Fetched:   0.0035s.
+Processed: 0.0019s.
+Total:     0.0054s.
+[music](+) >
+
+```
+<kbd>CTRL</kbd>+<kbd>c</kbd> cancels current input.
+<kbd>CTRL</kbd>+<kbd>d</kbd> exits the interactive shell.
+
+### Session mode
+
+Allows to keep the database loaded in a background **QDB** server process so subsequent commands can execute quickly without repeated load times.
+
+To open a session: 
+```
+qdb music.qdb OPENSESSION
+
+```
+
+To end a session:
+```
+qdb music.qdb ENDSESSION
+```
+
+To verify whether a session is opened:
+```
+qdb music.qdb PING
 ```
 
 ## Installation
