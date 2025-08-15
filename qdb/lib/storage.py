@@ -53,7 +53,7 @@ class QDBStore:
     if self.io.isdatabase:
       cache, indexed_fields = self.io.load_cache()
       self.datacache.load(cache, indexed_fields)
-      if not self.datacache.isindexed:
+      if not self.datacache.isindexed and self.indexes:
         self.build_indexed_fields()
     self.keystore, self.indexes, self.indexes_map, self.refs, self.reverse_refs = self.io.rebuild()
     if not self.users.hasusers and '@QDB_USERS' in self.keystore:
@@ -68,8 +68,9 @@ class QDBStore:
       self.io._archive.close()
       self.io._load()
     if self.datacache.haschanged and not (self.haschanged and not isset('repl')):
-      self.build_indexed_fields()
-      self.io.save_cache(*self.datacache.dump())
+      if self.indexes:
+        self.build_indexed_fields()
+        self.io.save_cache(*self.datacache.dump())
     self.io.compact()
 
   def commit(self, quiet: bool=False):
