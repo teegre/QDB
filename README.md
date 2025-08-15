@@ -384,7 +384,7 @@ Total:     0.0054s.
 
 ### Session mode
 
-Allows to keep the database loaded in a background **QDB** server process so subsequent commands can execute quickly without repeated load times.
+Session mode allows to keep the database loaded in a background **QDB** server process so subsequent commands can execute quickly without repeated load times.
 
 To open a session: 
 ```
@@ -392,9 +392,9 @@ qdb music.qdb OPENSESSION
 
 ```
 
-To end a session:
+To close a session:
 ```
-qdb music.qdb ENDSESSION
+qdb music.qdb CLOSESESSION
 ```
 
 To verify whether a session is opened:
@@ -416,7 +416,7 @@ Before proceeding, ensure **python** (version 3.13 or higher), **python-setuptoo
 
 ### Install
 
-`pipx install dist/qdb-0.0.1.tar.gz`
+`pipx install dist/qdb-0.0.2.tar.gz`
 
 → *Version number may differ.*
 
