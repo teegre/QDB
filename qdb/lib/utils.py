@@ -1,3 +1,4 @@
+import glob
 import os
 import re
 import sys
@@ -156,6 +157,18 @@ def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_ty
 
   qdbusers.add_user(username, password, auth)
   del password
+
+def list_sessions() -> int:
+  files = glob.glob('/tmp/qdb-*.sock')
+  if not files:
+    print('QDB: No active session.', file=sys.stderr)
+    return 1
+  for file in files:
+    print('*', os.path.splitext(os.path.basename(file))[0], file=sys.stderr)
+  print(file=sys.stderr)
+  filecount = len(files)
+  print(f'{filecount} active session{"s" if filecount > 1 else ""} found.', file=sys.stderr)
+  return 0
 
 def is_numeric(value: str) -> bool:
   try:

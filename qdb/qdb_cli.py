@@ -16,7 +16,15 @@ from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
 from qdb.lib.session import runserver, isserver, getsockpath
-from qdb.lib.utils import authorize, getuser, isset, setenv, spinner, splitcmd
+from qdb.lib.utils import (
+    authorize,
+    getuser,
+    isset,
+    list_sessions,
+    setenv,
+    spinner,
+    splitcmd,
+)
 
 def has_piped_input():
   mode = os.fstat(0).st_mode
@@ -244,8 +252,8 @@ class QDBClient:
         print()
         if self.qdb.store.haschanged:
           if not self._confirm(
-              f'{self.database_name}: Uncommitted changes!'
-              f'\n{self.database_name}: Quit anyway?'
+              f'{self.db_name}: Uncommitted changes!'
+              f'\n{self.db_name}: Quit anyway?'
           ):
             continue
         readline.write_history_file(self.history_file)
@@ -272,16 +280,28 @@ def main() -> int:
       description='Command Line Interface For the QDB database engine.',
       epilog='If no option is provided, starts an interactive shell.'
   )
-  parser.add_argument('database', help='path to the QDB database')
-  parser.add_argument('-d', '--dump', help='dump database as QDB commands', action='store_true')
+
+  group = parser.add_mutually_exclusive_group(required=True)
+  group.add_argument('--sessions', help='list active sessions', action='store_true')
+  group.add_argument('database', help='path to the QDB database', nargs='?')
+
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
   parser.add_argument('-f', '--nofield', help='never show field names', action='store_true')
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
+  parser.add_argument('-d', '--dump', help='dump database as QDB commands', action='store_true')
   parser.add_argument('-v', '--version', action='version', version=f'QDB version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
+
   args = parser.parse_args()
+
+  if args.sessions:
+    disallowed = {k for k, v in vars(args).items() if v not in (None, False) and k != 'sessions'}
+    if disallowed:
+      print('QDB: \x1b[3m--sessions\x1b[0m cannot be combined with other options.', file=sys.stderr)
+      return 1
+    return list_sessions()
 
   if args.pipe and (args.command or not has_piped_input()):
     print('QDB: too many options.', file=sys.stderr)
@@ -321,6 +341,7 @@ def main() -> int:
       sock_path = getsockpath(client.db_name, getuser())
       try:
         ret = sendcommand(sock_path, f'QDBUSRCHK {args.username} {args.password}')
+        args.password = ''
         if int(ret) == 1:
           return 1
         ret = sendcommand(sock_path, args.command)
