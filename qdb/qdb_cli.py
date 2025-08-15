@@ -25,26 +25,52 @@ def has_piped_input():
 def dbname(db_path) -> str:
   return os.path.splitext(os.path.basename(db_path))[0]
 
+def opensession(db_path: str):
+  db_name = dbname(db_path)
+  if isserver(db_name):
+    raise QDBError(f'Error: session already opened for `{db_name}`.')
+
+  subprocess.Popen(
+      [sys.executable, __file__, db_path, '__QDB_RUNSERVER__'],
+      stdout=subprocess.DEVNULL,
+      stderr=subprocess.DEVNULL,
+  )
+
+  if not isset('quiet'):
+    print(f'QDB: `{db_name}`, session now opened.', file=sys.stderr)
+
 def sendcommand(sock_path, command) -> int:
   try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
       client.connect(sock_path)
       client.sendall((command.strip() + '\n').encode())
-      response = client.recv(4)
-      return int(response)
+
+      chunks = []
+      while True:
+        chunk = client.recv(4096)
+        if not chunk:
+          raise QDBError('Error: server disconnect.')
+        chunks.append(chunk)
+        if b'\x00' in chunk:
+          break
+
+      data = b''.join(chunks)
+      output, _, retcode = data.partition(b'\x00')
+      if output:
+        try:
+          sys.stdout.write(output.decode())
+        except BrokenPipeError:
+          raise QDBError('Error: broken pipe.')
+
+      ret = retcode.decode().strip()
+
+      try:
+        return int(ret)
+      except ValueError:
+        raise QDBError(f'Error: invalid return code from server: {ret}')
+
   except ConnectionRefusedError:
     raise QDBError('Error: unable to connect to server.')
-
-def opensession(db_path: str):
-  db_name = dbname(db_path)
-  if isserver(db_name):
-    raise QDBError(f'QDB: Error: session already opened for `{db_name}`.')
-
-  subprocess.Popen(
-      [sys.executable, __file__, db_path, '__QDB_RUNSERVER__'],
-  )
-
-  print(f'QDB: `{db_name}`, session now opened.')
 
 class QDBCompleter:
   def __init__(self, qdb: QDB):
@@ -110,7 +136,11 @@ class QDBClient:
         return 1
 
   def runserver(self) -> int:
-    return runserver(self.db_name, self)
+    try:
+      return runserver(self.db_name, self)
+    except KeyboardInterrupt:
+      os.remove(getsockpath(self.db_name))
+      return 1
 
   def stopserver(self, db_name: str):
     stopserver(db_name)
@@ -265,12 +295,15 @@ def main() -> int:
   if args.command:
 
     if args.command.upper() == 'OPENSESSION':
-      opensession(args.database)
+      try:
+        opensession(args.database)
+      except QDBError as e:
+        print(f'QDB: {e}', file=sys.stderr)
+        return 1
       return 0
 
     if args.command == '__QDB_RUNSERVER__':
-      runserver(dbname(args.database), client)
-      return 0
+      return runserver(dbname(args.database), client)
 
     if args.command.upper() in ('ENDSESSION', 'PING'):
       if not isserver(client.db_name):
@@ -284,6 +317,7 @@ def main() -> int:
         return int(ret)
       except QDBError as e:
         print(f'QDB: {e}', file=sys.stderr)
+        return 1
 
   if args.dump:
     try:

@@ -35,6 +35,8 @@ def setenv(var: str, value: str='1'):
   os.environ[envvar] = value
 
 def unsetenv(var: str):
+  if var == 'user':
+    return
   if (envvar := __ENV__.get(var)) is not None:
     os.environ.pop(envvar, None)
 

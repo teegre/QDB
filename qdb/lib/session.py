@@ -25,19 +25,26 @@ def runserver(db_name: str, client: object):
       cmd = conn.recv(4096).decode().strip()
       if cmd.upper() == 'PING':
         response = cmd.replace('i', 'o').replace('I', 'O')
-        sys.stdout.write(response + '\n')
-        sys.stdout.flush()
-        conn.sendall('0\n'.encode())
+        conn.sendall(response.encode() + b'\n\x00')
+        conn.sendall(b'0\n')
         continue
       if cmd.upper() == 'ENDSESSION':
-        conn.sendall('0\n'.encode())
+        conn.sendall(b'\x000\n')
         break
       try:
-        ret = client.execute(cmd)
-        conn.sendall(f'{str(ret) + '\n'}'.encode())
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+          ret = client.execute(cmd)
+        conn.sendall(buffer.getvalue().encode() + b'\x00')
+        conn.sendall(f'{str(ret)}\n'.encode())
+      except KeyboardInterrupt:
+        conn.sendall(b'\x001\n')
+        break
       except QDBError as e:
-        conn.sendall(f'QDB: {e}')
-        return 1
+        conn.sendall(e.encode() + b'\x00')
+        conn.sendall(b'1\n')
+        print(f'{e}', file=sys.stderr)
+        break
   server.close()
   os.remove(sock_path)
   print(f'QDB: `{db_name}`, session closed.', file=sys.stderr)

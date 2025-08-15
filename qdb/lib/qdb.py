@@ -101,7 +101,7 @@ class QDB:
     if cmd is not None:
       print(f'{cmd}: arguments missing.', file=sys.stderr)
     else:
-      print('Error: invalid command.')
+      print('QDB: Error: invalid command.')
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -599,7 +599,6 @@ class QDB:
     except TypeError:
       all_rows.sort(key=lambda row: self._sort_key(row, fields_data, fields_positions, force_t_type=True))
 
-
     for row in all_rows:
       try:
         print('|'.join(row['row']), flush=True)
@@ -607,7 +606,7 @@ class QDB:
         raise QDBError('Q: Error: broken pipe.')
 
     if not isset('quiet'):
-      print(' ', file=sys.stderr)
+      print(file=sys.stderr)
       print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
