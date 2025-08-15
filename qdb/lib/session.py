@@ -7,10 +7,12 @@ from typing import Callable
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from qdb.lib.exception import QDBError
+from qdb.lib.exception import QDBAuthenticationError, QDBError
+from qdb.lib.utils import isset, getuser, splitcmd, authorize
 
-def getsockpath(db_name: str) -> str:
-  return f'/tmp/qdb-{os.getuid()}-{os.path.basename(db_name)}.sock'
+def getsockpath(db_name: str, user: str=None) -> str:
+  currentuser = getuser() if user is None else user
+  return f'/tmp/qdb-{currentuser}-{db_name}.sock'
 
 def runserver(db_name: str, client: object):
   sock_path = getsockpath(db_name)
@@ -24,10 +26,26 @@ def runserver(db_name: str, client: object):
     conn, _ = server.accept()
     with conn:
       cmd = conn.recv(4096).decode().strip()
+      if cmd.startswith('QDBUSRCHK'):
+        if not client.qdb.users.hasusers:
+          conn.sendall(b'\x01\x02\x030\n')
+          continue
+        command = splitcmd(cmd)
+        usr, pwd = command[1], command[2]
+        if usr != getuser():
+          conn.sendall(b'\x01\x02Error: connection refused.\n\x031\n')
+          continue
+        try:
+          authorize(client.qdb.users, usr, pwd)
+          conn.sendall(b'\x01\x02\x030\n')
+          continue
+        except QDBAuthenticationError:
+          conn.sendall(b'\x01\x02Error: connection refused\n\x031\n')
+          continue
+
       if cmd.upper() == 'PING':
         response = cmd.replace('i', 'o').replace('I', 'O')
-        conn.sendall(b'\x01\x02' + response.encode() + b'0\n')
-        conn.sendall(b'0\n')
+        conn.sendall(b'\x01\x02' + response.encode() + b'\n\x030\n')
         continue
       if cmd.upper() == 'CLOSESESSION':
         conn.sendall(
@@ -51,7 +69,7 @@ def runserver(db_name: str, client: object):
         conn.sendall(b'\x01\x02\x031\n')
         break
       except QDBError as e:
-        conn.sendall(b'\x01\x02' + e.encode() + b'\x031\n')
+        conn.sendall(b'\x01\x02' + str(e).encode() + b'\n\x031\n')
         print(f'{e}', file=sys.stderr)
         break
       finally:
@@ -60,6 +78,6 @@ def runserver(db_name: str, client: object):
   os.remove(sock_path)
   return 0
 
-def isserver(db_name: str) -> bool:
-  sock_path = getsockpath(db_name)
+def isserver(db_name: str, user: str=None) -> bool:
+  sock_path = getsockpath(db_name, user)
   return os.path.exists(sock_path)

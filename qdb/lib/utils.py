@@ -23,6 +23,7 @@ from qdb.lib.users import QDBUsers, QDBAuthType
 __ENV__ = {
     'debug': '__QDB_DEBUG__',
     'hushf': '__QDB_HUSHF__',
+    'pwd'  : '__QDB_PWD__',
     'pipe' : '__QDB_PIPE__',
     'quiet': '__QDB_QUIET__',
     'repl' : '__QDB_REPL__',
@@ -43,6 +44,9 @@ def unsetenv(var: str):
 def isset(var: str) -> bool:
   envvar = __ENV__.get(var, None)
   return os.getenv(envvar) is not None if envvar else False
+
+def getuser():
+  return os.environ.get('__QDB_USER__', 'anyone')
 
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):

@@ -16,7 +16,7 @@ from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
 from qdb.lib.session import runserver, isserver, getsockpath
-from qdb.lib.utils import authorize, isset, setenv, spinner, splitcmd
+from qdb.lib.utils import authorize, getuser, isset, setenv, spinner, splitcmd
 
 def has_piped_input():
   mode = os.fstat(0).st_mode
@@ -34,6 +34,7 @@ def opensession(db_path: str):
       [sys.executable, __file__, db_path, '__QDB_RUNSERVER__'],
       stdout=subprocess.DEVNULL,
       stderr=subprocess.DEVNULL,
+      env=os.environ.copy()
   )
 
   if not isset('quiet'):
@@ -49,7 +50,7 @@ def sendcommand(sock_path, command) -> int:
       while True:
         chunk = client.recv(4096)
         if not chunk:
-          raise QDBError('Error: server disconnect.')
+          raise QDBError('Error: no response from server.')
         chunks.append(chunk)
         if b'\x03' in chunk:
           break
@@ -97,11 +98,11 @@ class QDBCompleter:
 class QDBClient:
   def __init__(self, name: str, username: str=None, password: str=None, command: str=None):
     self.db_name = dbname(name)
-    if not isserver(self.db_name):
+    if not isserver(self.db_name, username):
       self.qdb = QDB(name, load=QDB.do_load_database(command))
       if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
         raise QDBError(f'Error: `{username}`, unknown user.')
-      if self.qdb.users.hasusers:
+      if self.qdb.users.hasusers and not isset('user'):
         authorize(self.qdb.users, username, password)
       if password:
         del password
@@ -109,6 +110,8 @@ class QDBClient:
           os.path.expanduser('~'),
           '.qdb_hist'
       )
+    else:
+      setenv('user', username if username else getuser())
 
   @classmethod
   def hide_cursor(cls):
@@ -314,16 +317,19 @@ def main() -> int:
         print(f'QDB: Error: no opened session for `{client.db_name}`.', file=sys.stderr)
         return 1
 
-    if isserver(client.db_name):
-      sock_path = getsockpath(client.db_name)
+    if isserver(client.db_name, getuser()):
+      sock_path = getsockpath(client.db_name, getuser())
       try:
+        ret = sendcommand(sock_path, f'QDBUSRCHK {args.username} {args.password}')
+        if int(ret) == 1:
+          return 1
         ret = sendcommand(sock_path, args.command)
         return int(ret)
       except QDBError as e:
         print(f'QDB: {e}', file=sys.stderr)
         return 1
 
-  if isserver(client.db_name) and (not args.command or args.pipe):
+  if isserver(client.db_name, getuser()) and (not args.command or args.pipe):
     # no command in session mode, error.
     if args.pipe:
       print(f'QDB: Error: session mode: \033[3m--pipe\033[0m not allowed.')
