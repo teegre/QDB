@@ -62,23 +62,29 @@ class QDBStore:
 
   def deinitialize(self):
     if self.io.haschanged or (self.haschanged and not isset('repl')):
-      self.io.flush(self._refs_ops)
+      self.commit()
     if self.users.unsaved:
       self.users._save()
       self.io._archive.close()
       self.io._load()
-    if self.datacache.haschanged and not (self.haschanged and not isset('repl')):
-      if self.indexes:
-        self.build_indexed_fields()
-        self.io.save_cache(*self.datacache.dump())
+    if not isset('repl'):
+      if self.datacache.haschanged or self.haschanged:
+        if self.indexes:
+          self.build_indexed_fields()
+          self.io.save_cache(*self.datacache.dump())
     self.io.compact()
 
-  def commit(self, quiet: bool=False):
-    new_file = self.io.flush(self._refs_ops, quiet=quiet)
+  def commit(self, quiet: bool=False) -> int:
+    try:
+      new_file = self.io.flush(self._refs_ops, quiet=quiet)
+    except QDBError as e:
+      print(f'QDB: {e}', file=sys.stderr)
+      return 1
     for key in self._pending_keys:
       self.keystore[key].filename = new_file
     self._pending_keys.clear()
     self.haschanged = False
+    return 0
 
   def compact(self, force: bool=False):
     self.keystore = self.io.compact(refs=self.refs, force=force)
