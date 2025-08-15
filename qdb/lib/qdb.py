@@ -88,7 +88,7 @@ class QDB:
     command = command.split(maxsplit=1)[0] if command is not None else None
     return command.upper() not in [
         'COMPACT',
-        'ENDSESSION',
+        'CLOSESESSION',
         'LIST',
         'PING',
         'PURGE',
@@ -101,7 +101,7 @@ class QDB:
     if cmd is not None:
       print(f'{cmd}: arguments missing.', file=sys.stderr)
     else:
-      print('QDB: Error: invalid command.')
+      print('QDB: Error: invalid command.', file=sys.stderr)
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN])

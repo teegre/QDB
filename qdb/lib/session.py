@@ -1,3 +1,4 @@
+import io
 import os
 import socket
 import sys
@@ -25,29 +26,38 @@ def runserver(db_name: str, client: object):
       cmd = conn.recv(4096).decode().strip()
       if cmd.upper() == 'PING':
         response = cmd.replace('i', 'o').replace('I', 'O')
-        conn.sendall(response.encode() + b'\n\x00')
+        conn.sendall(b'\x01\x02' + response.encode() + b'0\n')
         conn.sendall(b'0\n')
         continue
-      if cmd.upper() == 'ENDSESSION':
-        conn.sendall(b'\x000\n')
+      if cmd.upper() == 'CLOSESESSION':
+        conn.sendall(
+            b'\x01\x02' + 
+            f'QDB: `{db_name}`, session \033[31mclosed\033[0m.\n'.encode() +
+            b'\x030\n'
+        )
         break
+
+      stdout, stderr = io.StringIO(), io.StringIO()
+      oldout, olderr = sys.stdout, sys.stderr
+      sys.stdout, sys.stderr = stdout, stderr
+
       try:
-        buffer = io.StringIO()
-        with redirect_stdout(buffer):
-          ret = client.execute(cmd)
-        conn.sendall(buffer.getvalue().encode() + b'\x00')
-        conn.sendall(f'{str(ret)}\n'.encode())
+        ret = client.execute(cmd)
+        out = stdout.getvalue().encode()
+        err = stderr.getvalue().encode()
+        payload = b'\x01' + out + b'\x02' + err + b'\x03' + str(ret).encode() + b'\n'
+        conn.sendall(payload)
       except KeyboardInterrupt:
-        conn.sendall(b'\x001\n')
+        conn.sendall(b'\x01\x02\x031\n')
         break
       except QDBError as e:
-        conn.sendall(e.encode() + b'\x00')
-        conn.sendall(b'1\n')
+        conn.sendall(b'\x01\x02' + e.encode() + b'\x031\n')
         print(f'{e}', file=sys.stderr)
         break
+      finally:
+        sys.stdout, sys.stderr = oldout, olderr
   server.close()
   os.remove(sock_path)
-  print(f'QDB: `{db_name}`, session closed.', file=sys.stderr)
   return 0
 
 def isserver(db_name: str) -> bool:

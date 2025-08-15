@@ -37,7 +37,7 @@ def opensession(db_path: str):
   )
 
   if not isset('quiet'):
-    print(f'QDB: `{db_name}`, session now opened.', file=sys.stderr)
+    print(f'QDB: `{db_name}`, session \033[32mopened\033[0m.', file=sys.stderr)
 
 def sendcommand(sock_path, command) -> int:
   try:
@@ -51,16 +51,21 @@ def sendcommand(sock_path, command) -> int:
         if not chunk:
           raise QDBError('Error: server disconnect.')
         chunks.append(chunk)
-        if b'\x00' in chunk:
+        if b'\x03' in chunk:
           break
 
       data = b''.join(chunks)
-      output, _, retcode = data.partition(b'\x00')
-      if output:
+      _,   afterout = data.split(b'\x01', 1)
+      out, aftererr = afterout.split(b'\x02', 1)
+      err, retcode  = aftererr.split(b'\x03', 1)
+
+      if out:
         try:
-          sys.stdout.write(output.decode())
+          sys.stdout.write(out.decode())
         except BrokenPipeError:
           raise QDBError('Error: broken pipe.')
+      if err:
+        sys.stderr.write(err.decode())
 
       ret = retcode.decode().strip()
 
@@ -152,7 +157,6 @@ class QDBClient:
     setenv('pipe')
 
     if not isset('quiet'):
-      # print('QDB: Processing commands...', file=sys.stderr)
       self.hide_cursor()
       spin = iter(spinner())
 
@@ -305,7 +309,7 @@ def main() -> int:
     if args.command == '__QDB_RUNSERVER__':
       return runserver(dbname(args.database), client)
 
-    if args.command.upper() in ('ENDSESSION', 'PING'):
+    if args.command.upper() in ('CLOSESESSION', 'PING'):
       if not isserver(client.db_name):
         print(f'QDB: Error: no opened session for `{client.db_name}`.', file=sys.stderr)
         return 1
@@ -318,6 +322,14 @@ def main() -> int:
       except QDBError as e:
         print(f'QDB: {e}', file=sys.stderr)
         return 1
+
+  if isserver(client.db_name) and (not args.command or args.pipe):
+    # no command in session mode, error.
+    if args.pipe:
+      print(f'QDB: Error: session mode: \033[3m--pipe\033[0m not allowed.')
+    else:
+      print(f'QDB: Error: session mode: missing command.', file=sys.stderr)
+    return 1
 
   if args.dump:
     try:
