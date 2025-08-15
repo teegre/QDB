@@ -244,6 +244,9 @@ class QDBClient:
     while True:
       try:
         command = input(self._set_prompt())
+        if command.lower() == 'purge' and self.qdb.store.haschanged:
+          print(f'{self.db_name}: You must \033[1mCOMMIT\033[0m your changes prior to \033[3mPURGE\033[0m')
+          continue
         ret = self.execute(command)
       except KeyboardInterrupt:
         print()

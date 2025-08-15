@@ -813,7 +813,7 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def purge(self):
-    self.store.datacache.purge()
+    self.store.purge()
     if not isset('quiet'):
       print('QDB: cache is purged.', file=sys.stderr)
     return 0

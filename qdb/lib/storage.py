@@ -89,6 +89,10 @@ class QDBStore:
   def compact(self, force: bool=False):
     self.keystore = self.io.compact(refs=self.refs, force=force)
 
+  def purge(self):
+    self.datacache.purge()
+    self.build_indexed_fields()
+
   def list_files(self):
     if not self.io.isdatabase:
       raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
