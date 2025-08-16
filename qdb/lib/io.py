@@ -118,6 +118,11 @@ class QDBIO:
         return None
     return None
 
+  def reload(self):
+    if self._archive:
+      self._archive.close()
+      self._load()
+
   def _new_tmp_file(self, origin: str=None, hint: bool=False, user: bool=False):
     tmp = tempfile.NamedTemporaryFile(prefix='qdb')
     tmp.mode = 0o600

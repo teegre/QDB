@@ -65,23 +65,23 @@ class QDBStore:
       self.commit()
     if self.users.unsaved:
       self.users._save()
-      self.io._archive.close()
-      self.io._load()
+      self.io.reload()
     if not isset('repl'):
-      if self.datacache.haschanged or self.haschanged:
+      if self.datacache.haschanged or self.io.haschanged:
         if self.indexes:
           self.build_indexed_fields()
           self.io.save_cache(*self.datacache.dump())
+          self.io.reload()
     self.io.compact()
 
   def commit(self, quiet: bool=False) -> int:
     try:
-      new_file = self.io.flush(self._refs_ops, quiet=quiet)
+      new_log = self.io.flush(self._refs_ops, quiet=quiet)
     except QDBError as e:
       print(f'QDB: {e}', file=sys.stderr)
       return 1
     for key in self._pending_keys:
-      self.keystore[key].filename = new_file
+      self.keystore[key].filename = new_log
     self._pending_keys.clear()
     self.haschanged = False
     return 0
