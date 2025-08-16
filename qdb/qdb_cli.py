@@ -127,7 +127,8 @@ class QDBClient:
 
   @classmethod
   def show_cursor(cls):
-    print('\x1b[?25h', end='', flush=True, file=sys.stderr)
+    if not sys.stderr.closed:
+      print('\x1b[?25h', end='', flush=True, file=sys.stderr)
 
   def execute(self, command: str) -> int:
     try:
