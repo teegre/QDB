@@ -81,18 +81,18 @@ class QDBQuery:
         (e.index, f)
         for e in parsed_exprs
         for f in e.fields
-        if (e.index, unwrap(f)) not in agg_fields and (e.index, unwrap(f)) not in condition_fields
+        if (e.index, unwrap(f.name)) not in agg_fields and (e.index, unwrap(f.name)) not in condition_fields
     ]
 
     for i, f in explicit_fields:
       if is_grouped(i):
         if i in grouped:
-          grouped[i].append(f)
+          grouped[i].append(f.name)
         else:
-          grouped[i] = [f]
-      if is_grouped(i) and unwrap(f) not in fields.get(i, []):
+          grouped[i] = [f.name]
+      if is_grouped(i) and unwrap(f.name) not in fields.get(i, []):
         continue
-      if unwrap(f) not in fields.get(i, []) and f != '*':
+      if unwrap(f.name) not in fields.get(i, []) and f != '*':
         raise QDBQueryError(
             f'Error: field `{i}:{f}` is not used in any condition or aggregation.\n'
             f'Consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
@@ -453,8 +453,8 @@ class QDBQuery:
       if i not in selected_fields:
         selected_fields[i] = {'fields': [], 'sort': d.sort}
       for f in d.fields:
-        if f not in selected_fields[i]['fields']:
-          selected_fields[i]['fields'].append(f)
+        if f not in selected_fields[i]['fields'] and f.visible:
+          selected_fields[i]['fields'].append(f.name)
 
     # Check for any unused fields and get grouped fields
     group_fields = self._validate_fields_and_group(

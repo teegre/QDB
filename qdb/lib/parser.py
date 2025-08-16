@@ -15,6 +15,11 @@ from qdb.lib.storage import QDBStore
 from qdb.lib.utils import coerce_number, is_virtual
 
 @dataclass
+class QDBParserField:
+  name: str
+  visible: bool
+
+@dataclass
 class QDBParserCond:
   field: str
   op: str
@@ -28,7 +33,7 @@ class QDBParserAgg:
 @dataclass
 class QDBParserExpr:
   index: str
-  fields: list[str]
+  fields: list[QDBParserField]
   conditions: list[QDBParserCond]
   sort: str
   aggregations: list[QDBParserAgg]
@@ -38,9 +43,9 @@ class QDBParser:
     self.store = store
     self.main_index = main_index
 
-  def validate_field(self, index: str, field: str, excepted: list=[], context: str=None) -> None:
+  def validate_field(self, index: str, field: QDBParserField, excepted: list=[], context: str=None) -> None:
     valid_fields = self.store.get_fields_from_index(index)
-    if unwrap(field) not in valid_fields + excepted:
+    if unwrap(field.name) not in valid_fields + excepted:
       suggestions = difflib.get_close_matches(field, valid_fields, n=3, cutoff=0.5)
 
       msg = f'Error: `{field}` is not a valid field for `{index}`'
@@ -98,18 +103,24 @@ class QDBParser:
         raise QDBParseError(f'Error: missing values in: `{part}`')
 
       if field not in fields:
-        fields.append(field)
+        fields.append(QDBParserField(
+          field[1:] if field[0] == '#' else field,
+          False if field[0] == '#' else True
+        ))
       if in_match.group('sort'):
-        sort.append({'order': SORTPREFIX[in_match.group('sort')], 'field': field})
+        sort.append({
+          'order': SORTPREFIX[in_match.group('sort')],
+          'field': field[1:] if field[0] == '#' else field
+          })
 
       return QDBParserCond(
-          field,
+          field[1:] if field[0] == '#' else field,
           'ni' if in_match.group('neg') else 'in',
-          values
+          values,
       )
 
     match = re.match(
-        r'^(?P<sort>\+\+|--)?(?P<field>[$@]?\w+(?:\([^\)]+\))?)'
+        r'^(?P<sort>\+\+|--)?(?P<field>[$@#]?\w+(?:\([^\)]+\))?)'
         r'(?P<op>\*\*|!\*|!=|<=|>=|=|<|>|!?\^|!?\$)?'
         r'(?P<value>.+)?$', part
     )
@@ -127,7 +138,9 @@ class QDBParser:
     field = groups['field'].strip()
 
     if unwrap(field) not in fields and not field.startswith('@['):
-      fields.append(field)
+      fields.append(QDBParserField(
+        field[1:] if field[0] =='#' else field,
+        False if field[0] == '#' else True))
 
     if groups['sort']:
       sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
@@ -137,9 +150,9 @@ class QDBParser:
 
     if groups['op']:
       return QDBParserCond(
-          field,
+          field[1:] if field[0] == '#' else field,
           OP[groups['op']],
-          groups['value'].strip() if groups['value'] else ''
+          groups['value'].strip() if groups['value'] else '',
       )
 
     return None
@@ -261,14 +274,16 @@ class QDBParser:
             op = m.group('op')
             f = m.group('field')
 
+            f = QDBParserField(f, True)
+
             self.validate_aggregate(index, op, f)
             self.validate_field(index, f, context=f'{index}:@[{item}]', excepted=['*'] if op == 'count' else [])
 
-            aggregations.append(QDBParserAgg(op, f))
+            aggregations.append(QDBParserAgg(op, f.name))
 
-            composite_field = f'{index}:{op}{':'+f if f != '*' else ''}'
+            composite_field = f'{index}:{op}{':'+f.name if f.name != '*' else ''}'
             if composite_field not in agg_fields:
-              agg_fields.append(composite_field)
+              agg_fields.append(QDBParserField(composite_field, True))
               if agg_sort:
                 sort_info.append({'order': SORTPREFIX[agg_sort], 'field': composite_field})
           else:
