@@ -44,10 +44,16 @@ def runserver(db_name: str, client: object):
           continue
 
       if cmd.upper() == 'PING':
+        if isset('quiet'):
+          conn.sendall(b'\x01\x02\x030\n')
+          continue
         response = cmd.replace('i', 'o').replace('I', 'O')
         conn.sendall(b'\x01\x02' + response.encode() + b'\n\x030\n')
         continue
       if cmd.upper() == 'CLOSESESSION':
+        if isset('quiet'):
+          conn.sendall(b'\x01\x02\x030\n')
+          break
         conn.sendall(
             b'\x01\x02' + 
             f'QDB: `{db_name}`, session \033[31mclosed\033[0m.\n'.encode() +
