@@ -598,7 +598,7 @@ class QDBQuery:
               if self.store.find_index_path(self.store.get_index(key), agg_index):
                 raise QDBQueryNoData(f'No `{agg_index}` data found.')
               if prm_index == root_index:
-                aggs = ', '.join([o+':'+f for o, f in [tuple(a.values()) for a in agg_exprs[agg_index]]])
+                aggs = ','.join([o+':'+f for o, f in [(a.op, a.field) for a in agg_exprs[agg_index]]])
                 candidates = [i for i in selected_indexes if i not in (root_index, agg_exprs)]
                 msg = (
                     f'Error: `{agg_index}:@[{aggs}]` '
