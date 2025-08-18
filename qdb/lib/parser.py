@@ -46,9 +46,9 @@ class QDBParser:
   def validate_field(self, index: str, field: QDBParserField, excepted: list=[], context: str=None) -> None:
     valid_fields = self.store.get_fields_from_index(index)
     if unwrap(field.name) not in valid_fields + excepted:
-      suggestions = difflib.get_close_matches(field, valid_fields, n=3, cutoff=0.5)
+      suggestions = difflib.get_close_matches(field.name, valid_fields, n=3, cutoff=0.5)
 
-      msg = f'Error: `{field}` is not a valid field for `{index}`'
+      msg = f'Error: `{field.name}` is not a valid field for `{index}`'
       msg += '.' if not context else f' in `{context}`.'
 
       if suggestions:

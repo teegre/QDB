@@ -202,9 +202,10 @@ class QDBClient:
     return 0
 
   def _set_prompt(self) -> str:
-    indicator = f'[{self.db_name}](-)' if self.qdb.store.is_db_empty else f'[{self.db_name}](+)'
-    indicator = f'[{self.db_name}](!)' if self.qdb.store.haschanged else indicator
-    prompt = f'{indicator} > '
+    indicator = f'{self.db_name}'
+    state = '-' if self.qdb.store.is_db_empty else '+'
+    state = '!' if self.qdb.store.haschanged else state
+    prompt = f'* {indicator} ({state}) qdb ) '
     return prompt
 
   def _confirm(self, msg: str) -> bool:
@@ -212,24 +213,7 @@ class QDBClient:
     return response.lower() == 'y'
 
   def run_repl(self):
-    print(f'QDB version {__version__}')
-    print(f'This program is free software.')
-    print(f'It is distributed AS IS with no WARRANTY.')
-    print()
-    print('(c) 2025 Stéphane MEYER (Teegre)')
-    print()
-    if not self.qdb.store.is_db_empty:
-      print(f'** {self.qdb.store.database_size} keys.')
-      print(f'** {len(self.qdb.store.reverse_refs.keys())} references.')
-      print(f'** {len(self.qdb.store.refs.keys())} referenced hkeys.')
-      print()
-    else:
-      if self.qdb.store.io.isdatabase:
-        print('** Empty database.')
-      else:
-        print('** New database.')
-      print()
-
+    print(f'\x1b[1mQDB\x1b[0m version {__version__}')
     setenv('repl')
 
     try:
@@ -287,7 +271,7 @@ def main() -> int:
 
   group = parser.add_mutually_exclusive_group(required=True)
   group.add_argument('--sessions', help='list active sessions', action='store_true')
-  group.add_argument('database', help='path to the QDB database', nargs='?')
+  group.add_argument('database', help='path to a QDB database or a name of QDB sessio', nargs='?')
 
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
@@ -295,7 +279,7 @@ def main() -> int:
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
   parser.add_argument('-d', '--dump', help='dump database as QDB commands', action='store_true')
-  parser.add_argument('-v', '--version', action='version', version=f'QDB version {__version__}')
+  parser.add_argument('-v', '--version', action='version', version=f'\x1b[1mQDB\x1b[0m version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
 
   args = parser.parse_args()
@@ -325,7 +309,7 @@ def main() -> int:
 
   if args.command:
 
-    if args.command.upper() == 'OPENSESSION':
+    if args.command.upper() == 'OPEN':
       try:
         opensession(args.database)
       except QDBError as e:
@@ -336,7 +320,7 @@ def main() -> int:
     if args.command == '__QDB_RUNSERVER__':
       return runserver(dbname(args.database), client)
 
-    if args.command.upper() in ('CLOSESESSION', 'PING'):
+    if args.command.upper() in ('CLOSE', 'PING'):
       if not isserver(client.db_name):
         print(f'QDB: Error: no opened session for `{client.db_name}`.', file=sys.stderr)
         return 1
@@ -344,7 +328,7 @@ def main() -> int:
     if isserver(client.db_name, getuser()):
       sock_path = getsockpath(client.db_name, getuser())
       try:
-        ret = sendcommand(sock_path, f'QDBUSRCHK {args.username} {args.password}')
+        ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
         args.password = ''
         if int(ret) == 1:
           return 1

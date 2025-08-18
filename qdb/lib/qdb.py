@@ -88,7 +88,7 @@ class QDB:
     command = command.split(maxsplit=1)[0] if command is not None else None
     return command.upper() not in [
         'COMPACT',
-        'CLOSESESSION',
+        'CLOSE',
         'LIST',
         'PING',
         'PURGE',
@@ -672,7 +672,7 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_field(self, hkey: str, field: str) -> int:
-    ''' Return the value of a field in a hash. '''
+    '''QF <HKEY> <FIELD>: Return the value of a field in a hash.'''
     if not self.store.isdatabase:
       if isset('repl'):
         msg = 'QDB: No data.'
@@ -745,6 +745,7 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def idxf(self, index: str) -> None:
+    '''IDXF <INDEX>: show fields for the given index.'''
     if not self.store.isdatabase:
       if isset('repl'):
         msg = 'QDB: No data.'
@@ -767,8 +768,11 @@ class QDB:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if not self.store.is_index(index):
-      return 1
-    return 0 if self.store.get_indexed(index, field, unquote(value)) else 1
+      raise QDBError(f'EXISTS: Error: `{index}`, no such index.')
+    result = self.store.get_indexed(index, field, unquote(value)) != set()
+    if isset('repl'):
+      print('Exists.' if result else 'Does not exist.')
+    return 0 if result else 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:

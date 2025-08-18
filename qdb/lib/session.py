@@ -26,7 +26,7 @@ def runserver(db_name: str, client: object):
     conn, _ = server.accept()
     with conn:
       cmd = conn.recv(4096).decode().strip()
-      if cmd.startswith('QDBUSRCHK'):
+      if cmd.startswith('__qdbusrchk__'):
         if not client.qdb.users.hasusers:
           conn.sendall(b'\x01\x02\x030\n')
           continue
@@ -50,7 +50,7 @@ def runserver(db_name: str, client: object):
         response = cmd.replace('i', 'o').replace('I', 'O')
         conn.sendall(b'\x01\x02' + response.encode() + b'\n\x030\n')
         continue
-      if cmd.upper() == 'CLOSESESSION':
+      if cmd.upper() == 'CLOSE':
         if isset('quiet'):
           conn.sendall(b'\x01\x02\x030\n')
           break
