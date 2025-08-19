@@ -334,7 +334,7 @@ usage: qdb [-h] [--sessions] [-p] [-q] [-f] [-u username] [-w password] [-d]
 Command Line Interface For the QDB database engine.
 
 positional arguments:
-  database              path to a QDB database or a name of QDB session
+  database              path to a QDB database or name of a QDB session
   command               QDB command
 
 options:

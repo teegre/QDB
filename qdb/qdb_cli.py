@@ -271,7 +271,7 @@ def main() -> int:
 
   group = parser.add_mutually_exclusive_group(required=True)
   group.add_argument('--sessions', help='list active sessions', action='store_true')
-  group.add_argument('database', help='path to a QDB database or a name of QDB sessio', nargs='?')
+  group.add_argument('database', help='path to a QDB database or name of a QDB session', nargs='?')
 
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
