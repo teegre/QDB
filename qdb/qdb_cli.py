@@ -37,7 +37,7 @@ def dbname(db_path) -> str:
   return name
 
 def opensession(db_path: str):
-  db_name, ext = dbname(db_path)
+  db_name = dbname(db_path)
   if ext.lower() != '.qdb':
     raise
   if isserver(db_name):
