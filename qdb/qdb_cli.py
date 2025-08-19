@@ -31,10 +31,15 @@ def has_piped_input():
   return not stat.S_ISCHR(mode)
 
 def dbname(db_path) -> str:
-  return os.path.splitext(os.path.basename(db_path))[0]
+  name, ext = os.path.splitext(os.path.basename(db_path))
+  if ext.lower() and ext.lower() != '.qdb':
+    raise QDBError('Invalid database name.')
+  return name
 
 def opensession(db_path: str):
-  db_name = dbname(db_path)
+  db_name, ext = dbname(db_path)
+  if ext.lower() != '.qdb':
+    raise
   if isserver(db_name):
     raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
@@ -346,10 +351,6 @@ def main() -> int:
       print(f'QDB: Error: session mode: \033[3m--pipe\033[0m not allowed.')
     else:
       print(f'QDB: Error: session mode: missing command.', file=sys.stderr)
-    return 1
-
-  if not client.qdb.store.database_ext or client.qdb.store.database_ext.lower() != '.qdb':
-    print('QDB: Invalid database extension: should be \x1b[3m.qdb\x1b[0m.')
     return 1
 
   if args.dump:
