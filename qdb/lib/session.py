@@ -3,8 +3,6 @@ import os
 import socket
 import sys
 
-from typing import Callable
-
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb.lib.exception import QDBAuthenticationError, QDBError
