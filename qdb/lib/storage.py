@@ -26,7 +26,7 @@ from qdb.lib.utils import isset, quote, is_virtual
 
 class QDBStore:
   def __init__(self, db_path: str, load: bool=True) :
-    self.database_name = os.path.splitext(os.path.basename(db_path))[0]
+    self.database_name, self.database_ext = os.path.splitext(os.path.basename(db_path))
     self.io = QDBIO(db_path)
     self.users = self.io.users
     self.datacache = QDBCache()

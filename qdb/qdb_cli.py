@@ -348,6 +348,10 @@ def main() -> int:
       print(f'QDB: Error: session mode: missing command.', file=sys.stderr)
     return 1
 
+  if not client.qdb.store.database_ext or client.qdb.store.database_ext.lower() != '.qdb':
+    print('QDB: Invalid database extension: should be \x1b[3m.qdb\x1b[0m.')
+    return 1
+
   if args.dump:
     try:
       client.qdb.dump()
