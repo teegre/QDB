@@ -86,7 +86,7 @@ Query data.
 
 #### Syntax
 
-`Q <ROOT_INDEX>|<HKEY> [[EXPR1] ... [EXPRN]]`
+`Q <ROOT_INDEX>|<HKEY>|<EXPR> [[EXPR1] ... [EXPRN]]`
 
 #### Expression
 
@@ -94,6 +94,7 @@ Query data.
 | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `field`              | Display a field from the current index                                                                              |
 | `field=value`        | Filter records where `field == value`                                                                               |
+| `#field=value`       | Filter records but do not display related field
 | `index:field`        | Follow relationship to another index and display field (use `*` wildcard to display all fields for the given index) |
 | `index:field=value`  | Filter by value in related index                                                                                    |
 | `index:++field`      | Sort results by this field (ascending)                                                                              |
@@ -109,7 +110,7 @@ These are *convenience* fields that can be used to display and/or filter data in
 | `$hkey`       | The full **HKEY**, e.g. `artist:83`      |
 | `$id`         | The **ID** part of a **HKEY**, e.g. `83` |
 
-### Condition operators
+#### Condition operators
 
 | Operator                         | Description           |
 | -------------------------------- | --------------------- |
@@ -137,7 +138,7 @@ These are *convenience* fields that can be used to display and/or filter data in
 | `min`    | Minimum     |
 | `sum`    | Sum         |
 
-> Note: the sorting prefix must be added before the aggregation function e.g. `Q artist:83 name album:date:title song:@[--count:*]`.
+> Note: the sorting prefix must be prepended to the aggregation function e.g. `Q artist:83 name album:date:title song:@[--count:*]`.
 
 #### Examples
 
@@ -175,9 +176,26 @@ Q artist name=kraftwerk album:++date:title song:@[count:*]
 
 *→ For artist "kraftwerk", list their album sorted by date and the number of songs per album.*
 
-#### SQL vs QDB
+### QQ
 
-##### SQL:
+Query **HKEY**S and store them in memory.
+
+They can be recalled with the functions `@recall` or `@peeq`.
+
+#### Syntax
+
+`QQ <ROOT_INDEX> <EXPR> [[EXPR1] ... [EXPR2]]`
+
+#### Expression
+
+Same as `Q` excepted:
+
+*  Aggregations are not allowed
+*  Sorting is ignored
+
+### SQL vs QDB
+
+#### SQL:
 
 ```
 SELECT artist.name, song.title FROM artist
@@ -187,7 +205,7 @@ WHERE artist.name IN ('autechre', 'the cure')
 ORDER BY song.title ASC;
 ```
 
-##### QDB:
+#### QDB:
 
 ```
 Q artist name(autechre,"the cure") song:++title
@@ -199,16 +217,16 @@ Q artist name(autechre,"the cure") song:++title
 
 ### Other Hashmap Commands
 
-| Command  | Syntax                                       | Description                                                     |
-| -------- | -------------------------------------------- | --------------------------------------------------------------- |
-| `CARD`   | `CARD <INDEX_A> <INDEX_B>`                   | Show estimated cardinalities between the given indexes          |
-| `QF`     | `QF <HKEY> <FIELD>`                          | Display the value of a specific field for a given **HKEY**      |
-| `QQ`     | `QQ <INDEX> <EXPR>`                          | Store **HKEY**S matching the given expression                   |
-| `HDEL`   | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY** |
-| `HLEN`   | `HLEN <INDEX>`                               | Display the number of **HKEY**S for a specific index            |
-| `IDX`    | `IDX`                                        | Display existing indexes                                        |
-| `IDXF`   | `IDXF <INDEX>`                               | Show fields for a specific index                                |
-| `SCHEMA` | `SCHEMA`                                     | Show current database schema                                    |
+| Command  | Syntax                                       | Description                                                       |
+| --------  | -------------------------------------------- | ----------------------------------------------------------------- |
+| `CARD`    | `CARD <INDEX_A> <INDEX_B>`                   | Show estimated cardinalities between the given indexes            |
+| `EXISTS`  | `EXISTS <INDEX> <FIELD> <VALUE>`             | Return 0 if field's value for the given index exists, 1 otherwise |
+| `QF`      | `QF <HKEY> <FIELD>`                          | Display the value of a specific field for a given **HKEY**        |
+| `HDEL`    | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY**   |
+| `HLEN`    | `HLEN <INDEX>`                               | Display the number of **HKEY**S for a specific index              |
+| `IDX`     | `IDX`                                        | Display existing indexes                                          |
+| `IDXF`    | `IDXF <INDEX>`                               | Show fields for a specific index                                  |
+| `SCHEMA`  | `SCHEMA`                                     | Show current database schema                                      |
 
 ## User Management Commands
 
@@ -309,13 +327,14 @@ Q transaction @date(date)^2025-08 @[sum:amount]
 ## CLI
 
 ```
-usage: qdb [-h] [--sessions] [-p] [-q] [-f] [-u username] [-w password] [-d] [-v]
+usage: qdb [-h] [--sessions] [-p] [-q] [-f] [-u username] [-w password] [-d]
+           [-v]
            [database] [command]
 
 Command Line Interface For the QDB database engine.
 
 positional arguments:
-  database              path to the QDB database
+  database              path to a QDB database or a name of QDB session
   command               QDB command
 
 options:
@@ -330,7 +349,6 @@ options:
   -v, --version         show program's version number and exit
 
 If no option is provided, starts an interactive shell.
-
 ```
 
 ### Execute a command
@@ -353,16 +371,7 @@ qdb --pipe music.qdb < data.qdbs
 qdb music.qdb
 
 QDB version 0.0.2
-This program is free software.
-It is distributed AS IS with no WARRANTY.
-
-(c) 2025 Stéphane MEYER (Teegre)
-
-** 44002 keys.
-** 23850 references.
-** 42185 referenced hkeys.
-
-[music](+) > Q artist name=kraftwerk album:++date:title
+* music2 (+) qdb ) Q artist name=kraftwerk album:++date:title
 kraftwerk|1974|autobahn
 kraftwerk|1975|radioactivity
 kraftwerk|1977|trans-europe express
@@ -375,14 +384,13 @@ kraftwerk|2005|minimum-maximum
 kraftwerk|2017|3-d the catalogue
 
 10 rows found.
-Fetched:   0.0035s.
-Processed: 0.0019s.
-Total:     0.0054s.
-[music](+) >
-
+Fetched:   0.0033s.
+Processed: 0.0017s.
+Total:     0.0050s.
+* music2 (+) qdb )
 ```
-<kbd>CTRL</kbd>+<kbd>c</kbd> cancels current input.
-<kbd>CTRL</kbd>+<kbd>d</kbd> exits the interactive shell.
+<kbd>CTRL</kbd>+<kbd>C</kbd> cancels current input.
+<kbd>CTRL</kbd>+<kbd>D</kbd> exits the interactive shell.
 
 ### Session mode
 
@@ -390,19 +398,26 @@ Session mode allows to keep the database loaded in a background **QDB** server p
 
 To open a session: 
 ```
-qdb music.qdb OPENSESSION
+qdb music.qdb OPEN
 
 ```
 
-To close a session:
+To list current opened sessions:
 ```
-qdb music.qdb CLOSESESSION
+qdb --sessions
 ```
 
 To verify whether a session is opened:
 ```
-qdb music.qdb PING
+qdb music PING
 ```
+
+To close a session:
+```
+qdb music CLOSE
+```
+
+> **Note**: Sessions are created per user/database. Each time the **QDB** client is used, username and password have to be provided with commandline option *--username* and *--password*.
 
 ## Installation
 
