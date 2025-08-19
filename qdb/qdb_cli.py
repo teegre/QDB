@@ -38,8 +38,6 @@ def dbname(db_path) -> str:
 
 def opensession(db_path: str):
   db_name = dbname(db_path)
-  if ext.lower() != '.qdb':
-    raise
   if isserver(db_name):
     raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
