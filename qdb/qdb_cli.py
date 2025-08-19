@@ -36,7 +36,7 @@ def dbname(db_path) -> str:
 def opensession(db_path: str):
   db_name = dbname(db_path)
   if isserver(db_name):
-    raise QDBError(f'Error: session already opened for `{db_name}`.')
+    raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
   subprocess.Popen(
       [sys.executable, __file__, db_path, '__QDB_RUNSERVER__'],
@@ -46,7 +46,7 @@ def opensession(db_path: str):
   )
 
   if not isset('quiet'):
-    print(f'QDB: `{db_name}`, session \033[32mopened\033[0m.', file=sys.stderr)
+    print(f'\x1b[1m{db_name}\x1b[0m: session \033[32mopened\033[0m.', file=sys.stderr)
 
 def sendcommand(sock_path, command) -> int:
   try:
@@ -322,16 +322,18 @@ def main() -> int:
 
     if args.command.upper() in ('CLOSE', 'PING'):
       if not isserver(client.db_name):
-        print(f'QDB: Error: no opened session for `{client.db_name}`.', file=sys.stderr)
+        user = getuser() if not args.username else args.username
+        print( f'User \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
         return 1
 
     if isserver(client.db_name, getuser()):
       sock_path = getsockpath(client.db_name, getuser())
       try:
-        ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
-        args.password = ''
-        if int(ret) == 1:
-          return 1
+        if args.command.upper() != 'PING':
+          ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
+          args.password = ''
+          if int(ret) == 1:
+            return 1
         ret = sendcommand(sock_path, args.command)
         return int(ret)
       except QDBError as e:

@@ -26,23 +26,6 @@ def runserver(db_name: str, client: object):
     conn, _ = server.accept()
     with conn:
       cmd = conn.recv(4096).decode().strip()
-      if cmd.startswith('__qdbusrchk__'):
-        if not client.qdb.users.hasusers:
-          conn.sendall(b'\x01\x02\x030\n')
-          continue
-        command = splitcmd(cmd)
-        usr, pwd = command[1], command[2]
-        if usr != getuser():
-          conn.sendall(b'\x01\x02Error: connection refused.\n\x031\n')
-          continue
-        try:
-          authorize(client.qdb.users, usr, pwd)
-          conn.sendall(b'\x01\x02\x030\n')
-          continue
-        except QDBAuthenticationError:
-          conn.sendall(b'\x01\x02Error: connection refused\n\x031\n')
-          continue
-
       if cmd.upper() == 'PING':
         if isset('quiet'):
           conn.sendall(b'\x01\x02\x030\n')
@@ -50,13 +33,31 @@ def runserver(db_name: str, client: object):
         response = cmd.replace('i', 'o').replace('I', 'O')
         conn.sendall(b'\x01\x02' + response.encode() + b'\n\x030\n')
         continue
+
+      if cmd.startswith('__qdbusrchk__'):
+        if not client.qdb.users.hasusers:
+          conn.sendall(b'\x01\x02\x030\n')
+          continue
+        command = splitcmd(cmd)
+        usr, pwd = command[1], command[2]
+        if usr != getuser():
+          conn.sendall(b'\x01\x02Connection refused.\n\x031\n')
+          continue
+        try:
+          authorize(client.qdb.users, usr, pwd)
+          conn.sendall(b'\x01\x02\x030\n')
+          continue
+        except QDBAuthenticationError:
+          conn.sendall(b'\x01\x02Connection refused\n\x031\n')
+          continue
+
       if cmd.upper() == 'CLOSE':
         if isset('quiet'):
           conn.sendall(b'\x01\x02\x030\n')
           break
         conn.sendall(
             b'\x01\x02' + 
-            f'QDB: `{db_name}`, session \033[31mclosed\033[0m.\n'.encode() +
+            f'\x1b[1m{db_name}\x1b[0m: session \033[31mclosed\033[0m.\n'.encode() +
             b'\x030\n'
         )
         break
