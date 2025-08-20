@@ -32,8 +32,8 @@ def has_piped_input():
 
 def dbname(db_path) -> str:
   name, ext = os.path.splitext(os.path.basename(db_path))
-  if ext.lower() and ext.lower() != '.qdb':
-    raise QDBError('Invalid database name.')
+  if ext.lower() and ext.lower() != '.qdb' and not os.path.exists(db_path):
+    raise QDBError(f'Error: \x1b[1m{name+ext}\x1b[0m, invalid database name.')
   return name
 
 def opensession(db_path: str):
