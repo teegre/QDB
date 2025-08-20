@@ -246,6 +246,9 @@ def splitcmd(cmd: str) -> list[str]:
   if token:
     tokens.append(token)
 
+  if quoted:
+    raise QDBError(f'Error: unbalanced \x1b[1m{quote_char}\x1b[0m in expression.')
+
   return tokens
 
 def unquote(expr: str) -> str:
