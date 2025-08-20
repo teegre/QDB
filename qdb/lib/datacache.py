@@ -35,18 +35,26 @@ class QDBCache:
     self.__cache[key] = QDBCacheEntry(data, int(time()))
 
     if isinstance(data, dict):
-      for old, new in zip(old_data.items(), data.items()):
-        if new[1] == old[1]:
-          continue
-        index = key.partition(':')[0]
-        field = new[0]
-        self.drop(index, field, old[1], key)
-        value = new[1]
-        index_entry = f'{index}:{field}={value}'
-        if index_entry in self.__indexed_fields:
-          self.__indexed_fields[index_entry].add(key)
-        else:
-          self.__indexed_fields.setdefault(index_entry, {key})
+      index = key.partition(':')[0]
+      if old_data: # update
+        for old, new in zip(old_data.items(), data.items()):
+          if new[1] == old[1]:
+            continue
+          field = new[0]
+          self.drop(index, field, old[1], key)
+          value = new[1]
+          index_entry = f'{index}:{field}={value}'
+          if index_entry in self.__indexed_fields:
+            self.__indexed_fields[index_entry].add(key)
+          else:
+            self.__indexed_fields.setdefault(index_entry, {key})
+      else:
+        for field, value in data.items():
+          index_entry = f'{index}:{field}={value}'
+          if index_entry in self.__indexed_fields:
+            self.__indexed_fields[index_entry].add(key)
+          else:
+            self.__indexed_fields.setdefault(index_entry, {key})
 
     self.haschanged = True
 
