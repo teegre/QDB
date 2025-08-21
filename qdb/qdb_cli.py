@@ -57,7 +57,11 @@ def opensession(db_path: str):
 def sendcommand(sock_path, command) -> int:
   try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-      client.connect(sock_path)
+      try:
+        client.connect(sock_path)
+      except FileNotFoundError:
+        raise QDBError(f'Error: \x1b[1msession\x1b[0m is \x1b[31mclosed\x1b[0m.')
+
       client.sendall((command.strip() + '\n').encode())
 
       chunks = []
