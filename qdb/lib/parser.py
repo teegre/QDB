@@ -234,7 +234,7 @@ class QDBParser:
     if parts == ['*']:
       return QDBParserExpr(
           index,
-          ['*'],
+          [QDBParserField('*', True)],
           [],
           None,
           None
