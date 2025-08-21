@@ -20,7 +20,7 @@ def runserver(db_name: str, client: object):
   server.bind(sock_path)
   server.listen(1)
 
-  while True:
+  while not client.stop_event.is_set():
     conn, _ = server.accept()
     with conn:
       cmd = conn.recv(4096).decode().strip()
@@ -75,10 +75,10 @@ def runserver(db_name: str, client: object):
         break
       except QDBError as e:
         conn.sendall(b'\x01\x02' + str(e).encode() + b'\n\x031\n')
-        print(f'{e}', file=sys.stderr)
-        break
+        continue
       finally:
         sys.stdout, sys.stderr = oldout, olderr
+        client.stop_client.wait(1.0)
   server.close()
   os.remove(sock_path)
   return 0

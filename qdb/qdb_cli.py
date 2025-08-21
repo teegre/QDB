@@ -2,10 +2,12 @@ import argparse
 import os
 import readline
 import shlex
+import signal
 import socket
 import stat
 import subprocess
 import sys
+import threading
 
 from pathlib import Path
 from time import perf_counter
@@ -35,6 +37,7 @@ def dbname(db_path) -> str:
   if ext.lower() and ext.lower() != '.qdb' and not os.path.exists(db_path):
     raise QDBError(f'Error: \x1b[1m{name+ext}\x1b[0m, invalid database name.')
   return name
+
 
 def opensession(db_path: str):
   db_name = dbname(db_path)
@@ -321,6 +324,16 @@ def main() -> int:
       return 0
 
     if args.command == '__QDB_RUNSERVER__':
+      stop_event = threading.Event()
+
+      def handle_signal(signum, frame):
+        stop_event.set()
+
+      signal.signal(signal.SIGTERM, handle_signal)
+      signal.signal(signal.SIGINT, handle_signal)
+
+      client.stop_event = stop_event
+
       return runserver(dbname(args.database), client)
 
     if args.command.upper() in ('CLOSE', 'PING'):
