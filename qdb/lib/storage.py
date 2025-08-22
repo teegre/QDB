@@ -90,6 +90,8 @@ class QDBStore:
     return 0
 
   def compact(self, force: bool=False):
+    if self.haschanged:
+      self.commit(quiet=True)
     self.keystore = self.io.compact(refs=self.refs, force=force)
 
   def purge(self):
