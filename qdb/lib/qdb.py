@@ -108,7 +108,7 @@ class QDB:
   def set(self, key: str, value: str) -> int:
     ''' Set a single value '''
     validate_key(key)
-    self.store.write(key, value)
+    return self.store.write(key, value)
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get(self, key: str) -> int:
@@ -930,8 +930,8 @@ class QDB:
     return 0
 
   def whoami(self):
-    user = self.users.getuser()
-    print(f'You are {user if user else "nobody"}.')
+    print(f'You are {getuser()}.')
+    return 0
 
   def is_db_empty(self) -> bool:
     return self.store.is_db_empty
