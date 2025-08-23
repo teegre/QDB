@@ -66,8 +66,40 @@ def month(value: str) -> str:
 
 def totime(value: str):
   try:
-    dt = timedelta(seconds=int(float(value)))
-    return str(dt)
+    dur = int(float(value))
+    if dur < 0:
+      dur = 0
+
+    td = timedelta(seconds=dur)
+    total_seconds = int(td.total_seconds())
+
+    weeks = total_seconds // (7 * 24 * 3600)
+    days = (total_seconds % (7 * 24 * 3600)) // (24 * 3600)
+    hours = (total_seconds % (24 * 3600)) // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    parts = []
+
+    if weeks > 0:
+      parts.append(f'{weeks} week{"s" if weeks != 1 else ""}')
+
+    if days > 0:
+      parts.append(f'{days} day{"s" if days != 1 else ""}')
+
+    time_parts = []
+    if dur >= 3600:
+      time_parts = [f'{hours:02}', f'{minutes:02}', f'{seconds:02}']
+    else:
+      time_parts = [f'{minutes:02}', f'{seconds:02}']
+
+    if time_parts:
+      time_str = ':'.join(time_parts)
+      if any([hours, minutes, seconds]) or not parts:
+        parts.append(time_str)
+
+    return ', '.join(parts)
+
   except (ValueError, TypeError):
     raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
 
