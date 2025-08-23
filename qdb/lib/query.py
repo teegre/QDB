@@ -674,7 +674,7 @@ class QDBQuery:
 
     # Build tree
     data_tree = { prm_index: {} }
-    for key in sorted(all_keys):
+    for key in sorted(all_keys) if not random else all_keys:
       node = data_tree[prm_index][key] = {}
       build_ref_tree(node, refs_map[key], flat=flat)
 
