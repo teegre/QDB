@@ -108,17 +108,18 @@ class QDB:
   def set(self, key: str, value: str) -> int:
     ''' Set a single value '''
     validate_key(key)
-    return self.store.write(key, value)
+    return self.store.write(key, expand(value, write=True))
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get(self, key: str) -> int:
     ''' Get a value '''
-    if validate_key(key, confirm=True):
-      val = self.store.read(key)
-      if val is not None:
-        print(f'{val}')
-        return 0
-    print(f'GET: `{key}`, no such KEY.')
+    k = unwrap(key)
+    v = self.store.read(k)
+    value = expand(key, v)
+    if value is not None:
+      print(f'{value}')
+      return 0
+    print(f'GET: `{k}`, no such KEY.', file=sys.stderr)
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
