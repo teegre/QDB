@@ -150,7 +150,10 @@ def expand(expr: str, value: str=None, write: bool=False) -> str:
   if func in FUNCTIONS:
     expanded = FUNCTIONS[func](value)
     return expanded
+
+  if func and func[0] == '@':
     raise QDBError(f'QDB: Error: `{unwrap(expr, True)}`, no such function.')
+
   return expr if write else value
 
 def unwrap(expr: str, extract_func: bool=False) -> str:
