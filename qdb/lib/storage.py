@@ -246,6 +246,16 @@ class QDBStore:
         value = self.read(key)
         print(f'SET {key} {quote(value)}')
 
+  def export(self, index_or_key) -> int:
+    if self.is_index(index_or_key):
+      keys = self.get_index_keys(index_or_key)
+    else:
+      keys = [index_or_key]
+    for key in keys:
+      values = self.read_hash(key, dump=True)
+      print('W', key, ' '.join([f'{k} "{v}"' for k, v in values.items() if not is_virtual(k)]))
+    return 1 if not keys else 0
+
   def keystore_dump(self) -> None:
     ''' Dump keystore content '''
     for k, v in self.keystore.items():

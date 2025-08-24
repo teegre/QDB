@@ -56,6 +56,7 @@ class QDB:
         'DEL' :    self.delete,
         'ECHO':    self.echo,
         'EXISTS':  self.exists,
+        'EXPORT':  self.export,
         'GET' :    self.get,
         'HDEL':    self.hdel,
         'HLEN':    self.hlen,
@@ -611,6 +612,10 @@ class QDB:
       print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
+
+  @authorization([QDBAuthType.QDB_ADMIN])
+  def export(self, index_or_key: str) -> int:
+    return self.store.export(index_or_key)
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def qq(self, index: str, *exprs) -> int:
