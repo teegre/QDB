@@ -278,13 +278,6 @@ class QDBIO:
             reverse.setdefault(ref, set()).add(hkey)
           continue
 
-        if 'add' in ops:
-          rset = refs.get(hkey)
-          if rset is None:
-            refs[hkey] = set()
-          for ref in ops['add']:
-            refs[hkey].add(ref)
-            reverse.setdefault(hkey, set()).add(ref)
         if 'del' in ops:
           if ops['del'] == '__all__':
             for ref in refs.get(hkey, ()):
@@ -294,6 +287,13 @@ class QDBIO:
             for ref in ops['del']:
               refs.get(hkey, set()).discard(ref)
               reverse.get(ref, set()).discard(hkey)
+        if 'add' in ops:
+          rset = refs.get(hkey)
+          if rset is None:
+            refs[hkey] = set()
+          for ref in ops['add']:
+            refs[hkey].add(ref)
+            reverse.setdefault(hkey, set()).add(ref)
 
     self._remove(*empty)
 
