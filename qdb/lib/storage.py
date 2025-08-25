@@ -30,6 +30,7 @@ class QDBStore:
     if not self.database_ext:
       self.database_ext = '.qdb'
       db_path += self.database_ext
+    self.database_path = db_path
     self.io = QDBIO(db_path)
     self.users = self.io.users
     self.datacache = QDBCache()
@@ -69,12 +70,12 @@ class QDBStore:
     if self.users.unsaved:
       self.users._save()
       self.io.reload()
-    if not isset('repl'):
-      if self.datacache.haschanged or self.io.haschanged:
-        if self.indexes:
-          self.build_indexed_fields()
-          self.io.save_cache(*self.datacache.dump())
-          self.io.reload()
+    # if not isset('repl'):
+    #   if self.datacache.haschanged or self.io.haschanged:
+    #     if self.indexes:
+    #       self.build_indexed_fields()
+    #       self.io.save_cache(*self.datacache.dump())
+    #       self.io.reload()
     self.io.compact()
 
   def commit(self, quiet: bool=False) -> int:
@@ -92,6 +93,10 @@ class QDBStore:
   def compact(self, force: bool=False):
     if self.haschanged:
       self.commit(quiet=True)
+    if not isset('repl'):
+      if self.datacache.haschanged and self.indexes:
+        self.build_indexed_fields(quiet=True)
+        self.io.save_cache(*self.datacache.dump())
     self.keystore = self.io.compact(refs=self.refs, force=force)
 
   def purge(self):
@@ -325,8 +330,8 @@ class QDBStore:
       self.indexes_map.setdefault(index, set())
       self.indexes_map[index] = set(self.get_index_keys(index))
 
-  def build_indexed_fields(self):
-    if not isset('quiet'):
+  def build_indexed_fields(self, quiet: bool=False):
+    if not isset('quiet') and not quiet:
       print('QDB: Indexing...', file=sys.stderr)
     indexed_fields = {}
     for index in self.indexes:
@@ -343,7 +348,7 @@ class QDBStore:
           else:
             indexed_fields.setdefault(k, {hkey})
     self.datacache.set_indexed_fields(indexed_fields)
-    if not isset('quiet'):
+    if not isset('quiet') and not quiet:
       print('QDB: Done.', file=sys.stderr)
 
   def precompute_paths(self):
@@ -716,7 +721,7 @@ class QDBStore:
         print_tree(root, '', is_last=i == len(unrelated) - 1, not_related=True)
 
   def autoid(self, index: str) -> str:
-    ''' Return current greatest ID + 1 in index '''
+    ''' Return index greatest ID + 1 '''
     size = self.index_len(index)
     if size == 0:
       self.index_max_id[index] = 1
