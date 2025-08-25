@@ -194,7 +194,10 @@ class QDBIO:
     if self._active_file and self._active_file.name == qdbinfo.filename:
       logfile = self._active_file
     else:
-      logfile = self._get(name)
+      try:
+        logfile = self._get(name)
+      except OSError:
+        raise QDBIOReadError('IO Error: database is closed.')
     
     if logfile is None:
       raise QDBIOMissingLogError(f'IO Error: missing log entry: `{name}`.')

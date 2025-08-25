@@ -82,7 +82,7 @@ def sendcommand(sock_path, command) -> int:
         try:
           sys.stdout.write(out.decode())
         except BrokenPipeError:
-          raise QDBError('Error: broken pipe.')
+          return 1
       if err:
         sys.stderr.write(err.decode())
 
@@ -203,12 +203,13 @@ class QDBClient:
     except KeyboardInterrupt:
       print()
       print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
+    finally:
+      self.show_cursor()
 
     if not isset('quiet'):
       t2 = perf_counter()
       print()
       print(f'\nProcessed: {(t2-t1):.4f}s')
-    QDBClient.show_cursor()
     return 0
 
   def _set_prompt(self) -> str:
@@ -288,7 +289,7 @@ def main() -> int:
   parser.add_argument('-f', '--nofield', help='never show field names', action='store_true')
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
-  parser.add_argument('-d', '--dump', help='dump database as QDB commands', action='store_true')
+  parser.add_argument('-d', '--dump', help='dump database as W commands', action='store_true')
   parser.add_argument('-v', '--version', action='version', version=f'\x1b[1mQDB\x1b[0m version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
 
