@@ -380,7 +380,7 @@ class QDB:
       try:
         print('|'.join(row['row']), flush=True)
       except BrokenPipeError:
-        raise QDBError('Q: Error: broken pipe.')
+        return 1
 
     if not isset('quiet'):
       print(file=sys.stderr)
@@ -605,7 +605,7 @@ class QDB:
       try:
         print('|'.join(row['row']), flush=True)
       except BrokenPipeError:
-        raise QDBError('Q: Error: broken pipe.')
+        return 1
 
     if not isset('quiet'):
       print(file=sys.stderr)
@@ -817,8 +817,17 @@ class QDB:
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
-  def dump(self):
-    self.store.dump_cmds()
+  def dump(self) -> int:
+    if not self.store.isdatabase:
+      if isset('repl'):
+        msg = '--dump: No data'
+      else:
+        msg = f'--dump: `{self.store.database_name}`, no such database.'
+      raise QDBNoDatabaseError(msg)
+    try:
+      self.store.dump_cmds()
+    except BrokenPipeError:
+      return 1
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -888,20 +897,6 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def get_size(self):
     print(str(self.store.database_size))
-    return 0
-
-  @authorization([QDBAuthType.QDB_ADMIN])
-  def dump(self) -> int:
-    if not self.store.isdatabase:
-      if isset('repl'):
-        msg = 'DUMP: No data'
-      else:
-        msg = f'DUMP: Error: `{self.store.database_name}`, no such database.'
-      raise QDBNoDatabaseError(msg)
-    try:
-      self.store.dump_cmds()
-    except BrokenPipeError:
-      raise QDBError('DUMP: Error: broken pipe.')
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
