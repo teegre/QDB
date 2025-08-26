@@ -70,13 +70,7 @@ class QDBStore:
     if self.users.unsaved:
       self.users._save()
       self.io.reload()
-    # if not isset('repl'):
-    #   if self.datacache.haschanged or self.io.haschanged:
-    #     if self.indexes:
-    #       self.build_indexed_fields()
-    #       self.io.save_cache(*self.datacache.dump())
-    #       self.io.reload()
-    self.io.compact()
+    self.compact()
 
   def commit(self, quiet: bool=False) -> int:
     try:
@@ -91,12 +85,11 @@ class QDBStore:
     return 0
 
   def compact(self, force: bool=False):
-    if self.haschanged:
+    if self.haschanged and not isset('repl'):
       self.commit(quiet=True)
-    if not isset('repl'):
-      if self.datacache.haschanged and self.indexes:
-        self.build_indexed_fields(quiet=True)
-        self.io.save_cache(*self.datacache.dump())
+    if self.datacache.haschanged and not isset('repl') and self.indexes:
+      self.build_indexed_fields(quiet=True)
+      self.io.save_cache(*self.datacache.dump())
     self.keystore = self.io.compact(refs=self.refs, force=force)
 
   def purge(self):
