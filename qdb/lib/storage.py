@@ -30,7 +30,7 @@ class QDBStore:
     if not self.database_ext:
       self.database_ext = '.qdb'
       db_path += self.database_ext
-    self.database_path = db_path
+    self.database_path = os.path.abspath(db_path)
     self.io = QDBIO(db_path)
     self.users = self.io.users
     self.datacache = QDBCache()

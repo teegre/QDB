@@ -22,13 +22,14 @@ from qdb.lib.ops import VIRTUAL
 from qdb.lib.users import QDBUsers, QDBAuthType
 
 __ENV__ = {
-    'debug': '__QDB_DEBUG__',
-    'hushf': '__QDB_HUSHF__',
-    'pwd'  : '__QDB_PWD__',
-    'pipe' : '__QDB_PIPE__',
-    'quiet': '__QDB_QUIET__',
-    'repl' : '__QDB_REPL__',
-    'user' : '__QDB_USER__',
+    'debug'  : '__QDB_DEBUG__',
+    'hushf'  : '__QDB_HUSHF__',
+    'pwd'    : '__QDB_PWD__',
+    'pipe'   : '__QDB_PIPE__',
+    'quiet'  : '__QDB_QUIET__',
+    'repl'   : '__QDB_REPL__',
+    'session': '__QDB_SESSION__',
+    'user'   : '__QDB_USER__',
 }
 
 def setenv(var: str, value: str='1'):
@@ -48,6 +49,14 @@ def isset(var: str) -> bool:
 
 def getuser():
   return os.environ.get('__QDB_USER__', 'anyone')
+
+def getsessionenv() -> str:
+  return os.environ.get('__QDB_SESSION__', '__null__')
+
+def session_id(db_path) -> str:
+  name, ext = os.path.splitext(os.path.basename(db_path))
+  if not ext:
+    name += '.qdb'
 
 def performance_measurement(_func=None, *, message: str='Executed'):
   def decorator(func):
@@ -161,11 +170,11 @@ def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_ty
 def list_sessions() -> int:
   files = glob.glob('/tmp/qdb-*.sock')
   if not files:
-    print('QDB: No active session.', file=sys.stderr)
+    print('* no active session.', file=sys.stderr)
     return 1
   for file in files:
-    print('*', os.path.splitext(os.path.basename(file))[0], file=sys.stderr)
-  print(file=sys.stderr)
+    print('*', os.path.splitext(os.path.basename(file))[0])
+  print()
   filecount = len(files)
   print(f'{filecount} active session{"s" if filecount > 1 else ""} found.', file=sys.stderr)
   return 0

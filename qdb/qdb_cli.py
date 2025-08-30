@@ -28,24 +28,26 @@ from qdb.lib.utils import (
     splitcmd,
 )
 
-def has_piped_input():
+def has_piped_input() -> bool:
   mode = os.fstat(0).st_mode
   return not stat.S_ISCHR(mode)
 
-def dbname(db_path) -> str:
+def dbname(db_path: str) -> str:
+  db_path = os.path.abspath(db_path)
   name, ext = os.path.splitext(os.path.basename(db_path))
-  if ext.lower() and ext.lower() != '.qdb' and not os.path.exists(db_path):
+  if ext and ext.lower() != '.qdb' and not os.path.exists(db_path):
     raise QDBError(f'Error: \x1b[1m{name+ext}\x1b[0m, invalid database name.')
+  if not ext:
+    db_path += '.qdb'
   return name
 
-
-def opensession(db_path: str):
-  db_name = dbname(db_path)
-  if isserver(db_name):
+def opensession(database_path: str):
+  db_name = dbname(database_path)
+  if isserver(db_name, database_path):
     raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
   subprocess.Popen(
-      [sys.executable, __file__, db_path, '__QDB_RUNSERVER__'],
+      [sys.executable, __file__, database_path, '__QDB_RUNSERVER__'],
       stdout=subprocess.DEVNULL,
       stderr=subprocess.DEVNULL,
       env=os.environ.copy()
@@ -94,6 +96,7 @@ def sendcommand(sock_path, command) -> int:
         raise QDBError(f'Error: invalid return code from server: {ret}')
 
   except ConnectionRefusedError:
+    os.unlink(sock_path)
     raise QDBError('Error: unable to connect to server.')
 
 class QDBCompleter:
@@ -114,10 +117,11 @@ class QDBCompleter:
       return None
 
 class QDBClient:
-  def __init__(self, name: str, username: str=None, password: str=None, command: str=None):
-    self.db_name = dbname(name)
-    if not isserver(self.db_name, username):
-      self.qdb = QDB(name, load=QDB.do_load_database(command))
+  def __init__(self, database: str, username: str=None, password: str=None, command: str=None):
+    self.db_name = dbname(database)
+    self.db_path = os.path.abspath(database)
+    if not isserver(self.db_name, self.db_path):
+      self.qdb = QDB(self.db_path, load=QDB.do_load_database(command))
       if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
         raise QDBError(f'Error: `{username}`, unknown user.')
       if self.qdb.users.hasusers and not isset('user'):
@@ -166,7 +170,6 @@ class QDBClient:
     try:
       return runserver(self.db_name, self)
     except KeyboardInterrupt:
-      os.remove(getsockpath(self.db_name))
       return 1
 
   def stopserver(self, db_name: str):
@@ -281,7 +284,7 @@ def main() -> int:
   )
 
   group = parser.add_mutually_exclusive_group(required=True)
-  group.add_argument('--sessions', help='list active sessions', action='store_true')
+  group.add_argument('-l', '--sessions', help='list active sessions', action='store_true')
   group.add_argument('database', help='path to a QDB database or name of a QDB session', nargs='?')
 
   parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
@@ -322,7 +325,7 @@ def main() -> int:
 
     if args.command.upper() == 'OPEN':
       try:
-        opensession(args.database)
+        opensession(client.db_path)
       except QDBError as e:
         print(f'QDB: {e}', file=sys.stderr)
         return 1
@@ -339,7 +342,7 @@ def main() -> int:
 
       client.stop_event = stop_event
 
-      return runserver(dbname(args.database), client)
+      return runserver(client.db_path, client)
 
     if args.command.upper() in ('CLOSE', 'PING'):
       if not isserver(client.db_name):
@@ -347,8 +350,8 @@ def main() -> int:
         print( f'User \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
         return 1
 
-    if isserver(client.db_name, getuser()):
-      sock_path = getsockpath(client.db_name, getuser())
+    if isserver(client.db_name):
+      sock_path = getsockpath(client.db_name)
       try:
         if args.command.upper() != 'PING':
           ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
@@ -361,7 +364,7 @@ def main() -> int:
         print(f'QDB: {e}', file=sys.stderr)
         return 1
 
-  if isserver(client.db_name, getuser()) and (not args.command or args.pipe):
+  if isserver(client.db_name) and (not args.command or args.pipe):
     # no command in session mode, error.
     if args.pipe:
       print(f'QDB: Error: session mode: \033[3m--pipe\033[0m not allowed.')
