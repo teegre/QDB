@@ -217,10 +217,11 @@ Q artist name(autechre,"the cure") song:++title
 
 ### Other Hashmap Commands
 
-| Command  | Syntax                                       | Description                                                       |
+| Command  | Syntax                                       | Description                                                        |
 | --------  | -------------------------------------------- | ----------------------------------------------------------------- |
 | `CARD`    | `CARD <INDEX_A> <INDEX_B>`                   | Show estimated cardinalities between the given indexes            |
 | `EXISTS`  | `EXISTS <INDEX> <FIELD> <VALUE>`             | Return 0 if field's value for the given index exists, 1 otherwise |
+| `EXPORT`  | `EXPORT <INDEX>`                             | Print content of **INDEX** as a list of `W` commands              |
 | `QF`      | `QF <HKEY> <FIELD>`                          | Display the value of a specific field for a given **HKEY**        |
 | `HDEL`    | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY**   |
 | `HLEN`    | `HLEN <INDEX>`                               | Display the number of **HKEY**S for a specific index              |
