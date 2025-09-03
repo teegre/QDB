@@ -229,6 +229,21 @@ def spinner():
     for c in chars:
       yield c
 
+def loader():
+  frames = [
+      '*     ',
+      '**    ',
+      '***   ',
+      ' ***  ',
+      '  *** ',
+      '   ***',
+      '    **',
+      '     *'
+  ]
+  while True:
+    for f in frames:
+      yield f
+
 def splitcmd(cmd: str) -> list[str]:
   token = ''
   tokens = []

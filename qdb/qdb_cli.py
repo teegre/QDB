@@ -10,7 +10,7 @@ import sys
 import threading
 
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -22,6 +22,7 @@ from qdb.lib.utils import (
     authorize,
     getuser,
     isset,
+    loader,
     list_sessions,
     setenv,
     spinner,
@@ -227,8 +228,23 @@ class QDBClient:
     return response.lower() == 'y'
 
   def run_repl(self):
-    print(f'\x1b[1mQDB\x1b[0m version {__version__}')
+    def load_animation(stop_event: threading.Event):
+      load = iter(loader())
+      while not stop_event.is_set():
+        print(f'\r{next(load)}', end='')
+        sleep(0.1)
+
     setenv('repl')
+
+    stop_event = threading.Event()
+    thread = threading.Thread(target=load_animation, args=(stop_event,))
+    self.hide_cursor()
+    thread.start()
+    self.qdb.store.build_indexed_fields(quiet=True)
+    stop_event.set()
+    thread.join()
+    print(f'\r\x1b[1mQDB\x1b[0m version {__version__}')
+    self.show_cursor()
 
     try:
       readline.read_history_file(self.history_file)
@@ -341,6 +357,8 @@ def main() -> int:
       signal.signal(signal.SIGINT, handle_signal)
 
       client.stop_event = stop_event
+
+      client.qdb.store.build_indexed_fields(quiet=True)
 
       return runserver(client.db_path, client)
 
