@@ -225,6 +225,7 @@ Q artist name(autechre,"the cure") song:++title
 | `QF`      | `QF <HKEY> <FIELD>`                          | Display the value of a specific field for a given **HKEY**        |
 | `HDEL`    | `HDEL <INDEX>\|<HKEY> [FIELD1] [FIELD2] ...` | Delete an index, a **HKEY** or fields in an index or a **HKEY**   |
 | `HLEN`    | `HLEN <INDEX>`                               | Display the number of **HKEY**S for a specific index              |
+| `ID`      | `ID <INDEX> <FIELD> <VALUE>`                 | Get **ID** from **INDEX** where **FIELD**=**VALUE**               |
 | `IDX`     | `IDX`                                        | Display existing indexes                                          |
 | `IDXF`    | `IDXF <INDEX>`                               | Show fields for a specific index                                  |
 | `SCHEMA`  | `SCHEMA`                                     | Show current database schema                                      |
@@ -328,8 +329,7 @@ Q transaction @date(date)^2025-08 @[sum:amount]
 ## CLI
 
 ```
-usage: qdb [-h] [--sessions] [-p] [-q] [-f] [-u username] [-w password] [-d]
-           [-v]
+usage: qdb [-h] [-l] [-p] [-q] [-f] [-u username] [-w password] [-d] [-v]
            [database] [command]
 
 Command Line Interface For the QDB database engine.
@@ -340,13 +340,13 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --sessions            list active sessions
+  -l, --sessions        list active sessions
   -p, --pipe            reads commands from stdin
   -q, --quiet           be quiet
   -f, --nofield         never show field names
   -u, --username username
   -w, --password password
-  -d, --dump            dump database as QDB commands
+  -d, --dump            dump database as W commands
   -v, --version         show program's version number and exit
 
 If no option is provided, starts an interactive shell.
