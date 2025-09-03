@@ -62,6 +62,7 @@ class QDB:
         'HLEN':    self.hlen,
         'HUSH':    self.hush,
         'HUSHF':   self.hushf,
+        'ID':      self.getid,
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEYS':    self.keys,
@@ -779,6 +780,24 @@ class QDB:
     if isset('repl'):
       print('Exists.' if result else 'Does not exist.')
     return 0 if result else 1
+
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  def getid(self, index: str, field: str, value: str) -> int:
+    if not self.store.isdatabase:
+      if isset('repl'):
+        msg = '* no data'
+      else:
+        msg = f'* error: `{self.store.database_name}`, no such database.'
+      raise QDBNoDatabaseError(msg)
+    if not self.store.is_index(index):
+      raise QDBError(f'* id: `{index}`, no such index.')
+    if not isset('session') or not isset(repl):
+      return self.q(index, f'$id:#{field}={value}')
+    result = self.store.datacache.get_id(index, field, unquote(value))
+    if result:
+      print(result)
+      return 0
+    raise QDBError('* id: no data.')
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:

@@ -73,6 +73,13 @@ class QDBCache:
       hkeys.update(self.__indexed_fields.get(index_entry, set()))
     return hkeys
 
+  def get_id(self, index: str, field: str, value: str) -> str:
+    index_entry = f'{index}:{field}={value}'
+    ID: list = list(self.__indexed_fields.get(index_entry, set()))
+    if len(ID) > 1:
+      return None
+    return ID[0].partition(':')[2] if ID else None
+
   def get_key_timestamp(self, key: str) -> int:
     entry = self.__cache.get(key)
     return entry.timestamp if entry else 0
