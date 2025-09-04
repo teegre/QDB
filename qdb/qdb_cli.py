@@ -287,6 +287,7 @@ class QDBClient:
         print('QDB: `--pipe` option is missing.', file=sys.stderr)
         return 1
     if pipe:
+      self.qdb.store.build_indexed_fields(quiet=True)
       return self.pipe_commands()
     if command is not None:
       return self.execute(command)

@@ -130,7 +130,8 @@ class QDBStore:
     if entry.timestamp <= self.datacache.get_key_timestamp(key):
       return self.datacache.read(key)
     value = self.io.read(entry, key)
-    self.datacache.write(key, value)
+    if (isset('session') or isset('repl') or isset('pipe')):
+      self.datacache.write(key, value)
     return value
 
   def read_hash(self, hkey: str, dump: bool=False) -> dict:
