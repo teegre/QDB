@@ -647,11 +647,21 @@ class QDB:
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
-    is_index = self.store.is_index(index_or_key)
-    if is_index:
-      keys = self.store.get_index_keys(index_or_key).copy()
-    else:
-      keys = [index_or_key]
+
+    try:
+      index_or_key, keys, neg = self._recall(index_or_key)
+      if keys and neg:
+        keys = sorted(set(keys) ^ self.store.get_index_keys(index_or_key))
+    except QDBError as e:
+      print(f'Q: {e}', file=sys.stderr)
+      return 1
+
+    if not keys:
+      is_index = self.store.is_index(index_or_key)
+      if is_index:
+        keys = self.store.get_index_keys(index_or_key).copy()
+      else:
+        keys = [index_or_key]
 
     err = 0
 
@@ -674,7 +684,7 @@ class QDB:
           print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)
           continue
       if fields:
-        self.store.write(key, kv, old_kv)
+        err += self.store.write(key, kv, old_kv)
     return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])

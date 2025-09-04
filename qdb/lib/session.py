@@ -78,7 +78,7 @@ def runserver(session_path: str, client: object):
   server.listen(1)
 
   while not client.stop_event.is_set():
-    r, _, _ = select.select([server], [], [], 0.25)
+    r, _, _ = select.select([server], [], [], 0.5)
     if r:
       conn, _ = server.accept()
       with conn:
@@ -140,7 +140,7 @@ def runserver(session_path: str, client: object):
           continue
         finally:
           sys.stdout, sys.stderr = oldout, olderr
-          client.stop_event.wait(0.001)
+          client.stop_event.wait(0.5)
   server.close()
   os.unlink(sock_path)
   sessions = loadsessions()

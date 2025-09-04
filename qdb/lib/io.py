@@ -274,7 +274,7 @@ class QDBIO:
       for hkey, ops in data.items():
         if isinstance(ops, list): # Compacted version
           rset = refs.get(hkey)
-          if rset is None:
+          if rset is None and ops:
             refs[hkey] = set()
           for ref in ops:
             refs[hkey].add(ref)
