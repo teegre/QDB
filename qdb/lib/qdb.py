@@ -801,7 +801,7 @@ class QDB:
       raise QDBNoDatabaseError(msg)
     if not self.store.is_index(index):
       raise QDBError(f'* id: `{index}`, no such index.')
-    if not isset('session') or not isset('repl'):
+    if not isset('session') and not isset('repl'):
       return self.q(index, f'$id:#{field}={value}')
     result = self.store.datacache.get_id(index, field, unquote(value))
     if result:

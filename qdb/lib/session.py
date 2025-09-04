@@ -67,6 +67,7 @@ def getsockpath(session_name: str, user: str=None) -> str:
 
 def runserver(session_path: str, client: object):
   try:
+    client.qdb.store.build_indexed_fields(quiet=True)
     sock_path = setsession(client)
     session_name = getsessionenv()
   except QDBError as e:

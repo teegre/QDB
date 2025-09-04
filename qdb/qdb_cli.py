@@ -17,7 +17,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
-from qdb.lib.session import runserver, isserver, getsockpath
+from qdb.lib.session import runserver, isserver, getsockpath, loadsessions
 from qdb.lib.utils import (
     authorize,
     getuser,
@@ -47,12 +47,18 @@ def opensession(database_path: str):
   if isserver(db_name, database_path):
     raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
+  sessions = loadsessions()
+  session_count = len(sessions)
+
   subprocess.Popen(
       [sys.executable, __file__, database_path, '__QDB_RUNSERVER__'],
       stdout=subprocess.DEVNULL,
       stderr=subprocess.DEVNULL,
       env=os.environ.copy()
   )
+
+  while not (s := loadsessions()) or len(s) <= session_count:
+    sleep(0.25)
 
   if not isset('quiet'):
     print(f'\x1b[1m{db_name}\x1b[0m: session \033[32mopened\033[0m.', file=sys.stderr)
@@ -358,8 +364,6 @@ def main() -> int:
       signal.signal(signal.SIGINT, handle_signal)
 
       client.stop_event = stop_event
-
-      client.qdb.store.build_indexed_fields(quiet=True)
 
       return runserver(client.db_path, client)
 
