@@ -264,11 +264,11 @@ Q artist name(autechre,"the cure") song:++title
 
 ### Root Index Functions
 
-| Function   | Syntax              | Description                                                        | Applies to |
-| ---------- | ------------------- | ------------------------------------------------------------------ | ---------- |
-| `@autoid`  | `@autoid(<INDEX>)`  | Generate a **HKEY** for the given index                            | `W`        |
-| `@recall`  | `@recall(<INDEX>)`  | Recall **HKEY**S previously stored with `QQ` (cleared after usage) | `Q`, `W`   |
-| `@peeq`    | `@peeq(<INDEX>)`    | Same as `@recall` but keeps **HKEY**S in memory                    | `Q`, `W`   |
+| Function   | Syntax              | Description                                                        | Applies to       |
+| ---------- | ------------------- | ------------------------------------------------------------------ | ---------------- |
+| `@autoid`  | `@autoid(<INDEX>)`  | Generate a **HKEY** for the given index                            | `W`              |
+| `@recall`  | `@recall(<INDEX>)`  | Recall **HKEY**S previously stored with `QQ` (cleared after usage) | `Q`, `W`, `HDEL` |
+| `@peeq`    | `@peeq(<INDEX>)`    | Same as `@recall` but keeps **HKEY**S in memory                    | `Q`, `W`, `HDEL` |
 
 > → Prepending `!` operator to `@recall` or `@peeq` negates the results.
 
