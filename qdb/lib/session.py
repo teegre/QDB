@@ -74,6 +74,16 @@ def runserver(session_path: str, client: object):
     print(e, file=sys.stderr)
     return 1
 
+  if isset('log'):
+    logging.basicConfig(
+        filename=client.qdb.store.database_path+'.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s: %(message)s',
+        datefmt='%Y-%m-%dT%H:%M:%S'
+    )
+    logger = logging.getLogger(__name__)
+    logger.info(f'{getsessionenv()}: session opened')
+
   server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
   server.bind(sock_path)
   server.listen(1)
@@ -84,6 +94,8 @@ def runserver(session_path: str, client: object):
       conn, _ = server.accept()
       with conn:
         cmd = conn.recv(4096).decode().strip()
+        if isset('log'):
+          logger.info(f'received: {cmd}')
         if cmd.upper() == 'PING':
           if isset('quiet'):
             conn.sendall(b'\x01\x02\x030\n')
@@ -99,17 +111,25 @@ def runserver(session_path: str, client: object):
           command = splitcmd(cmd)
           usr, pwd = command[1], command[2]
           if usr != getuser():
+            if isset('log'):
+              logger.warn('received unauthorized connection')
             conn.sendall(b'\x01\x02Unauthorized connection.\n\x031\n')
             continue
           try:
             authorize(client.qdb.users, usr, pwd)
+            if isset('log'):
+              logger.info('connection successful')
             conn.sendall(b'\x01\x02\x030\n')
             continue
           except QDBAuthenticationError:
+            if isset('log'):
+              logger.warn('connection refused')
             conn.sendall(b'\x01\x02Connection refused\n\x031\n')
             continue
 
         if cmd.upper() == 'CLOSE':
+          if isset('log'):
+            logger.info(f'{getsessionenv()}: closing session')
           if isset('quiet'):
             conn.sendall(b'\x01\x02\x030\n')
             break
@@ -130,7 +150,7 @@ def runserver(session_path: str, client: object):
           err = stderr.getvalue().encode()
           payload = b'\x01' + out + b'\x02' + err + b'\x03' + str(ret).encode() + b'\n'
           conn.sendall(payload)
-        except KeyboardInterrupt:
+        except KeyboardInterrupt: # HOW?
           conn.sendall(b'\x01\x02\x031\n')
           break
         except QDBError as e:
@@ -138,6 +158,8 @@ def runserver(session_path: str, client: object):
           continue
         except Exception as e:
           # TODO LOG ME!
+          if isset('log'):
+            logger.error(f'internal error: {e}')
           continue
         finally:
           sys.stdout, sys.stderr = oldout, olderr

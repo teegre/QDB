@@ -316,6 +316,7 @@ def main() -> int:
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
   parser.add_argument('-d', '--dump', help='dump database as W commands', action='store_true')
+  parser.add_argument('-g', '--log', help='session mode logger', action='store_true')
   parser.add_argument('-v', '--version', action='version', version=f'\x1b[1mQDB\x1b[0m version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
 
@@ -337,6 +338,9 @@ def main() -> int:
 
   if args.nofield:
     setenv('hushf')
+
+  if args.log:
+    setenv('log')
 
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
@@ -376,7 +380,7 @@ def main() -> int:
     if isserver(client.db_name):
       sock_path = getsockpath(client.db_name)
       try:
-        if args.command.upper() != 'PING':
+        if args.command.upper() != 'PING' and args.username:
           ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
           args.password = ''
           if int(ret) == 1:

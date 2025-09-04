@@ -24,6 +24,7 @@ from qdb.lib.users import QDBUsers, QDBAuthType
 __ENV__ = {
     'debug'  : '__QDB_DEBUG__',
     'hushf'  : '__QDB_HUSHF__',
+    'log'    : '__QDB_LOG__',
     'pwd'    : '__QDB_PWD__',
     'pipe'   : '__QDB_PIPE__',
     'quiet'  : '__QDB_QUIET__',
