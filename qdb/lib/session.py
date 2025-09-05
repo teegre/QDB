@@ -78,18 +78,18 @@ def runserver(session_path: str, client: object):
     logging.basicConfig(
         filename=client.qdb.store.database_path+'.log',
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s: %(message)s',
+        format='%(asctime)s|%(levelname)s: %(message)s',
         datefmt='%Y-%m-%dT%H:%M:%S'
     )
     logger = logging.getLogger(__name__)
-    logger.info(f'{getsessionenv()}: session opened')
+    logger.info(f'<-- {getsessionenv()}: session opened')
 
   server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
   server.bind(sock_path)
   server.listen(1)
 
   while not client.stop_event.is_set():
-    r, _, _ = select.select([server], [], [], 0.5)
+    r, _, _ = select.select([server], [], [], 0.01)
     if r:
       conn, _ = server.accept()
       with conn:
@@ -157,13 +157,12 @@ def runserver(session_path: str, client: object):
           conn.sendall(b'\x01\x02' + str(e).encode() + b'\n\x031\n')
           continue
         except Exception as e:
-          # TODO LOG ME!
           if isset('log'):
             logger.error(f'internal error: {e}')
           continue
         finally:
           sys.stdout, sys.stderr = oldout, olderr
-          client.stop_event.wait(0.5)
+          client.stop_event.wait(0.01)
   server.close()
   os.unlink(sock_path)
   sessions = loadsessions()
@@ -172,6 +171,9 @@ def runserver(session_path: str, client: object):
     savesessions(sessions)
   else:
     os.remove(__SESSIONS_PATH__)
+
+  if isset('log'):
+    logger.info(f'{getsessionenv()}: session closed -->')
 
   return 0
 
