@@ -24,6 +24,7 @@ from qdb.lib.users import QDBUsers, QDBAuthType
 __ENV__ = {
     'debug'  : '__QDB_DEBUG__',
     'hushf'  : '__QDB_HUSHF__',
+    'log'    : '__QDB_LOG__',
     'pwd'    : '__QDB_PWD__',
     'pipe'   : '__QDB_PIPE__',
     'quiet'  : '__QDB_QUIET__',
@@ -228,6 +229,21 @@ def spinner():
   while True:
     for c in chars:
       yield c
+
+def loader():
+  frames = [
+      '*     ',
+      '**    ',
+      '***   ',
+      ' ***  ',
+      '  *** ',
+      '   ***',
+      '    **',
+      '     *'
+  ]
+  while True:
+    for f in frames:
+      yield f
 
 def splitcmd(cmd: str) -> list[str]:
   token = ''

@@ -54,11 +54,6 @@ class QDBStore:
       self.keystore, self.indexes, self.refs, self.indexes_map, self.reverse_refs = self.io.rebuild(partial=True)
 
   def initialize(self):
-    if self.io.isdatabase:
-      cache, indexed_fields = self.io.load_cache()
-      self.datacache.load(cache, indexed_fields)
-      if not self.datacache.isindexed and self.indexes:
-        self.build_indexed_fields()
     self.keystore, self.indexes, self.indexes_map, self.refs, self.reverse_refs = self.io.rebuild()
     if not self.users.hasusers and '@QDB_USERS' in self.keystore:
       raise QDBNoAdminError('Access denied.')
@@ -87,9 +82,6 @@ class QDBStore:
   def compact(self, force: bool=False):
     if self.haschanged and not isset('repl'):
       self.commit(quiet=True)
-    if self.datacache.haschanged and not isset('repl') and self.indexes:
-      self.build_indexed_fields(quiet=True)
-      self.io.save_cache(*self.datacache.dump())
     self.keystore = self.io.compact(refs=self.refs, force=force)
 
   def purge(self):
@@ -138,7 +130,8 @@ class QDBStore:
     if entry.timestamp <= self.datacache.get_key_timestamp(key):
       return self.datacache.read(key)
     value = self.io.read(entry, key)
-    self.datacache.write(key, value)
+    if (isset('session') or isset('repl') or isset('pipe')):
+      self.datacache.write(key, value)
     return value
 
   def read_hash(self, hkey: str, dump: bool=False) -> dict:

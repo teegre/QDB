@@ -62,6 +62,7 @@ class QDB:
         'HLEN':    self.hlen,
         'HUSH':    self.hush,
         'HUSHF':   self.hushf,
+        'ID':      self.getid,
         'IDX' :    self.idx,
         'IDXF':    self.idxf,
         'KEYS':    self.keys,
@@ -646,11 +647,21 @@ class QDB:
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
-    is_index = self.store.is_index(index_or_key)
-    if is_index:
-      keys = self.store.get_index_keys(index_or_key).copy()
-    else:
-      keys = [index_or_key]
+
+    try:
+      index_or_key, keys, neg = self._recall(index_or_key)
+      if keys and neg:
+        keys = sorted(set(keys) ^ self.store.get_index_keys(index_or_key))
+    except QDBError as e:
+      print(f'Q: {e}', file=sys.stderr)
+      return 1
+
+    if not keys:
+      is_index = self.store.is_index(index_or_key)
+      if is_index:
+        keys = self.store.get_index_keys(index_or_key).copy()
+      else:
+        keys = [index_or_key]
 
     err = 0
 
@@ -673,7 +684,7 @@ class QDB:
           print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)
           continue
       if fields:
-        self.store.write(key, kv, old_kv)
+        err += self.store.write(key, kv, old_kv)
     return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
@@ -779,6 +790,24 @@ class QDB:
     if isset('repl'):
       print('Exists.' if result else 'Does not exist.')
     return 0 if result else 1
+
+  @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
+  def getid(self, index: str, field: str, value: str) -> int:
+    if not self.store.isdatabase:
+      if isset('repl'):
+        msg = '* no data'
+      else:
+        msg = f'* error: `{self.store.database_name}`, no such database.'
+      raise QDBNoDatabaseError(msg)
+    if not self.store.is_index(index):
+      raise QDBError(f'* id: `{index}`, no such index.')
+    if not isset('session') and not isset('repl'):
+      return self.q(index, f'$id:#{field}={value}')
+    result = self.store.datacache.get_id(index, field, unquote(value))
+    if result:
+      print(result)
+      return 0
+    raise QDBError('* id: no data.')
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:

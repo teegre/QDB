@@ -10,18 +10,19 @@ import sys
 import threading
 
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, sleep
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
-from qdb.lib.session import runserver, isserver, getsockpath
+from qdb.lib.session import runserver, isserver, getsockpath, loadsessions
 from qdb.lib.utils import (
     authorize,
     getuser,
     isset,
+    loader,
     list_sessions,
     setenv,
     spinner,
@@ -46,12 +47,18 @@ def opensession(database_path: str):
   if isserver(db_name, database_path):
     raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
+  sessions = loadsessions()
+  session_count = len(sessions)
+
   subprocess.Popen(
       [sys.executable, __file__, database_path, '__QDB_RUNSERVER__'],
       stdout=subprocess.DEVNULL,
       stderr=subprocess.DEVNULL,
       env=os.environ.copy()
   )
+
+  while not (s := loadsessions()) or len(s) <= session_count:
+    sleep(0.25)
 
   if not isset('quiet'):
     print(f'\x1b[1m{db_name}\x1b[0m: session \033[32mopened\033[0m.', file=sys.stderr)
@@ -227,8 +234,23 @@ class QDBClient:
     return response.lower() == 'y'
 
   def run_repl(self):
-    print(f'\x1b[1mQDB\x1b[0m version {__version__}')
+    def load_animation(stop_event: threading.Event):
+      load = iter(loader())
+      while not stop_event.is_set():
+        print(f'\r{next(load)}', end='')
+        sleep(0.1)
+
     setenv('repl')
+
+    stop_event = threading.Event()
+    thread = threading.Thread(target=load_animation, args=(stop_event,))
+    self.hide_cursor()
+    thread.start()
+    self.qdb.store.build_indexed_fields(quiet=True)
+    stop_event.set()
+    thread.join()
+    print(f'\r\x1b[1mQDB\x1b[0m version {__version__}')
+    self.show_cursor()
 
     try:
       readline.read_history_file(self.history_file)
@@ -271,6 +293,7 @@ class QDBClient:
         print('QDB: `--pipe` option is missing.', file=sys.stderr)
         return 1
     if pipe:
+      self.qdb.store.build_indexed_fields(quiet=True)
       return self.pipe_commands()
     if command is not None:
       return self.execute(command)
@@ -293,6 +316,7 @@ def main() -> int:
   parser.add_argument('-u', '--username', metavar='username')
   parser.add_argument('-w', '--password', metavar='password')
   parser.add_argument('-d', '--dump', help='dump database as W commands', action='store_true')
+  parser.add_argument('-g', '--log', help='session mode logger', action='store_true')
   parser.add_argument('-v', '--version', action='version', version=f'\x1b[1mQDB\x1b[0m version {__version__}')
   parser.add_argument('command', help='QDB command', nargs='?', default=None)
 
@@ -314,6 +338,9 @@ def main() -> int:
 
   if args.nofield:
     setenv('hushf')
+
+  if args.log:
+    setenv('log')
 
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
@@ -353,7 +380,7 @@ def main() -> int:
     if isserver(client.db_name):
       sock_path = getsockpath(client.db_name)
       try:
-        if args.command.upper() != 'PING':
+        if args.command.upper() != 'PING' and args.username:
           ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
           args.password = ''
           if int(ret) == 1:
