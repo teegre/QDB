@@ -121,6 +121,9 @@ def neg(value: str) -> str:
     return str(-value)
   return str(value)
 
+def replace(value: str, src: str, dst: str) -> str:
+  return value.replace(src, dst)
+
 FUNCTIONS = {
     '@abs':       abs_,
     '@date':      todate,
@@ -134,6 +137,7 @@ FUNCTIONS = {
     '@now':       now,
     '@nowiso':    nowiso,
     '@nowreal':   nowreal,
+    '@replace':   replace,
     '@time':      totime,
     '@year':      year,
 }
@@ -142,13 +146,20 @@ def expand(expr: str, value: str=None, write: bool=False) -> str:
   expanded = expr = unquote(expr)
   value = unquote(value) if value is not None else value
   func = unwrap(expr, extract_func=True)
+  args = None
 
   if write:
     if (arg := unwrap(expr)) != expr:
-      value = unquote(arg)
+      if value and arg and value != arg:
+        args = [unquote(a) for a in arg.split(',')]
+      else:
+        value = unquote(arg)
 
   if func in FUNCTIONS:
-    expanded = FUNCTIONS[func](value)
+    if args:
+      expanded = FUNCTIONS[func](value, *args)
+    else:
+      expanded = FUNCTIONS[func](value)
     return expanded
 
   if func and func[0] == '@':
