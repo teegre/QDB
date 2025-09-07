@@ -332,43 +332,6 @@ class QDBIO:
     self._active_refs.seek(0, os.SEEK_END)
     self._active_refs_size = self._active_refs.tell()
 
-  def save_cache(self, cache_data: BytesIO, indexed_fields: BytesIO):
-    if not self._archive:
-      return
-    if '.cache' in self._archive.getnames():
-      self._remove('.cache')
-    if '.idx' in self._archive.getnames():
-      self._remove('.idx')
-    with tarfile.open(self._database_path, 'a') as tar:
-      cacheinfo = tarfile.TarInfo('.cache')
-      cacheinfo.mode = 0o600
-      QDBUsers.set_user_info(cacheinfo)
-      cacheinfo.size = cache_data.seek(0, os.SEEK_END)
-      cache_data.seek(0)
-      cacheinfo.mtime = time.time()
-      tar.addfile(cacheinfo, cache_data)
-
-      fieldsinfo = tarfile.TarInfo('.idx')
-      fieldsinfo.mode = 0o600
-      QDBUsers.set_user_info(fieldsinfo)
-      fieldsinfo.size = indexed_fields.seek(0, os.SEEK_END)
-      indexed_fields.seek(0)
-      fieldsinfo.mtime = cacheinfo.mtime
-      tar.addfile(fieldsinfo, indexed_fields)
-
-  def load_cache(self) -> tuple[bytes, BytesIO]:
-    if not self._archive:
-      return
-    try:
-      cache_data = self._archive.extractfile('.cache')
-    except KeyError:
-      cache_data = None
-    try:
-      indexed_fields = self._archive.extractfile('.idx')
-    except KeyError:
-      indexed_fields = None
-    return cache_data.read() if cache_data else b'{}', indexed_fields if indexed_fields else None
-
   def flush(self, refs: dict=None, quiet: bool=False) -> str:
     if self._active_file:
       self._active_file.flush()
@@ -576,13 +539,6 @@ class QDBIO:
         usersinfo = self._archive.getmember(self.users.filename)
         usersinfo.mode = 0o600
         new.addfile(usersinfo, self._archive.extractfile(self.users.filename))
-      if '.cache' in self._archive.getnames():
-        cacheinfo = self._archive.getmember('.cache')
-        new.addfile(cacheinfo, self._archive.extractfile('.cache'))
-      if '.idx' in self._archive.getnames():
-        idxinfo = self._archive.getmember('.idx')
-        idxinfo.mode = 0o600
-        new.addfile(idxinfo, self._archive.extractfile('.idx'))
     except IOError as e:
       new.close()
       os.remove(new.name)
