@@ -291,7 +291,7 @@ Functions used in field values.
 | `@nowreal`   | `@nowreal`                  | Current date/time as a floating-point number timestamp          |
 | `@nowiso`    | `@nowiso`                   | Current date/time as a string                                   |
 | `@replace`   | `@replace(<SRC>,<DEST>)`    | Replace **SRC** string with **DEST** (applies to `W`)           |
-| `@time`      | `@time(<FIELD>)`            | Convert a timestamp to a time string                            |
+| `@time`      | `@time(<FIELD>)`            | Convert a duration in seconds to a human readable time string   |
 | `@year`      | `@year[(FIELD/VALUE)]`      | Extract the year as a four-digit string from a timestamp        |
 
 > → A *timestamp* is a number of seconds since the Epoch.
