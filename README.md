@@ -330,7 +330,7 @@ Q transaction @date(date)^2025-08 @[sum:amount]
 ## CLI
 
 ```
-usage: qdb [-h] [-l] [-p] [-q] [-f] [-u username] [-w password] [-d] [-v]
+usage: qdb [-h] [-l] [-p] [-q] [-f] [-u username] [-w password] [-d] [-g] [-v]
            [database] [command]
 
 Command Line Interface For the QDB database engine.
@@ -348,6 +348,7 @@ options:
   -u, --username username
   -w, --password password
   -d, --dump            dump database as W commands
+  -g, --log             session mode logger
   -v, --version         show program's version number and exit
 
 If no option is provided, starts an interactive shell.
