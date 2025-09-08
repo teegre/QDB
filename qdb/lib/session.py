@@ -61,6 +61,19 @@ def setsession(client: object) -> str:
 
   return f'/tmp/qdb-{db_user}-{db_name}.sock'
 
+def listsessions() -> int:
+  sessions = loadsessions()
+  if not sessions:
+    print('* no active session.', file=sys.stderr)
+    return 1
+  for session, p in sessions.items():
+    user = p.partition(',')[2].split('-')[1]
+    print(f'* \x1b[1m{session}\x1b[0m ({user})')
+  print()
+  count = len(sessions)
+  print(f'{count} active session{"s" if count > 1 else ""} found.', file=sys.stderr)
+  return 0
+
 def getsockpath(session_name: str, user: str=None) -> str:
   currentuser = getuser() if user is None else user
   return f'/tmp/qdb-{currentuser}-{session_name}.sock'

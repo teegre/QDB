@@ -17,13 +17,18 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from qdb import __version__
 from qdb.lib.exception import QDBError
 from qdb.lib.qdb import QDB
-from qdb.lib.session import runserver, isserver, getsockpath, loadsessions
+from qdb.lib.session import (
+    getsockpath,
+    isserver,
+    listsessions,
+    loadsessions,
+    runserver,
+)
 from qdb.lib.utils import (
     authorize,
     getuser,
     isset,
     loader,
-    list_sessions,
     setenv,
     spinner,
     splitcmd,
@@ -327,7 +332,7 @@ def main() -> int:
     if disallowed:
       print('QDB: \x1b[3m--sessions\x1b[0m cannot be combined with other options.', file=sys.stderr)
       return 1
-    return list_sessions()
+    return listsessions()
 
   if args.pipe and (args.command or not has_piped_input()):
     print('QDB: too many options.', file=sys.stderr)
