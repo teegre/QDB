@@ -181,6 +181,10 @@ def coerce_number(x: Any) -> Any:
   Return 'x' as is otherwise.
   '''
   if is_numeric(x):
+    if str(x)[0] in '-+':
+      s = str(x)[0]
+      d = str(x)[1:]
+      return float(s+d) if not d.isdigit() else int(s+d)
     return float(x) if not x.isdigit() else int(x)
   return x
 

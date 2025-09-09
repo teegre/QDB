@@ -56,7 +56,7 @@ class QDBStore:
   def initialize(self):
     self.keystore, self.indexes, self.indexes_map, self.refs, self.reverse_refs = self.io.rebuild()
     if not self.users.hasusers and '@QDB_USERS' in self.keystore:
-      raise QDBNoAdminError('Access denied.')
+      raise QDBNoAdminError('access denied.')
     self.precompute_paths()
 
   def deinitialize(self):
@@ -90,7 +90,7 @@ class QDBStore:
 
   def list_files(self):
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
     self.io.list()
 
   def write(self, key: str, value: str|dict, old_values: dict=None, refs: list=[])  -> int:
@@ -121,7 +121,7 @@ class QDBStore:
   def read(self, key: str, read_hash: bool=False) -> str | dict | None:
     ''' Read data for the given key '''
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
     entry = self.keystore.get(key)
     if entry is None:
       return None
@@ -137,7 +137,7 @@ class QDBStore:
   def read_hash(self, hkey: str, dump: bool=False) -> dict:
     ''' Return the hash associated to the given hkey '''
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
     value = self.read(hkey, read_hash=True)
 
     if value and not dump:
@@ -174,7 +174,7 @@ class QDBStore:
     and mark it for deletion
     '''
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
 
     if key in self.keystore:
       if self.has_ref(key):
@@ -210,13 +210,13 @@ class QDBStore:
   def recall_hkeys(self, index: str, peek: bool=False) -> list:
     hkeys =  self.last_hkey.get(index) if peek else self.last_hkey.pop(index, None)
     if hkeys is None:
-      raise QDBHkeyError(f'Error: no HKEYS to recall for index `{index}`.')
+      raise QDBHkeyError(f'no \x1b[3mhkeys\x1b[0m to recall for index `{index}`.')
     return sorted(hkeys)
 
   def dump(self) -> None:
     ''' Dump current database in json format '''
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
 
     for key in self.keystore:
      if self.isoption(key):
@@ -657,7 +657,7 @@ class QDBStore:
 
   def database_schema(self):
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
     graph = defaultdict(set)
     all_children = set()
     unrelated = set()
@@ -725,7 +725,7 @@ class QDBStore:
   @property
   def database_size(self) -> int:
     if not self.io.isdatabase:
-      raise QDBNoDatabaseError(f'QDB: Error: `{self.io._database_path}` no such database.')
+      raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
     return len([k for k in self.keystore if k not in OPTIONS])
 
   @property

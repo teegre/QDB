@@ -48,34 +48,34 @@ class QDBParser:
     if unwrap(field.name) not in valid_fields + excepted:
       suggestions = difflib.get_close_matches(field.name, valid_fields, n=3, cutoff=0.5)
 
-      msg = f'Error: `{field.name}` is not a valid field for `{index}`'
+      msg = f'`{field.name}` is not a valid field for `{index}`'
       msg += '.' if not context else f' in `{context}`.'
 
       if suggestions:
         raise QDBParseError(
             msg +
-            f'\nDid you mean: {', '.join(suggestions)}?'
+            f'\n* did you mean: {', '.join(suggestions)}?'
         )
       else:
         raise QDBParseError(
             msg +
-            f'\nAvailable fields: {', '.join(valid_fields)}'
+            f'\n* available fields: {', '.join(valid_fields)}'
         )
 
   def validate_aggregate(self, index, func: str, field: str) -> None:
     if func not in AGGFUNC:
       suggestions = difflib.get_close_matches(func, AGGFUNC, n=3, cutoff=0.5)
-      msg = f'Error: `{func}` no such aggregate function in `{index}:@[{func}:{field}]`.'
+      msg = f'`{func}` no such aggregate function in `{index}:@[{func}:{field}]`.'
 
       if suggestions:
         raise QDBParseError(
             msg +
-            f'\nDid you mean {', '.join(suggestions)}?'
+            f'\n* did you mean {', '.join(suggestions)}?'
         )
       else:
         raise QDBParseError(
             msg +
-            f'\nAvailable aggregate functions: {', '.join(sorted(AGGFUNC))}'
+            f'\n* available aggregate functions: {', '.join(sorted(AGGFUNC))}'
         )
 
   def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[QDBParserCond]:
@@ -91,7 +91,7 @@ class QDBParser:
 
       values_raw = in_match.group('values')
       if not values_raw or not values_raw.strip():
-        raise QDBParseError(f'Error: missing values in: `{part}`')
+        raise QDBParseError(f'missing values in: `{part}`')
 
       values = [
           coerce_number(v.strip()) if not is_virtual(field)
@@ -100,7 +100,7 @@ class QDBParser:
       ]
 
       if not values:
-        raise QDBParseError(f'Error: missing values in: `{part}`')
+        raise QDBParseError(f'missing values in: `{part}`')
 
       if field not in fields:
         fields.append(QDBParserField(
@@ -132,7 +132,7 @@ class QDBParser:
     # )
 
     if not match:
-      raise QDBParseError(f'Error: invalid expression: `{part}`')
+      raise QDBParseError(f'invalid expression: `{part}`')
 
     groups = match.groupdict()
     field = groups['field'].strip()
@@ -146,7 +146,7 @@ class QDBParser:
       sort.append({'order': SORTPREFIX[groups['sort']], 'field': field})
 
     if not groups['value'] and groups['op']:
-      raise QDBParseError(f'Error: missing value in condition: `{part}`')
+      raise QDBParseError(f'missing value in condition: `{part}`')
 
     if groups['op']:
       return QDBParserCond(
@@ -182,7 +182,7 @@ class QDBParser:
             else:
               stack.append(c)
       if stack:
-        raise QDBParseError(f'Error: unbalanced quotes in expression: `{expr}`.')
+        raise QDBParseError(f'unbalanced quotes in expression: `{expr}`.')
 
     def safe_split_colon(s: str) -> list:
       parts = []
@@ -205,9 +205,9 @@ class QDBParser:
         else:
           cur += c
       if br_depth != 0:
-        raise QDBParseError(f'Error: mismatched brackets in expression: `{expr}`.')
+        raise QDBParseError(f'mismatched brackets in expression: `{expr}`.')
       if pr_depth != 0:
-        raise QDBParseError(f'Error: mismatched parentheses in expression: `{expr}`')
+        raise QDBParseError(f'mismatched parentheses in expression: `{expr}`')
 
       if cur:
         parts.append(cur)
@@ -217,7 +217,7 @@ class QDBParser:
     expr_safe = q_r.sub(store_quoted, expr)
 
     if not expr_safe.strip():
-      raise QDBParseError('Error: empty expression.')
+      raise QDBParseError('empty expression.')
 
     parts = safe_split_colon(expr_safe)
     validate_quoted_expr(expr_safe)
@@ -229,7 +229,7 @@ class QDBParser:
       index = index_hint or self.main_index
 
     if expr == '*':
-      raise QDBParseError('Error: `*` only allowed after an index.')
+      raise QDBParseError('`*` only allowed after an index.')
 
     if parts == ['*']:
       return QDBParserExpr(
@@ -241,7 +241,7 @@ class QDBParser:
       )
 
     if '*' in parts:
-      raise QDBParseError('Error: `*` only allowed after an index.')
+      raise QDBParseError('`*` only allowed after an index.')
 
     fields = []
     sort_info = []
@@ -260,7 +260,7 @@ class QDBParser:
         aggs = agg_match.group('aggs')
 
         if not aggs:
-          raise QDBParseError(f'Error: invalid syntax: `@[{aggs}]`')
+          raise QDBParseError(f'invalid syntax: `@[{aggs}]`')
 
         item_r = r'(?P<sort>\+\+|--)?(?P<op>\w+):(?P<field>[$@]?\w+(?:\([^\)]+\))?|\*)'
 

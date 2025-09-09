@@ -15,7 +15,7 @@ from time import perf_counter, sleep
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb import __version__
-from qdb.lib.exception import QDBError
+from qdb.lib.exception import QDBError, QDBSessionError
 from qdb.lib.qdb import QDB
 from qdb.lib.session import (
     getsockpath,
@@ -42,7 +42,7 @@ def dbname(db_path: str) -> str:
   db_path = os.path.abspath(db_path)
   name, ext = os.path.splitext(os.path.basename(db_path))
   if ext and ext.lower() != '.qdb' and not os.path.exists(db_path):
-    raise QDBError(f'Error: \x1b[1m{name+ext}\x1b[0m, invalid database name.')
+    raise QDBError(f'\x1b[1m{name+ext}\x1b[0m, invalid database name.')
   if not ext:
     db_path += '.qdb'
   return name
@@ -50,7 +50,7 @@ def dbname(db_path: str) -> str:
 def opensession(database_path: str):
   db_name = dbname(database_path)
   if isserver(db_name, database_path):
-    raise QDBError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
+    raise QDBSessionError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
 
   sessions = loadsessions()
   session_count = len(sessions)
@@ -66,7 +66,7 @@ def opensession(database_path: str):
     sleep(0.25)
 
   if not isset('quiet'):
-    print(f'\x1b[1m{db_name}\x1b[0m: session \033[32mopened\033[0m.', file=sys.stderr)
+    print(f'* \x1b[1m{db_name}\x1b[0m: session \033[32mopened\033[0m.', file=sys.stderr)
 
 def sendcommand(sock_path, command) -> int:
   try:
@@ -74,7 +74,7 @@ def sendcommand(sock_path, command) -> int:
       try:
         client.connect(sock_path)
       except FileNotFoundError:
-        raise QDBError(f'Error: \x1b[1msession\x1b[0m is \x1b[31mclosed\x1b[0m.')
+        raise QDBSessionError(f'\x1b[1msession\x1b[0m is \x1b[31mclosed\x1b[0m.')
 
       client.sendall((command.strip() + '\n').encode())
 
@@ -82,7 +82,7 @@ def sendcommand(sock_path, command) -> int:
       while True:
         chunk = client.recv(4096)
         if not chunk:
-          raise QDBError('Error: no response from server.')
+          raise QDBSessionError('no response from server.')
         chunks.append(chunk)
         if b'\x03' in chunk:
           break
@@ -105,11 +105,11 @@ def sendcommand(sock_path, command) -> int:
       try:
         return int(ret)
       except ValueError:
-        raise QDBError(f'Error: invalid return code from server: {ret}')
+        raise QDBSessionError(f'Error: invalid return code from server: {ret}')
 
   except ConnectionRefusedError:
     os.unlink(sock_path)
-    raise QDBError('Error: unable to connect to server.')
+    raise QDBSessionError('Error: unable to connect to server.')
 
 class QDBCompleter:
   def __init__(self, qdb: QDB):
@@ -135,7 +135,7 @@ class QDBClient:
     if not isserver(self.db_name, self.db_path):
       self.qdb = QDB(self.db_path, load=QDB.do_load_database(command))
       if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
-        raise QDBError(f'Error: `{username}`, unknown user.')
+        raise QDBError(f'`{username}`, unknown user.')
       if self.qdb.users.hasusers and not isset('user'):
         authorize(self.qdb.users, username, password)
       if password:
@@ -160,7 +160,7 @@ class QDBClient:
     try:
       parts = splitcmd(command)
     except ValueError as e:
-      print(f'QDB: {e}.', file=sys.stderr)
+      print(f'* {e}.', file=sys.stderr)
       return 1
     if not parts:
       return 0
@@ -175,7 +175,7 @@ class QDBClient:
       try:
         return func()
       except TypeError:
-        print(f'{cmd.upper()}: arguments missing.', file=sys.stderr)
+        print(f'\x1b[1m{cmd.lower()}\x1b[0m: arguments missing.', file=sys.stderr)
         return 1
 
   def runserver(self) -> int:
@@ -210,14 +210,18 @@ class QDBClient:
         if line_count % 10000 == 0:
           self.qdb.store.commit(quiet=True)
         if ret != 0:
-          print(f'QDB: Line {line_count}: command failed: `{line.strip("\n")}`.`', file=sys.stderr)
+          print(
+              f'\x1b[1m\x1b[31merror\x1b[0m line {line_count}: command failed.\n'
+              f'* `{line.strip("\n")}`.`',
+              file=sys.stderr
+          )
           return 1
         if not isset('quiet'):
           print(f'\r{next(spin)} {line_count}', end='', file=sys.stderr)
         line_count += 1
     except KeyboardInterrupt:
       print()
-      print(f'QDB: Interrupted by user at line {line_count}.', file=sys.stderr)
+      print(f'* \x1b[1m\x1b[31merror\x1b: interrupted by user at line {line_count}.', file=sys.stderr)
     finally:
       self.show_cursor()
 
@@ -290,12 +294,12 @@ class QDBClient:
       except QDBError as e:
         print(e, file=sys.stderr)
       except Exception as e:
-        print(f'Internal error: {e}', file=sys.stderr)
+        print(f'* \x1b[1m\x1b[31minternalerror\x1b[0m: {e}', file=sys.stderr)
 
   def process_commands(self, command: str=None, pipe: bool=False):
     if has_piped_input():
       if not pipe:
-        print('QDB: `--pipe` option is missing.', file=sys.stderr)
+        print('* \x1b[1m\x1b[31merror:\x1b[0m `--pipe` option is missing.', file=sys.stderr)
         return 1
     if pipe:
       self.qdb.store.build_indexed_fields(quiet=True)
@@ -315,7 +319,7 @@ def main() -> int:
   group.add_argument('-l', '--sessions', help='list active sessions', action='store_true')
   group.add_argument('database', help='path to a QDB database or name of a QDB session', nargs='?')
 
-  parser.add_argument('-p', '--pipe', help='reads commands from stdin', action='store_true')
+  parser.add_argument('-p', '--pipe', help='read commands from stdin', action='store_true')
   parser.add_argument('-q', '--quiet', help='be quiet', action='store_true')
   parser.add_argument('-f', '--nofield', help='never show field names', action='store_true')
   parser.add_argument('-u', '--username', metavar='username')
@@ -330,12 +334,12 @@ def main() -> int:
   if args.sessions:
     disallowed = {k for k, v in vars(args).items() if v not in (None, False) and k != 'sessions'}
     if disallowed:
-      print('QDB: \x1b[3m--sessions\x1b[0m cannot be combined with other options.', file=sys.stderr)
+      print('* \x1b[3m--sessions\x1b[0m cannot be combined with other options.', file=sys.stderr)
       return 1
     return listsessions()
 
   if args.pipe and (args.command or not has_piped_input()):
-    print('QDB: too many options.', file=sys.stderr)
+    print('* \x1b[1m\x1b[31merror\x1b[0m: too many options.', file=sys.stderr)
     return 1
 
   if args.quiet:
@@ -350,7 +354,7 @@ def main() -> int:
   try:
     client = QDBClient(args.database, args.username, args.password, command=args.command)
   except QDBError as e:
-    print('QDB:', e, file=sys.stderr)
+    print(e, file=sys.stderr)
     return 1
 
   if args.command:
@@ -359,7 +363,7 @@ def main() -> int:
       try:
         opensession(client.db_path)
       except QDBError as e:
-        print(f'QDB: {e}', file=sys.stderr)
+        print(e, file=sys.stderr)
         return 1
       return 0
 
@@ -379,7 +383,7 @@ def main() -> int:
     if args.command.upper() in ('CLOSE', 'PING'):
       if not isserver(client.db_name):
         user = getuser() if not args.username else args.username
-        print( f'User \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
+        print( f'* \x1b[1m\x1b[31msessionerror\x1b[0m: user \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
         return 1
 
     if isserver(client.db_name):
@@ -393,15 +397,15 @@ def main() -> int:
         ret = sendcommand(sock_path, args.command)
         return int(ret)
       except QDBError as e:
-        print(f'QDB: {e}', file=sys.stderr)
+        print(e, file=sys.stderr)
         return 1
 
   if isserver(client.db_name) and (not args.command or args.pipe):
     # no command in session mode, error.
     if args.pipe:
-      print(f'QDB: Error: session mode: \033[3m--pipe\033[0m not allowed.')
+      print(f'* \x1b[1m\x1b[31merror:\x1b[0m session mode: \x1b[3m--pipe\x1b[0m not allowed.')
     else:
-      print(f'QDB: Error: session mode: missing command.', file=sys.stderr)
+      print(f'* \x1b[1m\x1b[31msessionerror\x1b[0m: missing command.', file=sys.stderr)
     return 1
 
   if args.dump:

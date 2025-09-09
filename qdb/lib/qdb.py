@@ -16,6 +16,7 @@ from qdb.lib.exception import (
     QDBAuthenticationError,
     QDBError,
     QDBNoDatabaseError,
+    QDBQueryNoData,
 )
 from qdb.lib.functions import (
     expand,
@@ -99,12 +100,11 @@ class QDB:
         'USERS',
     ] if command is not None else True
 
-  def error(self, cmd: str=None, *args: str) -> int:
+  def error(self, cmd: str=None, *args: str):
     if cmd is not None:
-      print(f'{cmd}: arguments missing.', file=sys.stderr)
+      raise QDBError(f'{cmd}: arguments missing.')
     else:
-      print('QDB: Error: invalid command.', file=sys.stderr)
-    return 1
+      raise QDBError('invalid command.')
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def set(self, key: str, value: str) -> int:
@@ -132,8 +132,7 @@ class QDB:
         found += 1
         print(k)
     if found == 0:
-      print('KEYS: No key found.', file=sys.stderr)
-      return 1
+      raise QDBError('keys: no key found.')
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -151,7 +150,7 @@ class QDB:
     items are key/value pairs
     '''
     if len(items) % 2 != 0:
-      print('MSET: invalid number of arguments.', file=sys.stderr)
+      raise QDBError('mset: invalid number of arguments.')
       return 1
     err = 0
     for key, val in zip(items[::2], items[1::2]):
@@ -176,7 +175,7 @@ class QDB:
       if validate_key(key, confirm=True):
         err += self.delete(key)
         if err:
-          print(f'MDEL: key `{key}` not found.', file=sys.stderr)
+          raise QDBError(f'mdel: `{key}`, no such key.')
     return 1 if err > 0 else 0
 
   def _autoid(self, expr: str) -> str:
@@ -190,8 +189,8 @@ class QDB:
     if not m:
       if expr.lower().startswith('@autoid'):
         raise QDBError(
-            f'Error: invalid @autoid expression: `{expr}`.\n'
-             'Syntax: @autoid(index)'
+            f'invalid @autoid expression: `{expr}`.\n'
+             '* syntax: @autoid(index)'
         )
 
       return expr
@@ -207,8 +206,8 @@ class QDB:
     if not m:
       if expr.startswith(('@recall', '!@recall', '@peeq', '!@peeq')):
         raise QDBError(
-            f'Error: invalid @recall/@peeq expression: `{expr}`.\n'
-             'Syntax: @recall(index) | @peeq(index)'
+            f'invalid @recall/@peeq expression: `{expr}`.\n'
+             '* syntax: @recall(index) | @peeq(index)'
         )
 
       return expr, None, ''
@@ -225,17 +224,12 @@ class QDB:
     Create/update multiple members of a hash
     '''
     if len(members) % 2 != 0:
-      print(f'W: arguments mismatch. (missing field or value)', file=sys.stderr)
-      return 1
+      raise QDBError(f'arguments mismatch. (missing field or value)')
 
     keys = None
 
     hkey_or_index = self._autoid(hkey_or_index)
-    try:
-      hkey_or_index, keys, neg = self._recall(hkey_or_index)
-    except QDBError as e:
-      print(f'W: {e}', file=sys.stderr)
-      return 1
+    hkey_or_index, keys, neg = self._recall(hkey_or_index)
 
     if self.store.is_index(hkey_or_index):
       if keys is not None:
@@ -244,16 +238,11 @@ class QDB:
       else:
         keys = sorted(self.store.get_index_keys(hkey_or_index))
     else:
-      try:
-        validate_hkey(hkey_or_index)
-      except QDBError as e:
-        print(f'W: {e}', file=sys.stderr)
-        return 1
+      validate_hkey(hkey_or_index)
       keys = [hkey_or_index]
 
     if not keys:
-      print(f'W: `{hkey_or_index}` no such key or index.', file=sys.stderr)
-      return 1
+      raise QDBError(f'w: `{hkey_or_index}`, no such key or index.')
 
     err = 0
 
@@ -366,8 +355,7 @@ class QDB:
         rows.append({'row': row, 'sort_value': sort_data})
 
     if not rows:
-      print(f'Q: an unexpected error occured.', file=sys.stderr)
-      return 1
+      raise QDBError('q: an unexpected error occured.')
 
     # Sorting and output
     if index_fields is None:
@@ -471,7 +459,7 @@ class QDB:
           try:
             current_values[(index, f)] = expand(f, data[field])
           except (KeyError, TypeError):
-            raise QDBError(f'an unexpected error involving `{index}:{f}` occured.')
+            raise QDBError(f'q: an unexpected error involving `{index}:{f}` occured.')
         if row_meta.get('sort_value') is None and sort_data:
           for rule in sort_data:
             for f in fields:
@@ -547,29 +535,18 @@ class QDB:
   def q(self, index_or_key: str, *exprs: str) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if not index_or_key:
-      print(f'Q: missing index or hkey.', file=sys.stderr)
-      return 1
+      raise QDBError(f'q: missing index or hkey.')
 
-    try:
-      index_or_key, keys, neg = self._recall(index_or_key)
-      if keys is not None:
-        exprs = (f'$hkey{neg}(' + ','.join(keys) + ')',) + exprs
-    except QDBError as e:
-      print(f'Q: {e}', file=sys.stderr)
-      return 1
+    index_or_key, keys, neg = self._recall(index_or_key)
+    if keys is not None:
+      exprs = (f'$hkey{neg}(' + ','.join(keys) + ')',) + exprs
 
-    try:
-      tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
-    except QDBError as e:
-      print(f'Q: {e}', file=sys.stderr)
-      if isset('debug'):
-        raise
-      return 1
+    tree, fields_data, flat = self.Q.query(index_or_key, *exprs)
 
     root_index = next(iter(tree))
     index_fields: list = self.store.get_fields_from_index(root_index)
@@ -583,17 +560,10 @@ class QDB:
         exec_dur = 0
       return res
 
-    try:
-      all_rows = self._walk_tree(tree, root_index, fields_data)
-    except QDBError as e:
-      print(e, file=sys.stderr)
-      if isset('debug'):
-        raise
-      return 1
+    all_rows = self._walk_tree(tree, root_index, fields_data)
 
     if not all_rows:
-      print(f'Q: an unexpected error occured.', file=sys.stderr)
-      return 1
+      raise QDBError('q: an unexpected error occured.')
 
     # Sorting and output
     try:
@@ -621,17 +591,12 @@ class QDB:
   def qq(self, index: str, *exprs) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'QDB: no data.'
       else:
         msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
-    try:
-      hkeys = self.Q.query(index, *exprs, qq=True)
-    except QDBError as e:
-      # if not isset('quiet') and not isset('repl'):
-      #   print()
-      print(f'QQ: {e}', file=sys.stderr)
-      return 1
+
+    hkeys = self.Q.query(index, *exprs, qq=True)
 
     self.store.store_hkeys(sorted(hkeys, key=lambda k: coerce_number(k.split(':')[1])))
 
@@ -642,18 +607,14 @@ class QDB:
     ''' Delete a hash or an index or fields in a hash or in an index '''
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
 
-    try:
-      index_or_key, keys, neg = self._recall(index_or_key)
-      if keys and neg:
-        keys = sorted(set(keys) ^ self.store.get_index_keys(index_or_key))
-    except QDBError as e:
-      print(f'Q: {e}', file=sys.stderr)
-      return 1
+    index_or_key, keys, neg = self._recall(index_or_key)
+    if keys and neg:
+      keys = sorted(set(keys) ^ self.store.get_index_keys(index_or_key))
 
     if not keys:
       is_index = self.store.is_index(index_or_key)
@@ -680,8 +641,7 @@ class QDB:
           if self.store.is_refd_by(key, v):
             self.store.delete_ref_of_key(ref=v, hkey=key)
         except KeyError:
-          print(f'HDEL: Warning: `{field}`, no such field in `{key}`.', file=sys.stderr)
-          continue
+          raise QDBError('hdel: `{field}`, no such field in `{key}`.')
       if fields:
         err += self.store.write(key, kv, old_kv)
     return 1 if err > 0 else 0
@@ -691,22 +651,19 @@ class QDB:
     '''QF <HKEY> <FIELD>: Return the value of a field in a hash.'''
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if self.store.exists(hkey):
       value = self.store.read_hash_field(hkey, field)
       if value == '?NOFIELD?':
-        print(f'QF: Error: `{field}`, no such field in `{hkey}`.', file=sys.stderr)
-        return 1
+        raise QDBError(f'qf: `{field}`, no such field in `{hkey}`.')
       if value:
         print(value)
         return 0
-      print(f'QF: {hkey}: no data.', file=sys.stderr)
-      return 0
-    print(f'QF: Error: `{hkey}`, no such hkey.', file=sys.stderr)
-    return 1
+      raise QDBQueryNoData(f'qf: {hkey}: no data.')
+    raise QDBError(f'qf: `{hkey}`, no such hkey.')
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hkey(self, key: str=None) -> int:
@@ -716,9 +673,9 @@ class QDB:
     '''
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if key:
       if self.store.is_index(key):
@@ -727,9 +684,9 @@ class QDB:
         keys = [key]
       if not keys:
         if key in self.store.keystore:
-          print(f'HKEYS: Error: `{key}` is not a hash.', file=sys.stderr)
+          raise QDBError(f'hkeys: `{key}` is not a hash.', file=sys.stderr)
         else:
-          print(f'HKEYS: Error: `{key}` key not found.', file=sys.stderr)
+          raise QDBError(f'hkeys: `{key}` key not found.', file=sys.stderr)
         return 1
       for k in keys:
         kv = self.store.read_hash(k)
@@ -751,9 +708,9 @@ class QDB:
   def idx(self) -> None:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     for i, index in enumerate(sorted(self.store.indexes), 1):
       print(f'{i}. {index}')
@@ -764,27 +721,27 @@ class QDB:
     '''IDXF <INDEX>: show fields for the given index.'''
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if self.store.is_index(index):
       fields = self.store.get_fields_from_index(index)
       print(f'{index}: {'|'.join([f for f in fields if not is_virtual(f)])}')
       return 0
-    print(f'Error: `{index}`, no such index.', file=sys.stderr)
+    raise QDBError(f'`{index}`, no such index.')
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def exists(self, index: str, field: str, value: str) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if not self.store.is_index(index):
-      raise QDBError(f'EXISTS: Error: `{index}`, no such index.')
+      raise QDBError(f'exists: `{index}`, no such index.')
     result = self.store.get_indexed(index, field, unquote(value)) != set()
     if isset('repl'):
       print('Exists.' if result else 'Does not exist.')
@@ -794,19 +751,19 @@ class QDB:
   def getid(self, index: str, field: str, value: str) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = '* no data'
+        msg = 'no data'
       else:
-        msg = f'* error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if not self.store.is_index(index):
-      raise QDBError(f'* id: `{index}`, no such index.')
+      raise QDBError(f'id: `{index}`, no such index.')
     if not isset('session') and not isset('repl'):
       return self.q(index, f'$id:#{field}={value}')
     result = self.store.datacache.get_id(index, field, unquote(value))
     if result:
       print(result)
       return 0
-    raise QDBError('* id: no data.')
+    raise QDBError('id: no data.')
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def hlen(self, index: str=None) -> int:
@@ -816,16 +773,16 @@ class QDB:
     '''
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: No data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if not index:
       for idx in sorted(self.store.indexes):
         print(f'{idx}: {self.store.index_len(idx)}')
       return 0
     if not self.store.is_index(index):
-      print(f'HLEN: Error: `{index}` no such index.', file=sys.stderr)
+      print(f'hlen: `{index}` no such index.', file=sys.stderr)
       return 1
     print(f'{self.store.index_len(index)}')
     return 0
@@ -837,20 +794,16 @@ class QDB:
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def compact(self):
-    try:
-      self.store.compact(force=True)
-    except QDBError as e:
-      print(e, file=sys.stderr)
-      return 1
+    self.store.compact(force=True)
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def dump(self) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = '--dump: No data'
+        msg = 'no data'
       else:
-        msg = f'--dump: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     try:
       self.store.dump_cmds()
@@ -862,7 +815,7 @@ class QDB:
   def purge(self):
     self.store.purge()
     if not isset('quiet'):
-      print('QDB: cache is purged.', file=sys.stderr)
+      print('* cache is purged.', file=sys.stderr)
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -881,19 +834,19 @@ class QDB:
   @authorization([QDBAuthType.QDB_ADMIN])
   def list_users(self) -> int:
     if self.users is None:
-      print('QDB: no users.', file=sys.stderr)
+      print('* no users.', file=sys.stderr)
       return 1
     users = self.users.list_users()
     if users:
       print(users)
       return 0
-    print('QDB: no users.', file=sys.stderr)
+    print('* no users.', file=sys.stderr)
     return 1
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def chpw(self):
     if not self.users.hasusers:
-      print('Error: no current user.')
+      print('* no current user.', file=sys.stderr)
       return 1
     user = self.users.getuser()
     auth = 'admin' if QDBAuthType(self.users.get_auth(user)) == QDBAuthType.QDB_ADMIN else 'readonly'
@@ -902,24 +855,21 @@ class QDB:
     except QDBAuthenticationCancelledError:
       return 1
     except QDBAuthenticationError:
-      print('Error: invalid password.')
+      print('* invalid password.', file=sys.stderr)
       return 1
     user_add(self.users, user, None, auth_type=auth, change=True)
-    print('QDB: password succesfully changed.')
+    print('* password succesfully changed.', file=sys.stderr)
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
   def list_files(self) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'LIST: No file.'
+        msg = '* no file.'
       else:
-        msg = f'LIST: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
-    try:
-      self.store.list_files()
-    except QDBError as e:
-      print(f'LIST: {e}', file=sys.stderr)
+    self.store.list_files()
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
@@ -931,14 +881,14 @@ class QDB:
   def card(self, A: str, B: str) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'CARD: No data'
+        msg = 'no data'
       else:
-        msg = f'CARD: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
     if not self.store.is_index(A):
-      raise QDBError(f'CARD: Error: `{A}`, no such index.')
+      raise QDBError(f'`{A}`, no such index.')
     if not self.store.is_index(B):
-      raise QDBError(f'CARD: Error: `{B}`, no such index.')
+      raise QDBError(f'`{B}`, no such index.')
     c = self.store.cardinality(A, B)
     l, r = str(int(c / 10)), str(c % 10)
     l = l.replace('1', '\x1b[1mone\x1b[0m').replace('2', '\x1b[1mmany\x1b[0m')

@@ -104,7 +104,7 @@ class QDBIO:
         self._archive = tarfile.open(self._database_path, 'r:')
         self.isdatabase = True
       except tarfile.ReadError:
-        raise QDBIOReadError(f'Error: `{self._database_path}` is not a valid QDB database.')
+        raise QDBIOReadError(f'`{self._database_path}` is not a valid \x1b[1mqdb\x1b[0m database.')
 
     if self.users is None:
       self.users = QDBUsers(self._database_path)
@@ -197,10 +197,10 @@ class QDBIO:
       try:
         logfile = self._get(name)
       except OSError:
-        raise QDBIOReadError('IO Error: database is closed.')
+        raise QDBIOReadError('database is closed.')
     
     if logfile is None:
-      raise QDBIOMissingLogError(f'IO Error: missing log entry: `{name}`.')
+      raise QDBIOMissingLogError(f'missing log entry: `{name}`.')
 
     logfile.seek(position)
     header = logfile.read(self.LOG_HEADER_SIZE)
@@ -213,7 +213,7 @@ class QDBIO:
     if value_type == b'-':
       return value.decode()
 
-    raise QDBIOReadError(f'IO Error: most likely due to a corrupted hint file: {name.replace('.log', '.hint')}')
+    raise QDBIOReadError(f'most likely due to a corrupted hint file: {name.replace('.log', '.hint')}')
 
   def write(self, key: str, value: str|dict, delete: bool=False) -> QDBInfo:
     if not self._active_file:
@@ -223,7 +223,7 @@ class QDBIO:
     self._active_file.seek(self._position)
     bytes_written = self._active_file.write(qdbdata.data)
     if bytes_written != len(qdbdata.data):
-      raise QDBIOWriteError(f'IO Error: could not write data for `{key}`.')
+      raise QDBIOWriteError(f'could not write data for `{key}`.')
     self._active_file_size += bytes_written
 
     qdbinfo = QDBInfo(
@@ -264,7 +264,7 @@ class QDBIO:
       tag, size = struct.unpack('<12sI', header)
 
       if tag != b'__QDB_REFS__':
-        raise QDBIOWriteError(f'IO Error: invalid references: {ref_file.name}.')
+        raise QDBIOWriteError(f'invalid references: {ref_file.name}.')
       data = json.loads(ref_file.read(size).decode())
 
       if size == 0:
@@ -326,7 +326,7 @@ class QDBIO:
     bytes_written = self._active_refs.write(data)
 
     if bytes_written != len(data):
-      raise QDBIOWriteError('IO Error: could not write references.')
+      raise QDBIOWriteError('could not write references.')
 
     self._active_refs.flush()
     self._active_refs.seek(0, os.SEEK_END)
@@ -368,7 +368,7 @@ class QDBIO:
           self._active_refs = None
           refs.clear()
       except IOError:
-        raise QDBIOWriteError('IO Error: new data could not be saved.')
+        raise QDBIOWriteError('new data could not be committed.')
 
       new_file = info.name
 
@@ -456,7 +456,7 @@ class QDBIO:
         position = log.tell()
 
     if warnings > 0:
-      raise QDBIODataIntegrityError('IO Error: database compaction failed.')
+      raise QDBIODataIntegrityError('database compaction failed.')
 
     keystore = {}
         
@@ -542,7 +542,7 @@ class QDBIO:
     except IOError as e:
       new.close()
       os.remove(new.name)
-      raise QDBIOCompactionError('IO Error: compaction failed during last stage.')
+      raise QDBIOCompactionError('compaction failed during last stage.')
     finally:
       tmplog.close()
       tmphint.close()
@@ -599,13 +599,13 @@ class QDBIO:
     except IOError:
       new.close()
       os.remove(new.name)
-      raise QDBIOCompactionError('IO Error: compaction failed.')
+      raise QDBIOCompactionError('compaction failed.')
     try:
       new.addfile(infouser, tmpuser)
     except IOError:
       new.close()
       os.remove(new.name)
-      raise QDBIOCompactionError('IO Error: compaction failed')
+      raise QDBIOCompactionError('compaction failed')
 
     tmpuser.close()
     os.replace(new.name, self._database_path)
@@ -630,7 +630,7 @@ class QDBIO:
     files = [f for f in self._archive.getnames() if f.endswith('.log')]
 
     if not files and self._archive.getnames():
-      raise QDBIODataIntegrityError('IO Error: No data could be found.')
+      raise QDBIODataIntegrityError('no data could be found.')
 
     for log in files:
       hint = log.replace('.log', '.hint')
@@ -669,7 +669,7 @@ class QDBIO:
       qdbdata = QDBData(header, value)
       
       if not self._validate_crc(key, qdbdata):
-        raise QDBIODataIntegrityError(f'IO Error: bad CRC: `{log.name}:{position}`')
+        raise QDBIODataIntegrityError(f'bad CRC: `{log.name}:{position}`')
 
       if partial and not key.startswith(b'@'):
         break

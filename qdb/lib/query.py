@@ -94,8 +94,8 @@ class QDBQuery:
         continue
       if unwrap(f.name) not in fields.get(i, []) and f.name != '*':
         raise QDBQueryError(
-            f'Error: field `{i}:{f}` is not used in any condition or aggregation.\n'
-            f'Consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
+            f'field `{i}:{f}` is not used in any condition or aggregation.\n'
+            f'* consider removing it from the query or using it as a filter like: `{i}:{f}=value`.'
         )
 
     return grouped
@@ -257,7 +257,7 @@ class QDBQuery:
             )
             reduced[f'{idx}:{op}{':'+f if f != '*' else ''}'] = { str(count_value): {} }
       except TypeError:
-        raise QDBQueryError(f'Error: mixed value types in `{unwrap(f)}`.')
+        raise QDBQueryError(f'mixed value types in `{unwrap(f)}`.')
 
     return reduced
 
@@ -286,7 +286,7 @@ class QDBQuery:
     # Check index_or_key validity
     root_index = index_or_key if self.store.is_index(index_or_key) else self.store.get_index(index_or_key)
     if not root_index:
-      raise QDBQueryError(f'Error: `{index_or_key}`, no such index or hkey.')
+      raise QDBQueryError(f'`{index_or_key}`, no such index or hkey.')
     
     def select_best_filter(exprs: list) -> dict:
       return min(exprs, key=lambda e: self.store.index_len(e.index), default={})
@@ -315,7 +315,7 @@ class QDBQuery:
             case '$hkey':
               hkey = v
           if not self.store.exists(hkey):
-            raise QDBQueryError(f'Error: `{hkey}`, no such hkey.')
+            raise QDBQueryError(f'`{hkey}`, no such hkey.')
           hkeys.add(hkey)
 
         match op:
@@ -324,7 +324,7 @@ class QDBQuery:
           case 'ni' | 'ne':
             return keys ^ hkeys
           case _:
-            raise QDBQueryError(f'Error: `{REVOP[op]}` not supported for virtual field `{f}` .')
+            raise QDBQueryError(f'`{REVOP[op]}` not supported for virtual field `{f}` .')
 
       if op in ('eq', 'in'):
         key_set = self.store.get_indexed(index, field, *val if op == 'in' else (val,))
@@ -505,7 +505,7 @@ class QDBQuery:
 
     # Stop here if nothing was found
     if not all_keys:
-      raise QDBQueryNoData('No data.')
+      raise QDBQueryNoData('no data.')
 
     if root_index != prm_index:
       root_keys = (
@@ -547,7 +547,7 @@ class QDBQuery:
         all_keys = all_keys[:limit] if random else sorted(all_keys)[:limit]
 
     if qq and agg_exprs:
-      raise QDBQueryError(f'Error: aggregation not supported.')
+      raise QDBQueryError(f'aggregation not supported.')
 
     # Unique index query, no expressions: build tree and return it
     if not parsed_exprs and len(selected_indexes) == 1:
@@ -596,20 +596,20 @@ class QDBQuery:
           if not base_dataset:
             if len(all_keys) == 1:
               if self.store.find_index_path(self.store.get_index(key), agg_index):
-                raise QDBQueryNoData(f'No `{agg_index}` data found.')
+                raise QDBQueryNoData(f'no `{agg_index}` data found.')
               if prm_index == root_index:
                 aggs = ','.join([o+':'+f for o, f in [(a.op, a.field) for a in agg_exprs[agg_index]]])
                 candidates = [i for i in selected_indexes if i not in (root_index, agg_exprs)]
                 msg = (
-                    f'Error: `{agg_index}:@[{aggs}]` '
+                    f'`{agg_index}:@[{aggs}]` '
                     f'cannot be resolved from root index `{root_index}`.'
                 )
                 if candidates:
-                  msg += f'\nTry using one of the following as the root index: {", ".join(candidates)}.'
+                  msg += f'\n* try using one of the following as the root index: {", ".join(candidates)}.'
                 else:
-                  msg += '\nNo alternative root index could resolve the aggregate target. '
+                  msg += '\n* no alternative root index could resolve the aggregate target. '
                   if 'count' in aggs:
-                    msg += '\nHint: aggregations like `@[count:*]` require traversing a valid path from the root index.'
+                    msg += '\n* hint: aggregations like `@[count:*]` require traversing a valid path from the root index.'
                 raise QDBQueryError(msg)
 
             # NO agg_index for key
@@ -646,7 +646,7 @@ class QDBQuery:
           # In get_refs we trust!
           refs = self.store.get_refs(key, idx)
           if not refs:
-            raise QDBQueryError(f'Error: no references: `{prm_index}` → `{idx}`.')
+            raise QDBQueryError(f'no references: `{prm_index}` → `{idx}`.')
           if qq:
             root_keys.update(refs)
             continue
@@ -664,7 +664,7 @@ class QDBQuery:
         refs_map[k][root_index].add(k)
 
     if not refs_map:
-      raise QDBQueryNoData('No data.')
+      raise QDBQueryNoData('no data.')
 
     flat = (
         not condition_exprs and

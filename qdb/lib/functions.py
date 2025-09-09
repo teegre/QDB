@@ -14,7 +14,7 @@ def abs_(value: str) -> str:
   value = coerce_number(value)
   if isinstance(value, (int, float)):
     return str(abs(value))
-  raise QDBError(f'@abs: type error: `{value}`.')
+  raise QDBError(f'@abs error: `{value}` has an invalid type.')
 
 def epoch(value: str=None, real: bool=False) -> str:
   if value is None:
@@ -23,8 +23,8 @@ def epoch(value: str=None, real: bool=False) -> str:
     dt = datetime.fromisoformat(value)
   except ValueError:
     raise QDBError(
-        f'QDB: {"@epochreal" if real else "@epoch"} error: invalid value `{value}`.'
-        '\nISO date/time string expected.'
+        f'{"@epochreal" if real else "@epoch"} error: invalid value `{value}`.'
+        '\n* ISO date/time string expected.'
     )
   return str(int(dt.timestamp())) if not real else str(dt.timestamp())
 
@@ -44,25 +44,25 @@ def todate(value: str) -> str:
   try:
     return datetime.fromtimestamp(coerce_number(value)).date().isoformat()
   except (ValueError, TypeError):
-    raise QDBError(f'QDB: @date error: `{value}`, invalid value.')
+    raise QDBError(f'@date error: `{value}`, invalid value.')
 
 def todatetime(value: str) -> str:
   try:
     return datetime.fromtimestamp(coerce_number(value)).isoformat()
   except (ValueError, TypeError):
-    raise QDBError(f'QDB: @datetime error: `{value}`, invalid timestamp.')
+    raise QDBError(f'@datetime error: `{value}`, invalid timestamp.')
 
 def year(value: str) -> str:
   try:
     return str(datetime.fromtimestamp(coerce_number(value)).year)
   except(ValueError, TypeError):
-    raise QDBError(f'QDB: @year error: `{value}`, invalid timestamp.')
+    raise QDBError(f'@year error: `{value}`, invalid timestamp.')
 
 def month(value: str) -> str:
   try:
     return str(datetime.fromtimestamp(coerce_number(value)).month)
   except(ValueError, TypeError):
-    raise QDBError(f'QDB: @month error: `{value}`, invalid timestamp.')
+    raise QDBError(f'@month error: `{value}`, invalid timestamp.')
 
 def totime(value: str):
   try:
@@ -101,7 +101,7 @@ def totime(value: str):
     return ', '.join(parts)
 
   except (ValueError, TypeError):
-    raise QDBError(f'QDB: @time error: `{value}`, invalid value.')
+    raise QDBError(f'@time error: `{value}`, invalid value.')
 
 def inc(value: str) -> str:
   value = coerce_number(value)
@@ -164,7 +164,7 @@ def expand(expr: str, value: str=None, write: bool=False) -> str:
     return expanded
 
   if func and func[0] == '@':
-    raise QDBError(f'QDB: Error: `{unwrap(expr, True)}`, no such function.')
+    raise QDBError(f'`{unwrap(expr, True)}`, no such function.')
 
   return expr if write else value
 
@@ -179,7 +179,7 @@ def unwrap(expr: str, extract_func: bool=False) -> str:
         expr = func
         break
       if func[0] == '@':
-        raise QDBError(f'Error: `{func}`, no such function.')
+        raise QDBError(f'`{func}`, no such function.')
       else:
         break
     else:

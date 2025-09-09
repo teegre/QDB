@@ -4,7 +4,11 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 class QDBError(Exception):
-  pass
+  def __init__(self, message):
+    self.message = message
+    super().__init__(self.message)
+  def __str__(self):
+    return f'* \x1b[1m\x1b[31m{type(self).__name__.lower()[3:]}\x1b[0m: {self.message}'
 
 class QDBNoDatabaseError(QDBError):
   pass
@@ -52,4 +56,7 @@ class QDBIOMissingLogError(QDBError):
   pass
 
 class QDBIOCompactionError(QDBError):
+  pass
+
+class QDBSessionError(QDBError):
   pass

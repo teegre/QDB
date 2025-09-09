@@ -45,7 +45,7 @@ def setsession(client: object) -> str:
     # a session has the same name, check session hash
     if session_hash == db_session_hash:
       # not supposed to happen
-      raise QDBError(f'Error: \x1b[1m{db_name}\x1b[0m, session already exists.')
+      raise QDBError(f'\x1b[1m{db_name}\x1b[0m, session already exists.')
 
     # add suffix to current name
     suffix = 1
