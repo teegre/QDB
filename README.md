@@ -322,10 +322,10 @@ W transaction:5765 date @epoch(2025-08-06) amount 738.92
 > → Convert "2025-08-06" to a Unix timestamp.
 
 ```
-Q transaction @date(date)^2025-08 @[sum:amount]
+Q transaction --@date(date)^2025-08 amount
 ```
 
-> → Show all transactions for August 2025.
+> → Show all transactions for August 2025 sorted by date (descending).
 
 ## CLI
 
@@ -342,7 +342,7 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   -l, --sessions        list active sessions
-  -p, --pipe            reads commands from stdin
+  -p, --pipe            read commands from stdin
   -q, --quiet           be quiet
   -f, --nofield         never show field names
   -u, --username username
@@ -353,6 +353,8 @@ options:
 
 If no option is provided, starts an interactive shell.
 ```
+
+The **CLI** is meant to be shell script friendly and as such, it returns **0** on **success**, **1** on **failure**.
 
 ### Execute a command
 
@@ -373,7 +375,7 @@ qdb --pipe music.qdb < data.qdbs
 ```
 qdb music.qdb
 
-QDB version 0.0.2
+QDB version 0.0.3
 * music2 (+) qdb ) Q artist name=kraftwerk album:++date:title
 kraftwerk|1974|autobahn
 kraftwerk|1975|radioactivity
@@ -402,6 +404,24 @@ Session mode allows to keep the database loaded in a background **QDB** server p
 To open a session: 
 ```
 qdb music.qdb OPEN
+
+```
+Once a session is opened for a database, it can be accessed with its *session name*, i.e:
+
+```
+# qdb -qf ~/qdb/databases/music.qdb OPEN
+* music: session opened.
+# qdb music 'Q artist #name=kraftwerk album:++date:title song:@[count:*]'
+1974|autobahn|5
+1975|radioactivity|12
+1977|trans-europe express|7
+1978|the man machine|6
+1981|computer world|7
+1986|electric café|6
+1991|the mix|11
+2003|tour de france|12
+2005|minimum-maximum|22
+2017|3-d the catalogue|42
 
 ```
 
