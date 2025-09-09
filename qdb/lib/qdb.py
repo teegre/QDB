@@ -117,12 +117,11 @@ class QDB:
     ''' Get a value '''
     k = unwrap(key)
     v = self.store.read(k)
-    value = expand(key, v)
-    if value is not None:
+    value = expand(key, v if v else k)
+    if value is not None and value != k:
       print(f'{value}')
       return 0
-    print(f'GET: `{k}`, no such KEY.', file=sys.stderr)
-    return 1
+    raise QDBError(f'get: `{k}`, no such key.')
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
   def keys(self) -> int:

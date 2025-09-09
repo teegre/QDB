@@ -14,7 +14,7 @@ def abs_(value: str) -> str:
   value = coerce_number(value)
   if isinstance(value, (int, float)):
     return str(abs(value))
-  raise QDBError(f'@abs: Type error: `{value}`.')
+  raise QDBError(f'@abs: type error: `{value}`.')
 
 def epoch(value: str=None, real: bool=False) -> str:
   if value is None:
@@ -116,6 +116,8 @@ def dec(value: str) -> str:
   return str(value)
 
 def neg(value: str) -> str:
+  if not value:
+    raise QDBError('@neg error: no value.')
   value = coerce_number(value)
   if isinstance(value, (int, float)):
     return str(-value)
@@ -144,7 +146,6 @@ FUNCTIONS = {
 
 def expand(expr: str, value: str=None, write: bool=False) -> str:
   expanded = expr = unquote(expr)
-  value = unquote(value) if value is not None else value
   func = unwrap(expr, extract_func=True)
   args = None
 
