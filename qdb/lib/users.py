@@ -80,6 +80,10 @@ class QDBUsers:
     self._users_ops.clear()
 
   @classmethod
+  def getuser(cls):
+    return os.environ.get('__QDB_USER__', 'anyone')
+
+  @classmethod
   def set_user_info(cls, info: TarInfo):
     uid = os.getuid()
     gid = os.getgid()
