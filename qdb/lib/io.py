@@ -340,7 +340,7 @@ class QDBIO:
         self._archive.close()
 
       if not isset('quiet') and not quiet:
-        print(f'QDB: Committing changes...', file=sys.stderr)
+        print(f'* committing changes...', file=sys.stderr)
 
       self._archive = tarfile.open(self._database_path, 'a')
 
@@ -387,7 +387,7 @@ class QDBIO:
       self.haschanged = True
 
       if not isset('quiet') and not quiet:
-        print(f'QDB: Done.', file=sys.stderr)
+        print(f'* done.', file=sys.stderr)
 
       return new_file
 
@@ -413,7 +413,7 @@ class QDBIO:
       return
 
     if not isset('quiet'):
-      print('QDB: Compacting database...', file=sys.stderr)
+      print('* compacting database...', file=sys.stderr)
 
     latest = {}
 
@@ -438,7 +438,7 @@ class QDBIO:
         qdbdata = QDBData(header, data)
 
         if not self._validate_crc(key, qdbdata):
-          print(f'IO Error: bad CRC: `{log.name}:{position}`', file=sys.stderr)
+          print(f'\x1b[3m\x1b[31mio error\x1b[0m: bad CRC: `{log.name}:{position}`', file=sys.stderr)
           warnings += 1
           break
 
@@ -554,7 +554,7 @@ class QDBIO:
     self._load()
 
     if not isset('quiet'):
-      print('QDB: Done.', file=sys.stderr)
+      print('* done.', file=sys.stderr)
 
     if self._archive and not isset('repl'):
       self._archive.close()
@@ -744,4 +744,4 @@ class QDBIO:
       self._archive.list(verbose=True)
       return
     if self.isdatabase:
-      print('QDB: Empty database.', file=sys.stderr)
+      print('* empty database.', file=sys.stderr)

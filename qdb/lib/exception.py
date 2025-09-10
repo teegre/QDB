@@ -61,10 +61,25 @@ class QDBKeyError(QDBError):
     self.message = message
     self.name = 'key error'
 
+class QDBIndexError(QDBError):
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'key error'
+
 class QDBHkeyError(QDBError):
   def __init__(self, message: str):
     self.message = message
     self.name = 'hkey error'
+
+class QDBReferenceError(QDBError):
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'reference error'
+
+class QDBCircularReferenceError(QDBError):
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'circular reference error'
 
 class QDBIODataIntegrityError(QDBError):
   def __init__(self, message: str):

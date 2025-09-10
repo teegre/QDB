@@ -6,12 +6,19 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from collections import defaultdict, deque
+from collections import defaultdict
 from functools import cache
 from io import BytesIO
 
 from qdb.lib.datacache import QDBCache
-from qdb.lib.exception import QDBNoDatabaseError, QDBNoAdminError, QDBHkeyError
+from qdb.lib.exception import (
+    QDBCircularReferenceError,
+    QDBHkeyError,
+    QDBIndexError,
+    QDBNoAdminError,
+    QDBNoDatabaseError,
+    QDBReferenceError,
+)
 from qdb.lib.io import QDBIO, QDBInfo
 from qdb.lib.ops import OPTIONS
 from qdb.lib.utils import isset, quote, is_virtual
@@ -68,11 +75,7 @@ class QDBStore:
     self.compact()
 
   def commit(self, quiet: bool=False) -> int:
-    try:
-      new_log = self.io.flush(self._refs_ops, quiet=quiet)
-    except QDBError as e:
-      print(f'QDB: {e}', file=sys.stderr)
-      return 1
+    new_log = self.io.flush(self._refs_ops, quiet=quiet)
     for key in self._pending_keys:
       self.keystore[key].filename = new_log
     self._pending_keys.clear()
@@ -160,13 +163,13 @@ class QDBStore:
     return self.datacache.get_key(index, field, *values)
 
   # TODO: Database options
-  # def get_opt(self, option: str) -> str | None:
+  # def getopt(self, option: str) -> str | None:
   #   opt = option.upper()
-  #   return self.read('@' + opt)
+  #   return self.read('@' + opt.upper())
 
-  # def set_opt(self, option: str, value: str) -> int:
+  # def setopt(self, option: str, value: str) -> int:
   #   opt = option.upper()
-  #   self.write('@' + opt, value)
+  #   self.write('@' + opt.upper(), value)
 
   def delete(self, key: str) -> int:
     '''
@@ -177,9 +180,8 @@ class QDBStore:
       raise QDBNoDatabaseError(f'`{self.io._database_path}` no such database.')
 
     if key in self.keystore:
-      if self.has_ref(key):
-        print(f'Error: key `{key}` is referenced.', file=sys.stderr)
-        return 1
+      if self.has_ref(key): # TODO check whether @CASCADE option is set
+        raise QDBReferenceError(f'`{key}` is referenced.')
       self.io.write(key, None, delete=True)
       if self.has_index(key):
         if self.is_refd(key):
@@ -257,10 +259,7 @@ class QDBStore:
     try:
       index, _ = hkey.split(':')
     except ValueError:
-      index = None
-    if not index or index.isdigit():
-      print(f'Error: invalid hkey name: `{index}`', file=sys.stderr)
-      return 1
+      raise QDBIndexError(f'invalid index: `{index}`.')
     self.indexes.add(index)
     return 0
 
@@ -301,7 +300,7 @@ class QDBStore:
       return 0
 
     if hkey == ref:
-      print(f'Error: `{hkey}` references itself! (ignored).', file=sys.stderr)
+      raise QDBCircularReferenceError(f'`{hkey}` references itself.')
       return 1
 
     if not isset('pipe'):
@@ -318,7 +317,7 @@ class QDBStore:
 
   def build_indexed_fields(self, quiet: bool=False):
     if not isset('quiet') and not quiet:
-      print('QDB: Indexing...', file=sys.stderr)
+      print('* indexing...', file=sys.stderr)
     indexed_fields = {}
     for index in self.indexes:
       fields = self.get_fields_from_index(index)
@@ -335,7 +334,7 @@ class QDBStore:
             indexed_fields.setdefault(k, {hkey})
     self.datacache.set_indexed_fields(indexed_fields)
     if not isset('quiet') and not quiet:
-      print('QDB: Done.', file=sys.stderr)
+      print('* done.', file=sys.stderr)
 
   def precompute_paths(self):
     for x1 in self.indexes:

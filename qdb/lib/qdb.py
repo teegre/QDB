@@ -141,7 +141,7 @@ class QDB:
     ''' delete a single key '''
     if validate_key(key, confirm=True):
       return self.store.delete(key)
-    print(f'GET: `{key}`, no such KEY.')
+    raise QDBError(f'del: `{key}`: no such key.')
     return 1
     
   @authorization([QDBAuthType.QDB_ADMIN])
@@ -373,7 +373,7 @@ class QDB:
 
     if not isset('quiet'):
       print(file=sys.stderr)
-      print(len(rows), 'rows' if len(rows) > 1 else 'row', 'found.', file=sys.stderr)
+      print('*', len(rows), 'rows' if len(rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
 
@@ -580,7 +580,7 @@ class QDB:
 
     if not isset('quiet'):
       print(file=sys.stderr)
-      print(len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
+      print('*', len(all_rows), 'rows' if len(all_rows) > 1 else 'row', 'found.', file=sys.stderr)
 
     return 0
 
@@ -685,15 +685,14 @@ class QDB:
         keys = [key]
       if not keys:
         if key in self.store.keystore:
-          raise QDBError(f'hkeys: `{key}` is not a hash.', file=sys.stderr)
+          raise QDBError(f'`{key}` is not a hash.', file=sys.stderr)
         else:
-          raise QDBError(f'hkeys: `{key}` key not found.', file=sys.stderr)
+          raise QDBError(f'`{key}`, no such hkey.', file=sys.stderr)
         return 1
       for k in keys:
         kv = self.store.read_hash(k)
         if not kv:
-          print(f'HKEY: `{k}` no such key or index.', file=sys.stderr)
-          return 1
+          raise QDBError(f'`{k}`, no such hkey.')
         print(f'{k}: {" | ".join([f for f in kv.keys() if not is_virtual(f)])}')
       return 0
     err = 0
@@ -783,8 +782,7 @@ class QDB:
         print(f'{idx}: {self.store.index_len(idx)}')
       return 0
     if not self.store.is_index(index):
-      print(f'hlen: `{index}` no such index.', file=sys.stderr)
-      return 1
+      raise QDBError(f'hlen: `{index}`, no such index.', file=sys.stderr)
     print(f'{self.store.index_len(index)}')
     return 0
 
