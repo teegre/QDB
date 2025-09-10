@@ -17,11 +17,6 @@ class QDBCacheEntry:
 
 class QDBCache:
 
-  #                  ikssz   kssz
-  IDXD_HEADER_SIZE = 8     + 8
-
-  HEADER_STRUCT = struct.Struct('<QQ')
-
   __cache: dict = {}
   __indexed_fields = {}
 
@@ -93,56 +88,11 @@ class QDBCache:
     self.haschanged = True
     return 0
 
-  def _serialize(self) -> BytesIO:
-    # iksz kssz ik ks
-    data = bytearray()
-    for ik, keys in self.__indexed_fields.items():
-      ikbytes = ik.encode()
-      iksz = len(ikbytes)
-      ks = ','.join(sorted(keys)).encode()
-      kssz = len(ks)
-      data.extend(struct.pack(
-          f'<QQ{iksz}s{kssz}s',
-          iksz,
-          kssz,
-          ikbytes,
-          ks
-      ))
-    return BytesIO(data)
-
-  def _deserialize(self, data: BytesIO):
-    self.__indexed_fields.clear()
-    raw = data.read()
-    position = 0
-    while position < len(raw):
-      iksz, kssz = self.HEADER_STRUCT.unpack_from(raw, position)
-      position += self.IDXD_HEADER_SIZE
-      ik = raw[position:position+iksz].decode()
-      position += iksz
-      ks = raw[position:position+kssz].decode().split(',')
-      position += kssz
-      self.__indexed_fields[ik] = set(ks)
-
-  def dump(self) -> tuple[BytesIO, BytesIO]:
-    return BytesIO(json.dumps(
-      {k: [ce.data, ce.timestamp] for k, ce in self.__cache.items()}
-      ).encode()), self._serialize()
-
   def drop(self, index: str, field: str, value: str, key: str):
     index_entry = f'{index}:{field}={value}'
     self.__indexed_fields[index_entry].discard(key)
     if not self.__indexed_fields[index_entry]:
       self.__indexed_fields.pop(index_entry, None)
-
-  def load(self, cache_data: bytes, indexed_data: bytes):
-    if cache_data:
-      self.__cache = {
-          k: QDBCacheEntry(v[0], v[1])
-          for k, v in json.loads(cache_data.decode()).items()
-      }
-    if indexed_data:
-      self._deserialize(indexed_data)
-    self.haschanged = False
 
   def set_indexed_fields(self, indexed_fields: dict):
     self.__indexed_fields = indexed_fields
@@ -161,4 +111,4 @@ class QDBCache:
     return self.__indexed_fields
 
   def __repr__(self):
-    return f'Cached: {len(self.__cache)}' if self.__cache else 'Cache: empty.'
+    return f'* cached: {len(self.__cache)}' if self.__cache else '* cache: empty.'
