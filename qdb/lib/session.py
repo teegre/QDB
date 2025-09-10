@@ -48,7 +48,7 @@ def setsession(client: object) -> str:
       raise QDBError(f'\x1b[1m{db_name}\x1b[0m, session already exists.')
 
     # add suffix to current name
-    suffix = 1
+    suffix = 2
     while db_name in sessions:
       db_name = f'{db_name}-{suffix}'
       suffix += 1
@@ -167,6 +167,7 @@ def runserver(session_path: str, client: object):
           conn.sendall(b'\x01\x02\x031\n')
           break
         except QDBError as e:
+          logger.error(e)
           conn.sendall(b'\x01\x02' + str(e).encode() + b'\n\x031\n')
           continue
         except Exception as e:

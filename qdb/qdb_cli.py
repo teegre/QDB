@@ -386,7 +386,7 @@ def main() -> int:
         return 1
 
     if isserver(client.db_name):
-      sock_path = getsockpath(client.db_name)
+      sock_path = getsockpath(client.db_name, user=args.username if args.username else None)
       try:
         if args.command.upper() != 'PING' and args.username:
           ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
