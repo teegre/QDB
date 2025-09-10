@@ -15,7 +15,7 @@ from time import perf_counter, sleep
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from qdb import __version__
-from qdb.lib.exception import QDBError, QDBSessionError
+from qdb.lib.exception import QDBError, QDBInternalError, QDBSessionError
 from qdb.lib.qdb import QDB
 from qdb.lib.session import (
     getsockpath,
@@ -175,8 +175,7 @@ class QDBClient:
       try:
         return func()
       except TypeError:
-        print(f'\x1b[1m{cmd.lower()}\x1b[0m: arguments missing.', file=sys.stderr)
-        return 1
+        raise QDBError(f'\x1b[1m{cmd.lower()}\x1b[0m: arguments missing.')
 
   def runserver(self) -> int:
     try:
@@ -294,7 +293,7 @@ class QDBClient:
       except QDBError as e:
         print(e, file=sys.stderr)
       except Exception as e:
-        print(f'* \x1b[1m\x1b[31minternalerror\x1b[0m: {e}', file=sys.stderr)
+        raise QDBInternalError(f'{e}')
 
   def process_commands(self, command: str=None, pipe: bool=False):
     if has_piped_input():
@@ -383,7 +382,7 @@ def main() -> int:
     if args.command.upper() in ('CLOSE', 'PING'):
       if not isserver(client.db_name):
         user = getuser() if not args.username else args.username
-        print( f'* \x1b[1m\x1b[31msessionerror\x1b[0m: user \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
+        print( f'* \x1b[1m\x1b[31msession mode error\x1b[0m: user \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
         return 1
 
     if isserver(client.db_name):
@@ -405,7 +404,7 @@ def main() -> int:
     if args.pipe:
       print(f'* \x1b[1m\x1b[31merror:\x1b[0m session mode: \x1b[3m--pipe\x1b[0m not allowed.')
     else:
-      print(f'* \x1b[1m\x1b[31msessionerror\x1b[0m: missing command.', file=sys.stderr)
+      print(f'* \x1b[1m\x1b[31msession mode error\x1b[0m: missing command.', file=sys.stderr)
     return 1
 
   if args.dump:

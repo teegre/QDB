@@ -59,7 +59,7 @@ def session_id(db_path) -> str:
   if not ext:
     name += '.qdb'
 
-def performance_measurement(_func=None, *, message: str='Executed'):
+def performance_measurement(_func=None, *, message: str='executed'):
   def decorator(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -76,9 +76,9 @@ def performance_measurement(_func=None, *, message: str='Executed'):
       else:
         p = d - args[0]._perf_info['Fetched']
         t = d
-        print(f'Fetched:   {args[0]._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
-        print(f'{message}: {p:.4f}s.', file=sys.stderr)
-        print(f'Total:     {d:.4f}s.', file=sys.stderr)
+        print(f'* fetched:   {args[0]._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
+        print(f'* {message.lower()}: {p:.4f}s.', file=sys.stderr)
+        print(f'* total:     {d:.4f}s.', file=sys.stderr)
       
       return result
     return wrapper
@@ -97,7 +97,7 @@ def authorization(auth_types: list[QDBAuthType]):
       auth = self.users.get_auth(user)
       if QDBAuthType(auth) in auth_types:
         return func(self, *args, **kwargs)
-      raise QDBUnauthorizedError('QDB: Unauthorized action.')
+      raise QDBUnauthorizedError('unauthorized action.')
     return wrap
   return decorator
 
@@ -105,19 +105,19 @@ def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change
   try:
     with open('/dev/tty', 'r') as stdin, open('/dev/tty', 'w') as stdout:
       if not username:
-        print('QDB: This database requires authentication.', file=sys.stderr)
-        stdout.write('Username: ')
+        print('* \x1b[1mthis database requires authentication\x1b[0m.', file=sys.stderr)
+        stdout.write('* username: ')
         stdout.flush()
         username = stdin.readline().strip()
       if not password:
-        password = getpass('Password: ' if not change else 'Current password: ', stream=stdout)
+        password = getpass('* password: ' if not change else 'Current password: ', stream=stdout)
   except (KeyboardInterrupt, EOFError):
       print()
-      raise QDBAuthenticationCancelledError('Authentication cancelled.')
+      raise QDBAuthenticationCancelledError('authentication cancelled.')
   except OSError:
     raise QDBError(
-        'Cannot prompt for credentials in pipe mode.'
-        '\nUse `--username` and `--password` options.'
+        'cannot prompt for credentials in pipe mode.'
+        '\n * use `--username` and `--password` options.'
     )
 
   qdbusers.authenticate(username, password) 
@@ -126,22 +126,22 @@ def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change
 def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None, change: bool=False):
   try:
     if not username:
-      print('[New user]')
-      username = input('Username: ')
+      print('* \x1b[1m[new user]\x1b[0m')
+      username = input('* username: ')
       if not username:
-        raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
+        raise QDBAuthenticationCancelledError('user creation cancelled.')
 
     if not password:
-      password1 = getpass('Password: ' if not change else 'New password: ')
+      password1 = getpass('* password: ' if not change else '* new password: ')
       if not password1:
-        raise QDBAuthenticationCancelledError('QDB: password is mandatory.')
-      password2 = getpass('Again: ')
+        raise QDBAuthenticationCancelledError('password is mandatory.')
+      password2 = getpass('* again: ')
       if password1 != password2:
-        raise QDBAuthenticationCancelledError('QDB: passwords do not match.')
+        raise QDBAuthenticationCancelledError('* passwords do not match.')
       password = password2
       del password1, password2
     if not auth_type:
-      auth_type = input('Authorization type (admin,[readonly]): ')
+      auth_type = input('* authorization type (admin,[readonly]): ')
     if not auth_type:
       auth = QDBAuthType.QDB_READONLY
     else:
@@ -152,17 +152,17 @@ def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_ty
           auth = QDBAuthType.QDB_READONLY
         case _:
           raise QDBAuthenticationCancelledError(
-              f'QDB: `{auth_type}`, invalid authorization type.'
-              '\nQDB: should be `admin` or `readonly`.'
+              f'`{auth_type}`, invalid authorization type.'
+              '\n* should be `admin` or `readonly`.'
           )
   except (KeyboardInterrupt, EOFError):
     print()
-    raise QDBAuthenticationCancelledError('QDB: user creation cancelled.')
+    raise QDBAuthenticationCancelledError('user creation cancelled.')
 
   if auth != QDBAuthType.QDB_ADMIN and not qdbusers.hasadmin:
     del password
     raise QDBNoAdminError(
-        'QDB: You MUST create an administrator before adding any other user.'
+        '* you \x1b[1mMUST\x1b[0m create an \x1b[1madministrator\x1b[0m before adding any other user.'
     )
 
   qdbusers.add_user(username, password, auth)
@@ -196,7 +196,7 @@ def validate_key(key: str, confirm: bool=False) -> bool | None:
   if not KEY_RE.match(key):
     if confirm:
       return False
-    raise QDBKeyError(f'Error: malformad KEY: `{key}`.')
+    raise QDBKeyError(f'malformed key: `{key}`.')
   if confirm:
     return True
 
@@ -205,14 +205,14 @@ def validate_hkey(hkey: str, confirm: bool=False) -> bool | None:
   if not HKEY_RE.match(hkey):
     if confirm:
       return False
-    raise QDBHkeyError(f'Error: malformed HKEY: `{hkey}`.')
+    raise QDBHkeyError(f'malformed hkey: `{hkey}`.')
   if confirm:
     return True
 
 def validate_field_name(field: str) -> None:
   FIELD_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9]*$')
   if not FIELD_RE.match(field):
-    raise QDBError('Error: malformed field name: `{field}`.')
+    raise QDBError('malformed field name: `{field}`.')
 
 
 def spinner():
@@ -264,7 +264,7 @@ def splitcmd(cmd: str) -> list[str]:
     tokens.append(token)
 
   if quoted:
-    raise QDBError(f'Error: unbalanced \x1b[1m{quote_char}\x1b[0m in expression.')
+    raise QDBError(f'unbalanced \x1b[1m{quote_char}\x1b[0m in expression.')
 
   return tokens
 

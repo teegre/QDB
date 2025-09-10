@@ -4,59 +4,99 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 class QDBError(Exception):
-  def __init__(self, message):
+  def __init__(self, message: str, name: str='error'):
     self.message = message
+    self.name = name
     super().__init__(self.message)
   def __str__(self):
-    return f'* \x1b[1m\x1b[31m{type(self).__name__.lower()[3:]}\x1b[0m: {self.message}'
+    return f'* \x1b[1m\x1b[31m{self.name}\x1b[0m: {self.message}'
 
 class QDBNoDatabaseError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'no database'
 
 class QDBAuthenticationError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'authentication error'
 
 class QDBAuthenticationCancelledError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'authentication error'
 
 class QDBNoAdminError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'no admin error'
 
 class QDBUnauthorizedError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'forbidden'
 
 class QDBUnknownUserError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'user error'
 
 class QDBParseError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'parse error'
 
 class QDBQueryError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'query error'
 
 class QDBQueryNoData(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'no data'
 
 class QDBKeyError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'key error'
 
 class QDBHkeyError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'hkey error'
 
 class QDBIODataIntegrityError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'data integrity error'
 
 class QDBIOReadError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'io read error'
 
 class QDBIOWriteError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'io write error'
 
 class QDBIOMissingLogError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'missing log error'
 
 class QDBIOCompactionError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'compaction error'
 
 class QDBSessionError(QDBError):
-  pass
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'session mode error'
+
+class QDBInternalError(QDBError):
+  def __init__(self, message: str):
+    self.message = message
+    self.name = 'internal error'

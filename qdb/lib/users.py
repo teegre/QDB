@@ -96,10 +96,6 @@ class QDBUsers:
     info.uname = uname
     info.gname = gname
 
-  @classmethod
-  def getuser(cls) -> str:
-    return os.getenv('__QDB_USER__')
-
   @property
   def hasadmin(self) -> bool:
     for userinfo in self.users.values():

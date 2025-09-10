@@ -29,6 +29,7 @@ from qdb.lib.utils import (
     authorization,
     authorize,
     coerce_number,
+    getuser,
     is_numeric,
     isset,
     is_virtual,
@@ -102,7 +103,7 @@ class QDB:
 
   def error(self, cmd: str=None, *args: str):
     if cmd is not None:
-      raise QDBError(f'{cmd}: arguments missing.')
+      raise QDBError(f'\x1b[3m{cmd}\x1b[0m: arguments missing.')
     else:
       raise QDBError('invalid command.')
 
@@ -591,9 +592,9 @@ class QDB:
   def qq(self, index: str, *exprs) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = 'QDB: no data.'
+        msg = 'no data.'
       else:
-        msg = f'QDB: Error: `{self.store.database_name}`, no such database.'
+        msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)
 
     hkeys = self.Q.query(index, *exprs, qq=True)
@@ -812,7 +813,7 @@ class QDB:
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
-  def purge(self):
+  def purge(self): # NOTE: Cache is not only purged, it is rebuilt.
     self.store.purge()
     if not isset('quiet'):
       print('* cache is purged.', file=sys.stderr)
@@ -848,7 +849,7 @@ class QDB:
     if not self.users.hasusers:
       print('* no current user.', file=sys.stderr)
       return 1
-    user = self.users.getuser()
+    user = getuser()
     auth = 'admin' if QDBAuthType(self.users.get_auth(user)) == QDBAuthType.QDB_ADMIN else 'readonly'
     try:
       authorize(self.users, username=user, change=True)
