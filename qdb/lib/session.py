@@ -94,7 +94,7 @@ def runserver(session_path: str, client: 'QDBClient'):
     logging.basicConfig(
         filename=client.qdb.store.database_path+'.log',
         level=logging.INFO,
-        format=f'{session_name}|%(asctime)s|%(levelname)s: %(message)s',
+        format=f'%(asctime)s|%(levelname)s({session_name}): %(message)s',
         datefmt='%Y-%m-%dT%H:%M:%S'
     )
     logger = logging.getLogger(__name__)
@@ -193,7 +193,7 @@ def runserver(session_path: str, client: 'QDBClient'):
     os.remove(__SESSIONS_PATH__)
 
   if isset('log'):
-    logger.info(f'{getsessionenv()}: session closed -->')
+    logger.info(f'session closed -->')
 
   return 0
 
