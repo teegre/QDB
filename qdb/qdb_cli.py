@@ -49,7 +49,7 @@ def dbname(db_path: str) -> str:
 
 def opensession(database_path: str):
   db_name = dbname(database_path)
-  if isserver(db_name, database_path):
+  if isserver(db_name):
     raise QDBSessionError(f'\x1b[1m{db_name}\x1b[0m is already opened.')
 
   sessions = loadsessions()
@@ -138,7 +138,7 @@ class QDBClient:
   def __init__(self, database: str, username: str=None, password: str=None, command: str=None):
     self.db_name = dbname(database)
     self.db_path = os.path.abspath(database)
-    if not isserver(self.db_name, self.db_path):
+    if not isserver(self.db_name):
       self.qdb = QDB(self.db_path, load=QDB.do_load_database(command))
       if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
         raise QDBError(f'`{username}`, unknown user.')

@@ -93,6 +93,7 @@ def runserver(session_path: str, client: 'QDBClient'):
   if isset('log'):
     logging.basicConfig(
         filename=client.qdb.store.database_path+'.log',
+        filemode='w',
         level=logging.INFO,
         format=f'%(asctime)s|%(levelname)s({session_name}): %(message)s',
         datefmt='%Y-%m-%dT%H:%M:%S'
@@ -112,6 +113,7 @@ def runserver(session_path: str, client: 'QDBClient'):
     if r:
       conn, _ = server.accept()
       with conn:
+        # response format \x01<stdin string>\x02<stderr string>\x01<return value>\n
         cmd = conn.recv(4096).decode().strip()
         if isset('log'):
           logger.info(f'received: {cmd}')
@@ -132,7 +134,7 @@ def runserver(session_path: str, client: 'QDBClient'):
           if usr != getuser():
             if isset('log'):
               logger.warn('received unauthorized connection')
-            conn.sendall(b'\x01\x02Unauthorized connection.\n\x031\n')
+            conn.sendall(b'\x01\x02unauthorized connection.\n\x031\n')
             continue
           try:
             authorize(client.qdb.users, usr, pwd)
@@ -143,7 +145,7 @@ def runserver(session_path: str, client: 'QDBClient'):
           except QDBAuthenticationError:
             if isset('log'):
               logger.warn('connection refused')
-            conn.sendall(b'\x01\x02Connection refused\n\x031\n')
+            conn.sendall(b'\x01\x02connection refused\n\x031\n')
             continue
 
         if cmd.upper() == 'CLOSE':
@@ -167,18 +169,19 @@ def runserver(session_path: str, client: 'QDBClient'):
           ret = client.execute(cmd)
           out = stdout.getvalue().encode()
           err = stderr.getvalue().encode()
-          payload = b'\x01' + out + b'\x02' + err + b'\x03' + str(ret).encode() + b'\n'
-          conn.sendall(payload)
+          response = b'\x01' + out + b'\x02' + err + b'\x03' + str(ret).encode() + b'\n'
+          conn.sendall(response)
         except KeyboardInterrupt: # HOW?
           conn.sendall(b'\x01\x02\x031\n')
           break
         except QDBError as e:
-          logger.error(e)
+          if isset('log'):
+            logger.error(e.name)
           conn.sendall(b'\x01\x02' + str(e).encode() + b'\n\x031\n')
           continue
         except Exception as e:
           if isset('log'):
-            logger.error(f'internal error: {e}')
+            logger.critical(f'internal error: {e}')
           continue
         finally:
           sys.stdout, sys.stderr = oldout, olderr
@@ -197,9 +200,6 @@ def runserver(session_path: str, client: 'QDBClient'):
 
   return 0
 
-def isserver(session_name: str, database_path: str=None) -> bool:
+def isserver(session_name: str) -> bool:
   session = getsession(session_name)
-  if database_path and session:
-    session_hash = session_path_encode(database_path)
-    return session_hash == session.partition(',')[0]
-  return False if not getsession(session_name) else True
+  return False if not session else True
