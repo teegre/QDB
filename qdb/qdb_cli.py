@@ -10,7 +10,7 @@ import sys
 import threading
 
 from pathlib import Path
-from time import perf_counter, sleep
+from time import perf_counter, sleep, monotonic
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
@@ -50,31 +50,37 @@ def dbname(db_path: str) -> str:
 def opensession(database_path: str):
   db_name = dbname(database_path)
   if isserver(db_name, database_path):
-    raise QDBSessionError(f'\x1b[1m{db_name}\x1b[0m: a session is already opened.')
+    raise QDBSessionError(f'\x1b[1m{db_name}\x1b[0m is already opened.')
 
   sessions = loadsessions()
   session_count = len(sessions)
 
-  subprocess.Popen(
+  p = subprocess.Popen(
       [sys.executable, __file__, database_path, '__QDB_RUNSERVER__'],
-      stdout=subprocess.DEVNULL,
+      # stdout=subprocess.DEVNULL,
       stderr=subprocess.DEVNULL,
       env=os.environ.copy()
   )
 
-  while not (s := loadsessions()) or len(s) <= session_count:
+  start = monotonic()
+  timeout = 5.0
+  while not (buffer := p.stdout):
+    s = loadsessions()
+    if len(s) > session_count:
+      break
+    if p.poll() is not None:
+      raise QDBSessionError('an error occured during session initialization.')
+    if monotonic() - start > timeout:
+      raise QDBSessionError('could not open session (timeout)')
     sleep(0.25)
 
-  if not isset('quiet'):
-    print(f'* \x1b[1m{db_name}\x1b[0m: session \033[32mopened\033[0m.', file=sys.stderr)
-
-def sendcommand(sock_path, command) -> int:
+def sendcommand(sock_path, command, user: str=None) -> int:
   try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
       try:
         client.connect(sock_path)
       except FileNotFoundError:
-        raise QDBSessionError(f'\x1b[1msession\x1b[0m is \x1b[31mclosed\x1b[0m.')
+        raise QDBSessionError(f'no session could be found for user `{getuser() if user is None else user}`.')
 
       client.sendall((command.strip() + '\n').encode())
 
@@ -105,11 +111,11 @@ def sendcommand(sock_path, command) -> int:
       try:
         return int(ret)
       except ValueError:
-        raise QDBSessionError(f'Error: invalid return code from server: {ret}')
+        raise QDBSessionError(f'invalid return code from server: {ret}')
 
   except ConnectionRefusedError:
     os.unlink(sock_path)
-    raise QDBSessionError('Error: unable to connect to server.')
+    raise QDBSessionError('unable to connect to server.')
 
 class QDBCompleter:
   def __init__(self, qdb: QDB):
@@ -389,11 +395,11 @@ def main() -> int:
       sock_path = getsockpath(client.db_name, user=args.username if args.username else None)
       try:
         if args.command.upper() != 'PING' and args.username:
-          ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}')
+          ret = sendcommand(sock_path, f'__qdbusrchk__ {args.username} {args.password}', args.username)
           args.password = ''
           if int(ret) == 1:
             return 1
-        ret = sendcommand(sock_path, args.command)
+        ret = sendcommand(sock_path, args.command, args.username)
         return int(ret)
       except QDBError as e:
         print(e, file=sys.stderr)

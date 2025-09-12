@@ -78,7 +78,10 @@ def getsockpath(session_name: str, user: str=None) -> str:
   currentuser = getuser() if user is None else user
   return f'/tmp/qdb-{currentuser}-{session_name}.sock'
 
-def runserver(session_path: str, client: object):
+def runserver(session_path: str, client: 'QDBClient'):
+  if not client.qdb.store.isdatabase:
+    print('nope', file=sys.stderr)
+    return 1
   try:
     client.qdb.store.build_indexed_fields(quiet=True)
     sock_path = setsession(client)
@@ -91,11 +94,14 @@ def runserver(session_path: str, client: object):
     logging.basicConfig(
         filename=client.qdb.store.database_path+'.log',
         level=logging.INFO,
-        format='%(asctime)s|%(levelname)s: %(message)s',
+        format=f'{session_name}|%(asctime)s|%(levelname)s: %(message)s',
         datefmt='%Y-%m-%dT%H:%M:%S'
     )
     logger = logging.getLogger(__name__)
-    logger.info(f'<-- {getsessionenv()}: session opened')
+    logger.info(f'<-- session opened')
+
+  if not isset('quiet'):
+    print(f'\x1b[1m{session_name}\x1b[0m: session \x1b[32mopened\x1b[0m')
 
   server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
   server.bind(sock_path)
@@ -142,7 +148,7 @@ def runserver(session_path: str, client: object):
 
         if cmd.upper() == 'CLOSE':
           if isset('log'):
-            logger.info(f'{getsessionenv()}: closing session')
+            logger.info(f'closing session')
           if isset('quiet'):
             conn.sendall(b'\x01\x02\x030\n')
             break
