@@ -47,9 +47,12 @@ def dbname(db_path: str) -> str:
     db_path += '.qdb'
   return name
 
-def opensession(database_path: str):
+def opensession(database_path: str, user: str=None):
+  if not os.path.exists(database_path):
+    raise QDBSessionError('cannot open a session for an non existing database.')
   db_name = dbname(database_path)
-  if isserver(db_name):
+  user = user if user else getuser()
+  if isserver(db_name, user, database_path):
     raise QDBSessionError(f'\x1b[1m{db_name}\x1b[0m is already opened.')
 
   sessions = loadsessions()
@@ -138,7 +141,7 @@ class QDBClient:
   def __init__(self, database: str, username: str=None, password: str=None, command: str=None):
     self.db_name = dbname(database)
     self.db_path = os.path.abspath(database)
-    if not isserver(self.db_name):
+    if not isserver(self.db_name, username, self.db_path):
       self.qdb = QDB(self.db_path, load=QDB.do_load_database(command))
       if self.qdb.store.isdatabase and not self.qdb.users.hasusers and (username or password):
         raise QDBError(f'`{username}`, unknown user.')
@@ -386,12 +389,12 @@ def main() -> int:
       return runserver(client.db_path, client)
 
     if args.command.upper() in ('CLOSE', 'PING'):
-      if not isserver(client.db_name):
+      if not isserver(client.db_name, args.username):
         user = getuser() if not args.username else args.username
         print( f'* \x1b[1m\x1b[31msession mode error\x1b[0m: user \x1b[1m{user}\x1b[0m has no \x1b[1m{client.db_name}\x1b[0m session.', file=sys.stderr)
         return 1
 
-    if isserver(client.db_name):
+    if isserver(client.db_name, args.username):
       sock_path = getsockpath(client.db_name, user=args.username if args.username else None)
       try:
         if args.command.upper() != 'PING' and args.username:
@@ -405,7 +408,7 @@ def main() -> int:
         print(e, file=sys.stderr)
         return 1
 
-  if isserver(client.db_name) and (not args.command or args.pipe):
+  if isserver(client.db_name, args.username) and (not args.command or args.pipe):
     # no command in session mode, error.
     if args.pipe:
       print(f'* \x1b[1m\x1b[31merror:\x1b[0m session mode: \x1b[3m--pipe\x1b[0m not allowed.')

@@ -24,8 +24,9 @@ def loadsessions() -> dict:
       return json.loads(f.read())
   return {}
 
-def session_path_encode(db_path: str):
-  return hashlib.sha1(f'{getuser()}:{db_path}'.encode()).hexdigest()
+def session_path_encode(db_path: str, user: str=None):
+  user = user if user else getuser()
+  return hashlib.sha1(f'{user}:{db_path}'.encode()).hexdigest()
 
 def getsession(session_name: str) -> str:
   sessions = loadsessions()
@@ -79,9 +80,6 @@ def getsockpath(session_name: str, user: str=None) -> str:
   return f'/tmp/qdb-{currentuser}-{session_name}.sock'
 
 def runserver(session_path: str, client: 'QDBClient'):
-  if not client.qdb.store.isdatabase:
-    print('nope', file=sys.stderr)
-    return 1
   try:
     client.qdb.store.build_indexed_fields(quiet=True)
     sock_path = setsession(client)
@@ -200,6 +198,10 @@ def runserver(session_path: str, client: 'QDBClient'):
 
   return 0
 
-def isserver(session_name: str) -> bool:
+def isserver(session_name: str, user: str=None, database_path: str=None) -> bool:
   session = getsession(session_name)
+  if session and database_path:
+    if os.path.exists(database_path):
+      session_hash = session_path_encode(database_path, user)
+      return session_hash == session.partition(',')[0]
   return False if not session else True
