@@ -556,7 +556,7 @@ class QDBIO:
     if not isset('quiet'):
       print('* done.', file=sys.stderr)
 
-    if self._archive and not isset('repl'):
+    if self._archive and not isset('repl') and not isset('session'):
       self._archive.close()
 
     self.haschanged = False
