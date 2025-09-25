@@ -376,7 +376,7 @@ qdb --pipe music.qdb < data.qdbs
 qdb music.qdb
 
 QDB version 0.0.3
-* music2 (+) qdb ) Q artist name=kraftwerk album:++date:title
+* music (+) qdb ) Q artist name=kraftwerk album:++date:title
 kraftwerk|1974|autobahn
 kraftwerk|1975|radioactivity
 kraftwerk|1977|trans-europe express
@@ -388,11 +388,11 @@ kraftwerk|2003|tour de france
 kraftwerk|2005|minimum-maximum
 kraftwerk|2017|3-d the catalogue
 
-10 rows found.
-Fetched:   0.0033s.
-Processed: 0.0017s.
-Total:     0.0050s.
-* music2 (+) qdb )
+* 10 rows found.
+* fetched:   0.0015s.
+* processed: 0.0018s.
+* total:     0.0033s.
+* music (+) qdb )
 ```
 <kbd>CTRL</kbd>+<kbd>C</kbd> cancels current input.
 <kbd>CTRL</kbd>+<kbd>D</kbd> exits the interactive shell.
