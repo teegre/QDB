@@ -37,6 +37,7 @@ from qdb.lib.utils import (
     setenv,
     user_add,
     unquote,
+    unsetenv,
     validate_hkey,
     validate_key,
 )
@@ -900,11 +901,27 @@ class QDB:
     return 0
 
   def hush(self) -> int:
-    setenv('quiet')
+    if isset('quiet'):
+      unsetenv('quiet')
+    else:
+      setenv('quiet')
+    if isset('repl'): # show state
+      if isset('quiet'):
+        print('* \x1b[1mhush\x1b[0m: on')
+      else:
+        print('* \x1b[1mhush\x1b[0m: off')
     return 0
 
   def hushf(self) -> int:
-    setenv('hushf')
+    if isset('hushf'):
+      unsetenv('hushf')
+    else:
+      setenv('hushf')
+    if isset('repl'): # show state
+      if isset('hushf'):
+        print('* \x1b[1mhushf\x1b[0m: on')
+      else:
+        print('* \x1b[1mhushf\x1b[0m: off')
     return 0
 
   def whoami(self):
