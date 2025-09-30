@@ -165,8 +165,7 @@ class QDB:
     ''' get multiple values '''
     err = 0
     for key in keys:
-      if validate_key(key, confirm=True):
-        err += self.get(key)
+      err += self.get(key)
     return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
