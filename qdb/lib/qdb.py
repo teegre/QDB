@@ -896,7 +896,11 @@ class QDB:
     return 0
 
   def echo(self, msg: str='') -> int:
-    print(unquote(msg))
+    msg = unquote(msg)
+    if msg.endswith('/'):
+      print(msg[:-1], end='')
+    else:
+      print(msg)
     return 0
 
   def hush(self) -> int:
