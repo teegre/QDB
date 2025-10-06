@@ -85,7 +85,8 @@ def sendcommand(sock_path, command, user: str=None) -> int:
       except FileNotFoundError:
         raise QDBSessionError(f'no session could be found for user `{getuser() if user is None else user}`.')
 
-      client.sendall((command.strip() + '\n').encode())
+
+      client.sendall((command.strip() + '\r\n').encode())
 
       chunks = []
       while True:
@@ -254,7 +255,7 @@ class QDBClient:
     def load_animation(stop_event: threading.Event):
       load = iter(loader())
       while not stop_event.is_set():
-        print(f'\r{next(load)}', end='')
+        print(f'\r[ {next(load)} ]', end='')
         sleep(0.1)
 
     setenv('repl')
