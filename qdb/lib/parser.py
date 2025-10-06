@@ -220,7 +220,7 @@ class QDBParser:
       in_quote = None
       escape = False
 
-      for c in s:
+      for pos, c in enumerate(s, 1):
         if escape:
           cur += c
           escape = False
@@ -257,9 +257,13 @@ class QDBParser:
         else:
           cur += c
       if br_depth != 0:
-        raise QDBParseError(f'mismatched brackets in expression: `{expr}`.')
+        raise QDBParseError(
+            f'mismatched brackets at position {pos} in expression:\n'
+            f'`{expr}`.')
       if pr_depth != 0:
-        raise QDBParseError(f'mismatched parentheses in expression: `{expr}`')
+        raise QDBParseError(
+            f'mismatched parentheses at position {pos} in expression:\n'
+            f'`{expr}`')
 
       if cur:
         parts.append(cur)
@@ -270,7 +274,7 @@ class QDBParser:
     if not expr_safe.strip():
       raise QDBParseError('empty expression.')
 
-    parts = safe_split_colon(expr)
+    parts = safe_split_colon(expr_safe)
     validate_quoted_expr(expr)
 
     if self.store.is_index(parts[0]):
@@ -337,6 +341,8 @@ class QDBParser:
           else:
             raise QDBParseError(f'syntax error in: `@[{item}]`')
       else:
+        for k, v in q_v.items():
+          part = part.replace(k, v)
         conditions.append(self._parse_condition(part, fields, sort_info))
 
     # Field validity check
