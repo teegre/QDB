@@ -112,9 +112,20 @@ def runserver(session_path: str, client: 'QDBClient'):
       conn, _ = server.accept()
       with conn:
         # response format \x01<stdin string>\x02<stderr string>\x01<return value>\n
-        cmd = conn.recv(4096).decode().strip()
+        chunks = []
+        while True:
+          data = conn.recv(4096)
+          if not data:
+            break
+          chunks.append(data)
+          if b'\r\n' in data:
+            break
+
+        cmd = b''.join(chunks).strip().decode()
+
         if isset('log'):
           logger.info(f'received: {cmd}')
+
         if cmd.upper() == 'PING':
           if isset('quiet'):
             conn.sendall(b'\x01\x02\x030\n')
@@ -174,7 +185,7 @@ def runserver(session_path: str, client: 'QDBClient'):
           break
         except QDBError as e:
           if isset('log'):
-            logger.error(e.name)
+            logger.error(e.name + ': ', e.message)
           conn.sendall(b'\x01\x02' + str(e).encode() + b'\n\x031\n')
           continue
         except Exception as e:
