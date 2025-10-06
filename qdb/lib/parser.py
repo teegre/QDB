@@ -12,7 +12,7 @@ from qdb.lib.exception import QDBParseError
 from qdb.lib.functions import  unwrap
 from qdb.lib.ops import OP, SORTPREFIX, AGGFUNC
 from qdb.lib.storage import QDBStore
-from qdb.lib.utils import coerce_number, is_virtual
+from qdb.lib.utils import coerce_number, is_virtual, unquote
 
 @dataclass
 class QDBParserField:
@@ -78,35 +78,63 @@ class QDBParser:
             f'\n* available aggregate functions: {', '.join(sorted(AGGFUNC))}'
         )
 
+  def _split_csv_quoted(self, s: str) -> list[str]:
+    vals, cur, in_quote, esc = [], '', None, False
+    for c in s:
+      if esc:
+        cur += c
+        esc = False
+        continue
+      if c == '\\':
+        cur += c
+        esc = True
+        continue
+      if c in ('"', "'"):
+        cur += c
+        in_quote = None if in_quote == c else c
+        continue
+      if c == ',' and not in_quote:
+        vals.append(cur.strip())
+        cur = ''
+      else:
+        cur += c
+    if cur.strip():
+      vals.append(cur.strip())
+
+    return vals
+
   def _parse_condition(self, part: str, fields: list, sort: list) -> Optional[QDBParserCond]:
-    # IN-style syntax: optional sort, field(value1[, ..., valueN])
+    # IN-style syntax: optional sort, field(value1[,..., valueN])
 
     in_match = re.match(
         r'^(?P<sort>\+\+|--)?(?P<field>[^@\s:!()]+)'
-        r'(?P<neg>!)?\((?P<values>[^\)]*)\)$', part
+        r'(?P<neg>!)?\((?P<body>.*)\)$', part
     )
 
     if in_match and part == unwrap(part, extract_func=True):
       field = in_match.group('field').strip()
 
-      values_raw = in_match.group('values')
+      values_raw = in_match.group('body')
       if not values_raw or not values_raw.strip():
         raise QDBParseError(f'missing values in: `{part}`')
 
-      values = [
-          coerce_number(v.strip()) if not is_virtual(field)
-          else v.strip()
-          for v in in_match.group('values').split(',')
-      ]
+      values = self._split_csv_quoted(values_raw)
 
       if not values:
-        raise QDBParseError(f'missing values in: `{part}`')
+        raise QDBParseError(f'missing values in: `{part}`.')
+
+      values = [
+          coerce_number(unquote(v.strip())) if not is_virtual(field)
+          else unquote(v.strip())
+          for v in in_match.group('body').split(',')
+      ]
 
       if field not in fields:
         fields.append(QDBParserField(
           field[1:] if field[0] == '#' else field,
           False if field[0] == '#' else True
         ))
+
       if in_match.group('sort'):
         sort.append({
           'order': SORTPREFIX[in_match.group('sort')],
@@ -189,8 +217,32 @@ class QDBParser:
       cur = ''
       br_depth = 0
       pr_depth = 0
+      in_quote = None
+      escape = False
 
-      for pos, c in enumerate(s):
+      for c in s:
+        if escape:
+          cur += c
+          escape = False
+          continue
+
+        if c == '\\':
+          cur += c
+          escape = True
+          continue
+
+        if c in ('"', "'"):
+          cur += c
+          if in_quote is None:
+            in_quote = c
+          elif in_quote == c:
+            in_quote = None
+          continue
+
+        if in_quote:
+          cur += c
+          continue
+
         if c == '(':
           pr_depth += 1
         if c == '[':
@@ -215,12 +267,11 @@ class QDBParser:
       return parts
 
     expr_safe = q_r.sub(store_quoted, expr)
-
     if not expr_safe.strip():
       raise QDBParseError('empty expression.')
 
-    parts = safe_split_colon(expr_safe)
-    validate_quoted_expr(expr_safe)
+    parts = safe_split_colon(expr)
+    validate_quoted_expr(expr)
 
     if self.store.is_index(parts[0]):
       index = parts[0]
@@ -252,9 +303,6 @@ class QDBParser:
     index_fields = self.store.get_fields_from_index(index)
 
     for part in parts:
-      for k, v in q_v.items():
-        part = part.replace(k, v)
-
       agg_match = re.match(r'^@\[(?P<aggs>[^\]]+)\]$', part)
       if agg_match:
         aggs = agg_match.group('aggs')
