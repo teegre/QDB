@@ -412,6 +412,9 @@ class QDBIO:
     if (not files or not self.haschanged) and not force:
       return
 
+    if len(files) == 1:
+      return
+
     if not isset('quiet'):
       print('* compacting database...', file=sys.stderr)
 
