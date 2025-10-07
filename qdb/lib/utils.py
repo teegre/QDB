@@ -110,7 +110,7 @@ def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change
         stdout.flush()
         username = stdin.readline().strip()
       if not password:
-        password = getpass('* password: ' if not change else 'Current password: ', stream=stdout)
+        password = getpass('* password: ' if not change else '* current password: ', stream=stdout)
   except (KeyboardInterrupt, EOFError):
       print()
       raise QDBAuthenticationCancelledError('authentication cancelled.')
