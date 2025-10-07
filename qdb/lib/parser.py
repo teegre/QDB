@@ -80,24 +80,29 @@ class QDBParser:
 
   def _split_csv_quoted(self, s: str) -> list[str]:
     vals, cur, in_quote, esc = [], '', None, False
+
     for c in s:
       if esc:
         cur += c
         esc = False
         continue
+
       if c == '\\':
         cur += c
         esc = True
         continue
+
       if c in ('"', "'"):
         cur += c
         in_quote = None if in_quote == c else c
         continue
+
       if c == ',' and not in_quote:
         vals.append(cur.strip())
         cur = ''
       else:
         cur += c
+
     if cur.strip():
       vals.append(cur.strip())
 
@@ -200,7 +205,16 @@ class QDBParser:
     def validate_quoted_expr(expr: str):
       stack = []
       quote_type = ''
+      esc = False
       for i, c in enumerate(expr):
+        if esc:
+          esc = False
+          continue
+
+        if c == '\\':
+          esc = True
+          continue
+
         if c in ('"', "'"):
           if i == 0:
             quote_type = c
@@ -209,6 +223,7 @@ class QDBParser:
               stack.pop()
             else:
               stack.append(c)
+
       if stack:
         raise QDBParseError(f'unbalanced quotes in expression: `{expr}`.')
 
@@ -218,17 +233,17 @@ class QDBParser:
       br_depth = 0
       pr_depth = 0
       in_quote = None
-      escape = False
+      esc= False
 
       for pos, c in enumerate(s, 1):
-        if escape:
+        if esc:
           cur += c
           escape = False
           continue
 
         if c == '\\':
           cur += c
-          escape = True
+          esc= True
           continue
 
         if c in ('"', "'"):
