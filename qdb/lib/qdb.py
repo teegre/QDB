@@ -73,7 +73,7 @@ class QDB:
         'MDEL':    self.mdel,
         'MGET':    self.mget,
         'MSET':    self.mset,
-        'PURGE':   self.purge,
+        'PURGE':   self.recache,
         'Q':       self.q,
         'QF':      self.get_field,
         'QQ':      self.qq,
@@ -811,10 +811,10 @@ class QDB:
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])
-  def purge(self): # NOTE: Cache is not only purged, it is rebuilt.
-    self.store.purge()
+  def recache(self): # NOTE: Cache is not only purged, it is rebuilt.
+    self.store.recache()
     if not isset('quiet'):
-      print('* cache is purged.', file=sys.stderr)
+      print('* cache rebuilt.', file=sys.stderr)
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN])

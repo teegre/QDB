@@ -83,7 +83,7 @@ class QDBCache:
     if key in self.__cache:
       del self.__cache[key]
 
-  def purge(self) -> int:
+  def recache(self) -> int:
     self.__cache.clear()
     self.haschanged = True
     return 0

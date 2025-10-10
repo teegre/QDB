@@ -87,8 +87,8 @@ class QDBStore:
       self.commit(quiet=True)
     self.keystore = self.io.compact(refs=self.refs, force=force)
 
-  def purge(self):
-    self.datacache.purge()
+  def recache(self):
+    self.datacache.recache()
     self.build_indexed_fields()
 
   def list_files(self):
