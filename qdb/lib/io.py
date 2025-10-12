@@ -280,7 +280,7 @@ class QDBIO:
             reverse.setdefault(ref, set()).add(hkey)
           continue
 
-        for op, rvalues in ops:
+        for op, rvalues in ops.items():
           if op == 'del':
             if rvalues == '__all__':
               for ref in refs.get(hkey, ()):
@@ -308,7 +308,7 @@ class QDBIO:
 
     if ref_file:
       self._active_refs = ref_file
-    if not self._active_refs:
+    if not self._active_refs or self._active_refs.closed:
       self._active_refs = self._new_tmp_file(origin=self._active_file.name)
 
     if ref_file:
