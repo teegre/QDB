@@ -109,7 +109,6 @@ class QDBIO:
     if self.users is None:
       self.users = QDBUsers(self._database_path)
 
-
   def _get(self, name):
     if self._archive:
       try:
@@ -281,22 +280,23 @@ class QDBIO:
             reverse.setdefault(ref, set()).add(hkey)
           continue
 
-        if 'del' in ops:
-          if ops['del'] == '__all__':
-            for ref in refs.get(hkey, ()):
-              reverse.get(ref, set()).discard(hkey)
-            refs.pop(hkey, None)
-          else:
-            for ref in ops['del']:
-              refs.get(hkey, set()).discard(ref)
-              reverse.get(ref, set()).discard(hkey)
-        if 'add' in ops:
-          rset = refs.get(hkey)
-          if rset is None:
-            refs[hkey] = set()
-          for ref in ops['add']:
-            refs[hkey].add(ref)
-            reverse.setdefault(hkey, set()).add(ref)
+        for op, rvalues in ops:
+          if op == 'del':
+            if rvalues == '__all__':
+              for ref in refs.get(hkey, ()):
+                reverse.get(ref, set()).discard(hkey)
+              refs.pop(hkey, None)
+            else:
+              for ref in rvalues:
+                refs.get(hkey, set()).discard(ref)
+                reverse.get(ref, set()).discard(hkey)
+          elif op == 'add':
+            rset = refs.get(hkey)
+            if rset is None:
+              refs[hkey] = set()
+            for ref in rvalues:
+              refs[hkey].add(ref)
+              reverse.setdefault(hkey, set()).add(ref)
 
     self._remove(*empty)
 
