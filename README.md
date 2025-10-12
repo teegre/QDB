@@ -94,11 +94,13 @@ Query data.
 | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `field`              | Display a field from the current index                                                                              |
 | `field=value`        | Filter records where `field == value`                                                                               |
-| `#field=value`       | Filter records but do not display related field
+| `#field=value`       | Filter records but do not display related field                                                                     |
 | `index:field`        | Follow relationship to another index and display field (use `*` wildcard to display all fields for the given index) |
 | `index:field=value`  | Filter by value in related index                                                                                    |
 | `index:++field`      | Sort results by this field (ascending)                                                                              |
 | `index:--field`      | Sort results by this field (descending)                                                                             |
+| `root??`             | Random sorting                                                                                                      |
+| `root!<COUNT>`       | Limit rows to `<COUNT>`                                                                                             |
 | `index:@[agg:field]` | Aggregation (e.g. `@[count:field]`)                                                                                 |
 
 #### Virtual fields
@@ -250,15 +252,15 @@ Q artist name(autechre,"the cure") song:++title
 
 ## Other Commands
 
-| Command   | Syntax          | Description            |
-| --------- | --------------- | ---------------------- |
-| `COMPACT` | `COMPACT`       | Compact the database   |
-| `ECHO`    | `ECHO <STRING>` | Print the given string |
-| `HUSH`    | `HUSH`          | Quiet mode             |
-| `HUSHF`   | `HUSHF`         | Never show field names |
-| `LIST`    | `LIST`          | List database files    |
-| `PURGE`   | `PURGE`         | Purge persisted cache  |
-| `SIZE`    | `SIZE`          | Display database size  |
+| Command   | Syntax          | Description                |
+| --------- | --------------- | -------------------------- |
+| `COMPACT` | `COMPACT`       | Compact the database       |
+| `ECHO`    | `ECHO <STRING>` | Print the given string     |
+| `HUSH`    | `HUSH`          | Toggle quiet mode          |
+| `HUSHF`   | `HUSHF`         | Toggle field names display |
+| `LIST`    | `LIST`          | List database files        |
+| `RECACHE` | `RECACHE`       | Rebuild cache              |
+| `SIZE`    | `SIZE`          | Display database size      |
 
 ## Functions
 
