@@ -73,7 +73,7 @@ class QDB:
         'MDEL':    self.mdel,
         'MGET':    self.mget,
         'MSET':    self.mset,
-        'PURGE':   self.recache,
+        'RECACHE': self.recache,
         'Q':       self.q,
         'QF':      self.get_field,
         'QQ':      self.qq,
