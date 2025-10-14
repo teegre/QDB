@@ -237,7 +237,7 @@ class QDBClient:
     if not isset('quiet'):
       t2 = perf_counter()
       print()
-      print(f'\nProcessed: {(t2-t1):.4f}s')
+      print(f'\n* processed: {(t2-t1):.4f}s')
     return 0
 
   def _set_prompt(self) -> str:
