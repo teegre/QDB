@@ -233,6 +233,7 @@ class QDB:
     hkey_or_index, keys, neg = self._recall(hkey_or_index)
 
     if self.store.is_index(hkey_or_index):
+      index = hkey_or_index
       if keys is not None:
         if neg:
           keys = sorted(self.store.get_index_keys(hkey_or_index) ^ set(keys))
@@ -240,13 +241,13 @@ class QDB:
         keys = sorted(self.store.get_index_keys(hkey_or_index))
     else:
       validate_hkey(hkey_or_index)
+      index = self.store.get_index(hkey_or_index)
       keys = [hkey_or_index]
 
     if not keys:
       raise QDBError(f'w: `{hkey_or_index}`, no such key or index.')
 
     err = 0
-
 
     for key in keys:
       haschanged = False
@@ -274,6 +275,8 @@ class QDB:
           self.store.delete_ref_of_key(key, old_value)
 
         kv[field] = new_value
+
+        self.store.add_index_field(hkey_or_index, field)
 
         # NOTE: if it looks like a valid hkey then create a reference
         if validate_hkey(new_value, confirm=True):
@@ -617,14 +620,18 @@ class QDB:
     if keys and neg:
       keys = sorted(set(keys) ^ self.store.get_index_keys(index_or_key))
 
+    is_index = self.store.is_index(index_or_key)
+
     if not keys:
-      is_index = self.store.is_index(index_or_key)
       if is_index:
         keys = self.store.get_index_keys(index_or_key).copy()
       else:
         keys = [index_or_key]
 
     err = 0
+
+    all_keys = len(keys) == self.store.index_len(index_or_key) if is_index else False
+    fields_to_drop = []
 
     for key in keys:
       # Delete the whole key
@@ -641,10 +648,15 @@ class QDB:
           v = kv.pop(field)
           if self.store.is_refd_by(key, v):
             self.store.delete_ref_of_key(ref=v, hkey=key)
+          if all_keys:
+            fields_to_drop.append(field)
         except KeyError:
-          raise QDBError('hdel: `{field}`, no such field in `{key}`.')
+          raise QDBError(f'hdel: `{field}`, no such field in `{key}`.')
       if fields:
         err += self.store.write(key, kv, old_kv)
+    if all_keys:
+      for field in fields_to_drop:
+        self.store.drop_index_field(index_or_key, field)
     return 1 if err > 0 else 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])
@@ -783,7 +795,7 @@ class QDB:
       return 0
     if not self.store.is_index(index):
       raise QDBError(f'hlen: `{index}`, no such index.', file=sys.stderr)
-    print(f'{self.store.index_len(index)}')
+    print(self.store.index_len(index))
     return 0
 
   @authorization([QDBAuthType.QDB_ADMIN, QDBAuthType.QDB_READONLY])

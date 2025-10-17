@@ -33,10 +33,10 @@ class QDBCache:
       index = key.partition(':')[0]
       if old_data: # update
         for old, new in zip(old_data.items(), data.items()):
-          if new[1] == old[1]:
+          if new[0] == old[0] and new[1] == old[1]:
             continue
+          self.drop(index, old[0], old[1], key)
           field = new[0]
-          self.drop(index, field, old[1], key)
           value = new[1]
           index_entry = f'{index}:{field}={value}'
           if index_entry in self.__indexed_fields:
@@ -90,9 +90,10 @@ class QDBCache:
 
   def drop(self, index: str, field: str, value: str, key: str):
     index_entry = f'{index}:{field}={value}'
-    self.__indexed_fields[index_entry].discard(key)
-    if not self.__indexed_fields[index_entry]:
-      self.__indexed_fields.pop(index_entry, None)
+    if self.__indexed_fields.get(key, None):
+      self.__indexed_fields[index_entry].discard(key)
+      if not self.__indexed_fields[index_entry]:
+        self.__indexed_fields.pop(index_entry, None)
 
   def set_indexed_fields(self, indexed_fields: dict):
     self.__indexed_fields = indexed_fields

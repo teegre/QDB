@@ -46,7 +46,7 @@ class QDBStore:
     self._pending_keys = set()
     self.indexes = set()
     self.indexes_map: Dict[str: set[str]] = {}
-    self.index_fields: Dict[str: set[str]] = {}
+    self.index_fields: Dict[str: list[str]] = {}
     self.index_max_id: Dict[str: int] = {}
     self.last_hkey: Dict[str: str] = {}
     self.refs: Dict[str: set[str]] = {}
@@ -606,6 +606,21 @@ class QDBStore:
       return []
     self.index_fields[index] = list(self.read_hash(hkey).keys())
     return self.index_fields[index]
+
+  def add_index_field(self, index: str, field: str):
+    if not index in self.index_fields:
+      self.index_fields.setdefault(index, [])
+    if not field in self.index_fields[index]:
+      self.index_fields[index].append(field)
+
+  def drop_index_field(self, index: str, field: str) -> int:
+    if index in self.index_fields:
+      try:
+        self.index_fields[index].remove(field)
+        return 0
+      except ValueError:
+        return 1
+    return 1
 
   def has_index(self, key: str) -> bool:
     ''' Return True if a given key has an index, False otherwise. '''
