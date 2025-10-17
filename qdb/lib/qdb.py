@@ -634,14 +634,18 @@ class QDB:
     fields_to_drop = []
 
     for key in keys:
-      # Delete the whole key
+      if not self.store.exists(key):
+        raise QDBError(f'`{key}`, no such hkey.')
       if not fields:
-         err += self.store.delete(key)
-         if err > 0:
-           return 1
-         continue
+        # Delete the whole key
+        err += self.store.delete(key)
+        if err > 0:
+          return 1
+        continue
       # Delete fields
       kv = self.store.read_hash(key)
+      if not kv:
+        continue
       old_kv = kv.copy()
       for field in fields:
         try:
@@ -651,7 +655,8 @@ class QDB:
           if all_keys:
             fields_to_drop.append(field)
         except KeyError:
-          raise QDBError(f'hdel: `{field}`, no such field in `{key}`.')
+          continue
+          # raise QDBError(f'hdel: `{field}`, no such field in `{key}`.')
       if fields:
         err += self.store.write(key, kv, old_kv)
     if all_keys:
