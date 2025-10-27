@@ -29,7 +29,7 @@ class QDBAuthenticationCancelledError(QDBError):
 class QDBNoAdminError(QDBError):
   def __init__(self, message: str):
     self.message = message
-    self.name = 'no admin error'
+    self.name = 'forbidden'
 
 class QDBUnauthorizedError(QDBError):
   def __init__(self, message: str):

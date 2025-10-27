@@ -118,19 +118,19 @@ class QDBUsers:
 
   def remove_user(self, username: str):
     if self.getuser() == username:
-      raise QDBNoAdminError('Forbidden: cannot delete current user.')
+      raise QDBNoAdminError('cannot delete current user.')
     user_info = self.users.pop(username, None)
     if user_info:
       self._users_ops[username] = {'del': None}
     else:
-      raise QDBUnknownUserError(f'Error: `{username}`, no such user.')
+      raise QDBUnknownUserError(f'`{username}`, no such user.')
 
   def authenticate(self, username: str, password: str):
     user = self.users.get(username)
     if not user:
-      raise QDBAuthenticationError('Invalid username or password.')
+      raise QDBAuthenticationError('invalid username or password.')
     if not bcrypt.checkpw(password.encode(), user['hash'].encode()):
-      raise QDBAuthenticationError('Invalid username or password.')
+      raise QDBAuthenticationError('invalid username or password.')
     os.environ['__QDB_USER__'] = username
 
   def get_auth(self, username: str) -> str:
