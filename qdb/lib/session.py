@@ -24,7 +24,7 @@ def loadsessions() -> dict:
       return json.loads(f.read())
   return {}
 
-def session_path_encode(db_path: str, user: str=None):
+def session_path_encode(db_path: str, user: str=''):
   user = user if user else getuser()
   return hashlib.sha1(f'{user}:{db_path}'.encode()).hexdigest()
 
@@ -32,7 +32,7 @@ def getsession(session_name: str) -> str:
   sessions = loadsessions()
   return sessions.get(session_name, '')
 
-def setsession(client: object) -> str:
+def setsession(client) -> str:
   sessions: dict = loadsessions()
 
   db_path = client.qdb.store.database_path
@@ -75,11 +75,11 @@ def listsessions() -> int:
   print(f'{count} active session{"s" if count > 1 else ""} found.', file=sys.stderr)
   return 0
 
-def getsockpath(session_name: str, user: str=None) -> str:
+def getsockpath(session_name: str, user: str='') -> str:
   currentuser = getuser() if user is None else user
   return f'/tmp/qdb-{currentuser}-{session_name}.sock'
 
-def runserver(session_path: str, client: 'QDBClient'):
+def runserver(client):
   try:
     client.qdb.store.build_indexed_fields(quiet=True)
     sock_path = setsession(client)
@@ -97,7 +97,7 @@ def runserver(session_path: str, client: 'QDBClient'):
         datefmt='%Y-%m-%dT%H:%M:%S'
     )
     logger = logging.getLogger(__name__)
-    logger.info(f'<-- session opened')
+    logger.info('<-- session opened')
 
   if not isset('quiet'):
     print(f'\x1b[1m{session_name}\x1b[0m: session \x1b[32mopened\x1b[0m')
@@ -142,7 +142,7 @@ def runserver(session_path: str, client: 'QDBClient'):
           usr, pwd = command[1], command[2]
           if usr != getuser():
             if isset('log'):
-              logger.warn('received unauthorized connection')
+              logger.warning('received unauthorized connection')
             conn.sendall(b'\x01\x02unauthorized connection.\n\x031\n')
             continue
           try:
@@ -153,13 +153,13 @@ def runserver(session_path: str, client: 'QDBClient'):
             continue
           except QDBAuthenticationError:
             if isset('log'):
-              logger.warn('connection refused')
+              logger.warning('connection refused')
             conn.sendall(b'\x01\x02connection refused\n\x031\n')
             continue
 
         if cmd.upper() == 'CLOSE':
           if isset('log'):
-            logger.info(f'closing session')
+            logger.info('closing session')
           if isset('quiet'):
             conn.sendall(b'\x01\x02\x030\n')
             break
@@ -205,11 +205,11 @@ def runserver(session_path: str, client: 'QDBClient'):
     os.remove(__SESSIONS_PATH__)
 
   if isset('log'):
-    logger.info(f'session closed -->')
+    logger.info('session closed -->')
 
   return 0
 
-def isserver(session_name: str, user: str=None, database_path: str=None) -> bool:
+def isserver(session_name: str, user: str='', database_path: str='') -> bool:
   session = getsession(session_name)
   if session and database_path:
     if os.path.exists(database_path):

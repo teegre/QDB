@@ -1,10 +1,10 @@
-import json
+# import json
 import os
-import struct
+# import struct
 import sys
 
 from dataclasses import dataclass
-from io import BytesIO
+# from io import BytesIO
 from time import time
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -23,7 +23,7 @@ class QDBCache:
   def __init__(self):
     self.haschanged = False
 
-  def write(self, key: str, data: dict[str], old_data: dict={}):
+  def write(self, key: str, data: dict, old_data: dict={}):
     entry = self.__cache.get(key)
     if entry and entry.data == data:
       return
@@ -53,13 +53,14 @@ class QDBCache:
 
     self.haschanged = True
 
-  def read(self, key: str, field: str=None) -> dict[str] | str | None:
-    entry: QDBCacheEntry = self.__cache.get(key)
+  def read(self, key: str, field: str='') -> dict | str | None:
+    entry = self.__cache.get(key)
     if entry:
       if field:
         return entry.data.get(field)
       return entry.data.copy() if isinstance(entry.data, dict) else entry.data
-    return None
+    else:
+      return None
 
   def get_key(self, index: str, field: str, *values: str) -> set:
     hkeys = set()
@@ -68,7 +69,7 @@ class QDBCache:
       hkeys.update(self.__indexed_fields.get(index_entry, set()))
     return hkeys
 
-  def get_id(self, index: str, field: str, value: str) -> str:
+  def get_id(self, index: str, field: str, value: str) -> str | None:
     index_entry = f'{index}:{field}={value}'
     ID: list = list(self.__indexed_fields.get(index_entry, set()))
     if len(ID) > 1:
