@@ -881,7 +881,7 @@ class QDB:
   def list_files(self) -> int:
     if not self.store.isdatabase:
       if isset('repl'):
-        msg = '* no file.'
+        msg = 'no file.'
       else:
         msg = f'`{self.store.database_name}`, no such database.'
       raise QDBNoDatabaseError(msg)

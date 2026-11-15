@@ -192,6 +192,7 @@ def runserver(client):
           if isset('log'):
             logger.critical(f'internal error: {e}')
           continue
+          conn.sendall(b'\x01\x02' + f'internal error: {e}'.encode() + b'\n\x031\n')
         finally:
           sys.stdout, sys.stderr = oldout, olderr
           client.stop_event.wait(0.01)
