@@ -1,6 +1,7 @@
 # QDB
 
-**QDB** is a lightweight, schema-aware, graph-based **database engine** with a **compact custom query language** for fast and expressive data modeling and querying.
+**QDB** is a lightweight, schema-aware, graph-based **database engine** with a
+**compact custom query language** for fast and expressive data modeling and querying.
 
 **QDB** is an experimental project under active development.
 
@@ -43,13 +44,17 @@ An **index** is a unique identifier that holds similar hashmaps, e.g.:
 
 ## Dynamic Schema
 
-At its core, **QDB** is a *key/value* and *key/hashmap* store, with a twist: relations can be established between entities (indexes).
+At its core, **QDB** is a *key/value* and *key/hashmap* store, with a twist:
+relations can be established between entities (indexes).
 
-- When a field is assigned a **HKEY**, a **reference** is added (e.g., `song:1258` -> `album:133`). Thus a relation is created and becomes part of the schema.
+- When a field is assigned a **HKEY**, a **reference** is added
+(e.g., `song:1258` -> `album:133`). Thus a relation is created and becomes part
+of the schema.
 
 - References are bidirectional and define the traversal path during queries.
 
-Unlike traditional databases, **QDB** does not require a schema to be declared. The schema is automatically inferred and evolves as data is added.
+Unlike traditional databases, **QDB** does not require a schema to be declared.
+The schema is automatically inferred and evolves as data is added.
 
 ## Basic Commands
 

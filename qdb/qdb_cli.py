@@ -1,7 +1,7 @@
 import argparse
 import os
 import readline
-import shlex
+# import shlex
 import signal
 import socket
 import stat
@@ -47,7 +47,7 @@ def dbname(db_path: str) -> str:
     db_path += '.qdb'
   return name
 
-def opensession(database_path: str, user: str=None):
+def opensession(database_path: str, user: str=''):
   if not os.path.exists(database_path):
     raise QDBSessionError('cannot open a session for an non existing database.')
   db_name = dbname(database_path)
@@ -67,7 +67,7 @@ def opensession(database_path: str, user: str=None):
 
   start = monotonic()
   timeout = 5.0
-  while not (buffer := p.stdout):
+  while not (p.stdout):
     s = loadsessions()
     if len(s) > session_count:
       break
@@ -77,7 +77,7 @@ def opensession(database_path: str, user: str=None):
       raise QDBSessionError('could not open session (timeout)')
     sleep(0.25)
 
-def sendcommand(sock_path, command, user: str=None) -> int:
+def sendcommand(sock_path, command, user: str='') -> int:
   try:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
       try:
@@ -127,7 +127,7 @@ class QDBCompleter:
     self.commands = sorted(self.qdb.commands.keys())
 
   def complete(self, text, state):
-    line = shlex.split(readline.get_line_buffer())
+    # line = shlex.split(readline.get_line_buffer())
 
     if text:
       self.matches = [c for c in self.commands if c.startswith(text)]
@@ -139,7 +139,7 @@ class QDBCompleter:
       return None
 
 class QDBClient:
-  def __init__(self, database: str, username: str=None, password: str=None, command: str=None):
+  def __init__(self, database: str, username: str='', password: str='', command: str=''):
     self.db_name = dbname(database)
     self.db_path = os.path.abspath(database)
     if not isserver(self.db_name, username, self.db_path):
@@ -185,16 +185,13 @@ class QDBClient:
       try:
         return func()
       except TypeError:
-        raise QDBError(f'\x1b[1m{cmd.lower()}\x1b[0m: arguments missing.')
+        raise QDBError(f'\x1b[1m{cmd.lower()}\x1b[0m: bad syntax.')
 
   def runserver(self) -> int:
     try:
-      return runserver(self.db_name, self)
+      return runserver(self)
     except KeyboardInterrupt:
       return 1
-
-  def stopserver(self, db_name: str):
-    stopserver(db_name)
 
   def pipe_commands(self) -> int:
     if self.qdb.auth_required and not isset('user'):
@@ -286,7 +283,8 @@ class QDBClient:
         if command.lower() == 'recache' and self.qdb.store.haschanged:
           print(f'{self.db_name}: You must \033[1mCOMMIT\033[0m your changes prior to \033[3mRECACHE\033[0m')
           continue
-        ret = self.execute(command)
+        # ret = self.execute(command)
+        self.execute(command)
       except KeyboardInterrupt:
         print()
         continue
@@ -305,7 +303,7 @@ class QDBClient:
       except Exception as e:
         raise QDBInternalError(f'{e}')
 
-  def process_commands(self, command: str=None, pipe: bool=False):
+  def process_commands(self, command: str='', pipe: bool=False):
     if has_piped_input():
       if not pipe:
         print('* \x1b[1m\x1b[31merror:\x1b[0m `--pipe` option is missing.', file=sys.stderr)
@@ -313,8 +311,9 @@ class QDBClient:
     if pipe:
       self.qdb.store.build_indexed_fields(quiet=True)
       return self.pipe_commands()
-    if command is not None:
+    if command:
       return self.execute(command)
+
     self.run_repl()
 
 def main() -> int:
@@ -387,7 +386,7 @@ def main() -> int:
 
       client.stop_event = stop_event
 
-      return runserver(client.db_path, client)
+      return runserver(client)
 
     if args.command.upper() in ('CLOSE', 'PING'):
       if not isserver(client.db_name, args.username):
@@ -412,9 +411,9 @@ def main() -> int:
   if isserver(client.db_name, args.username) and (not args.command or args.pipe):
     # no command in session mode, error.
     if args.pipe:
-      print(f'* \x1b[1m\x1b[31merror:\x1b[0m session mode: \x1b[3m--pipe\x1b[0m not allowed.')
+      print('* \x1b[1m\x1b[31merror:\x1b[0m session mode: \x1b[3m--pipe\x1b[0m not allowed.')
     else:
-      print(f'* \x1b[1m\x1b[31msession mode error\x1b[0m: missing command.', file=sys.stderr)
+      print('* \x1b[1m\x1b[31msession mode error\x1b[0m: missing command.', file=sys.stderr)
     return 1
 
   if args.dump:

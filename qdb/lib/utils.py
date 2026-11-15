@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 import sys
@@ -54,7 +53,7 @@ def getuser():
 def getsessionenv() -> str:
   return os.environ.get('__QDB_SESSION__', '__null__')
 
-def session_id(db_path) -> str:
+def session_id(db_path):
   name, ext = os.path.splitext(os.path.basename(db_path))
   if not ext:
     name += '.qdb'
@@ -75,7 +74,6 @@ def performance_measurement(_func=None, *, message: str='executed'):
         args[0].parent._perf_info[message] = d
       else:
         p = d - args[0]._perf_info['Fetched']
-        t = d
         print(f'* fetched:   {args[0]._perf_info["Fetched"]:.4f}s.', file=sys.stderr)
         print(f'* {message.lower()}: {p:.4f}s.', file=sys.stderr)
         print(f'* total:     {d:.4f}s.', file=sys.stderr)
@@ -101,7 +99,7 @@ def authorization(auth_types: list[QDBAuthType]):
     return wrap
   return decorator
 
-def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change: bool=False):
+def authorize(qdbusers: QDBUsers, username: str='', password: str='', change: bool=False):
   try:
     with open('/dev/tty', 'r') as stdin, open('/dev/tty', 'w') as stdout:
       if not username:
@@ -123,7 +121,7 @@ def authorize(qdbusers: QDBUsers, username: str=None, password: str=None, change
   qdbusers.authenticate(username, password) 
   del password
 
-def user_add(qdbusers: QDBUsers, username: str=None, password: str=None, auth_type: str=None, change: bool=False):
+def user_add(qdbusers: QDBUsers, username: str='', password: str='', auth_type: str='', change: bool=False):
   try:
     if not username:
       print('* \x1b[1m[new user]\x1b[0m')

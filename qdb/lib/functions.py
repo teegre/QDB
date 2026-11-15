@@ -16,8 +16,8 @@ def abs_(value: str) -> str:
     return str(abs(value))
   raise QDBError(f'@abs error: `{value}` has an invalid type.')
 
-def epoch(value: str=None, real: bool=False) -> str:
-  if value is None:
+def epoch(value: str='', real: bool=False) -> str:
+  if not value:
     return str(time.time()) if real else str(int(time.time()))
   try:
     dt = datetime.fromisoformat(value)
@@ -28,16 +28,16 @@ def epoch(value: str=None, real: bool=False) -> str:
     )
   return str(int(dt.timestamp())) if not real else str(dt.timestamp())
 
-def epochreal(value: str=None) -> str:
+def epochreal(value: str='') -> str:
   return epoch(value=value, real=True)
 
-def now(dummy: str=None, real: bool=False) -> str:
+def now(dummy: str='', real: bool=False) -> str:
   return epochreal() if real else epoch()
 
-def nowiso(dummy: str=None) -> str:
+def nowiso(dummy: str='') -> str:
   return datetime.now().isoformat()
 
-def nowreal(dummy: str=None) -> str:
+def nowreal(dummy: str='') -> str:
   return now(real=True)
 
 def todate(value: str) -> str:
@@ -104,10 +104,10 @@ def totime(value: str):
     raise QDBError(f'@time error: `{value}`, invalid value.')
 
 def inc(value: str) -> str:
-  value = coerce_number(value)
-  if isinstance(value, (int, float)):
-    return str(value + 1)
-  return str(value)
+  val = coerce_number(value)
+  if isinstance(val, (int, float)):
+    return str(val + 1)
+  return str(val)
 
 def dec(value: str) -> str:
   value = coerce_number(value)
@@ -187,6 +187,6 @@ def unwrap(expr: str, extract_func: bool=False) -> str:
   return expr.strip()
 
 def has_function(expr: str) -> bool:
-  if match := re.match(r'(?P<sort>\+\+|--)?(@?\w+)\(([^()]+\))', expr):
+  if re.match(r'(?P<sort>\+\+|--)?(@?\w+)\(([^()]+\))', expr):
     return True
   return False
